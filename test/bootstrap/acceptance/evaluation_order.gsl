@@ -1,0 +1,29 @@
+import "std/fs"
+struct State { trace: u64 }
+struct Item { value: u64 }
+func emit(value: u64) { unsafe { write(1 as u64, (&value) as *u8, 8 as usize); } }
+func mark(state: *State, digit: u64) bool { state.trace = state.trace * 10 + digit; return true; }
+func index(state: *State) usize { state.trace = state.trace * 10 + 2; return 1 as usize; }
+func value(state: *State) u64 { state.trace = state.trace * 10 + 3; return 77; }
+func address(state: *State, item: *Item) *u64 { state.trace = state.trace * 10 + 4; return &item.value; }
+func main() u32 {
+    var state: State;
+    state.trace = 0;
+    let skipped_and = false && mark(&state, 9);
+    let skipped_or = true || mark(&state, 9);
+    emit(state.trace);
+    if skipped_and { emit(999); }
+    if skipped_or == false { emit(999); }
+    emit(state.trace);
+    let evaluated = (false || mark(&state, 1)) && true;
+    if evaluated == false { emit(999); }
+    emit(state.trace);
+    var array: [2]Item;
+    array[index(&state)].value = value(&state);
+    emit(state.trace);
+    emit(array[1 as usize].value);
+    unsafe { *address(&state, &array[0 as usize]) = value(&state); }
+    emit(state.trace);
+    emit(array[0 as usize].value);
+    return 0;
+}

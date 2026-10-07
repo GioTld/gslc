@@ -1,0 +1,1723 @@
+{
+  "format": 1,
+  "purpose": "M13A migration decisions and inactive historical contracts; not GSL conformance results.",
+  "execution": "These cases are not run by primary acceptance and must never count as passed or silently skipped tests.",
+  "classification_policy": "Current-subset behavior is needed now; unsupported capabilities are deferred, not discarded. No language contract is deliberately dropped in this inventory.",
+  "groups": {
+    "current_subset": {
+      "disposition": "needed_now",
+      "reason": "The compiler and existing hosted/kernel consumers already rely on these behaviors. Retain executable coverage during module removal.",
+      "evidence": [
+        "test/bootstrap/acceptance.json",
+        "scripts/semantic_checks.py",
+        "test/bootstrap/acceptance/semantic_scopes.gsl",
+        "test/bootstrap/acceptance/lexer.gsl",
+        "test/fixtures/packed.gsl",
+        "test/kernel/"
+      ],
+      "retirement_gate": "Match each observable assertion to its GSL case before deleting the corresponding Go test; group evidence is not a blanket parity claim."
+    },
+    "tagged_values": {
+      "disposition": "deferred",
+      "reason": "Retain match, Option/Result and propagation contracts; no requirement in the current compiler source closure.",
+      "activation": "A concrete compiler/consumer error-handling use; define representation and positive/negative/executable gates."
+    },
+    "ownership": {
+      "disposition": "deferred",
+      "reason": "Move and escape guarantees remain intended language behavior, but are absent from the current GSL subset.",
+      "activation": "An agreed ownership contract with branch/loop/field and reinitialization tests; current pointers must not be advertised as escape-safe."
+    },
+    "comptime_arenas": {
+      "disposition": "deferred",
+      "reason": "Expression constants, comptime blocks, typed/global arenas exceed the numeric scoped-arena profile used by the compiler.",
+      "activation": "A concrete need for compile-time sizing or typed allocation; retain deterministic errors and scope/reset contracts."
+    },
+    "synchronization": {
+      "disposition": "deferred",
+      "reason": "core/sync is a real blocked library consumer, but neither the compiler closure nor current kernel fixtures require it.",
+      "activation": "Port atomic_load/store/cas and define ordering before claiming core/sync usable; validate execution, not IR substrings alone."
+    },
+    "channels": {
+      "disposition": "deferred",
+      "reason": "The old channel/yield tests do not establish a concurrent runtime suitable for current consumers. Preserve type checks as requirements.",
+      "activation": "Define ownership, capacity, scheduling/yield and executable send/receive semantics separately from atomics."
+    },
+    "extended_frontend": {
+      "disposition": "deferred",
+      "reason": "Historical float tokens, switch, slices/for and richer sample parsing are not all executable GSL capabilities.",
+      "activation": "Choose individual forms using the language contract and consumer demand; parser recognition alone is not implementation."
+    },
+    "diagnostic_presentation": {
+      "disposition": "deferred",
+      "reason": "Source snippets, hints and original-file locations exceed current stable JSON diagnostics.",
+      "activation": "A concrete diagnostic usability requirement; preserve current byte spans and status contracts."
+    },
+    "old_cli": {
+      "disposition": "needed_now",
+      "reason": "Output selection, target selection, linking and imports are required; Python/GSL now own them. Go flag spellings and Go AST objects are not new language requirements.",
+      "evidence": [
+        "scripts/gsl.py",
+        "test/bootstrap/test_runner.py",
+        "scripts/output_checks.py",
+        "test/bootstrap/acceptance/imports/"
+      ],
+      "retirement_gate": "Review observable behavior against the current public CLI. No need to recreate the old Go parser API."
+    },
+    "superseded_rejections": {
+      "disposition": "needed_now",
+      "reason": "Go rejects raw pointer stores that GSL now implements; preserve current GSL success/unsafe rules. Slices and character literals remain outside the current executable profile.",
+      "evidence": [
+        "test/fixtures/pointer_stores.gsl",
+        "test/bootstrap/acceptance.json"
+      ],
+      "retirement_gate": "Split historical rejection cases: preserve current unsupported-form diagnostics but do not reintroduce the old pointer-store restriction."
+    }
+  },
+  "go_tests": [
+    {
+      "origin": "cmd/gslc/kernel_test.go#TestBoolMatchExecution",
+      "groups": [
+        "tagged_values"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Full input and expected process exit 0 remain in the deferred execution cases. No GSL pass claimed."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/kernel_test.go#TestTaggedMatchAndPropagationExecution",
+      "groups": [
+        "tagged_values"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Full input and expected process exit 22 remain in the deferred execution cases. No GSL pass claimed."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestParseArgsWithOutput",
+      "groups": [
+        "old_cli"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Source and explicit output selection: test_build_cli_forwards_source_output_and_native_inputs. The current CLI deliberately requires --output (also tested); the empty default Go field is not a public compatibility requirement."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestParseBuildArgsFreestanding",
+      "groups": [
+        "old_cli"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Source/output and kernel target dispatch: test_build_cli_forwards_source_output_and_native_inputs; freestanding code generation and execution: all nine acceptance kernels."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestParseBuildArgsTargetAndLinkerScript",
+      "groups": [
+        "old_cli"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Kernel target, source/output, linker script, boot, external object and entry forwarding: test_build_cli_forwards_source_output_and_native_inputs. Native linking/execution: acceptance freestanding-high-kernel. Invalid combinations: test_native_kernel_options_reject_before_creating_output."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestCompileToLLVME2E",
+      "groups": [
+        "current_subset",
+        "extended_frontend",
+        "comptime_arenas",
+        "tagged_values"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Nonempty parsed declarations and lowered functions were Go object assertions. Current compiler_api builds and executes generated functions; hosted triple is selected by Runner and verified by successful hosted linking/execution.",
+          "Full sample syntax is retained in deferred TestParseSampleFile; uart_write_byte lowering belongs to the deferred sample contract, not current executable support."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestCompileToLLVMCoreImports",
+      "groups": [
+        "current_subset",
+        "synchronization"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Imported memcpy/memset/print_raw/main execute in library_imports at -O0/-O2; memory_routines additionally verifies memory results. Import resolution/deduplication has import_diamond and import_cycle; failures remain in the negative inventory.",
+          "spinlock_acquire/release and typed arena calls are deferred; the complete historical core input and required symbols are retained as legacy_core_imports. Nonempty Go AST/IR objects are replaced by compilation and execution."
+        ]
+      }
+    },
+    {
+      "origin": "cmd/gslc/main_test.go#TestCompileToLLVMStdImports",
+      "groups": [
+        "old_cli"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Imported open/write_string/close/println/main execute in library_imports at -O0/-O2; hosted_io separately verifies real file round trips. Successful executable compilation replaces nonempty Go AST/IR object assertions."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMSimple",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts checks hosted triple, named i32 add definition and execution of argument addition/return; temporary register names are internal."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMVolatile",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts checks store volatile and inttoptr, executes the write and reads its result."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMControlFlow",
+      "groups": [
+        "current_subset",
+        "extended_frontend"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts checks icmp ugt and br i1, and executes both branches with high-bit unsigned operands; label spelling is internal.",
+          "The original function with only returning branches is preserved as branch_complete_maximum. GSL currently requires a trailing return; backend_contracts uses that supported form. Return-path completeness is deferred, not claimed as parity."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMSampleFile",
+      "groups": [
+        "current_subset",
+        "extended_frontend",
+        "comptime_arenas",
+        "tagged_values"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred legacy_sample_lowering preserves all three function signatures and full input; historical tagged Result layout is not current GSL ABI."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMScopedArena",
+      "groups": [
+        "comptime_arenas"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestGenerateLLVMScopedArena preserves full input and all historical IR assertions for typed allocation/reset."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMAtomics",
+      "groups": [
+        "synchronization"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestGenerateLLVMAtomics preserves full input, atomic load/store/CAS and seq_cst ordering expectations."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMHelloFixture",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "hosted_io and library_imports execute string constants and syscall output with exact stdout checks; LLVM private string symbol spelling is internal."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMKernelPrimitivesAndPackedStruct",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "packed-kernel/descriptor-array-kernel verify packed layout; cpu_primitives and kernel_library object checks verify sti/inw/outw; kernel QEMU fixtures execute cli/hlt/inb/outb. Raw asm is exercised by external_symbols/kernel_library; exact LLVM struct and asm spelling is internal."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMTargetTriple",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Runner.kernel_ir validates the exact none-elf triple for every kernel object/boot and all emitted function attributes."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMComptimeAndConstants",
+      "groups": [
+        "comptime_arenas"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestGenerateLLVMComptimeAndConstants preserves source and folded value 8192."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMYield",
+      "groups": [
+        "synchronization"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestGenerateLLVMYield preserves source and pause lowering expectation."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMChannel",
+      "groups": [
+        "channels"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestGenerateLLVMChannel preserves source, Channel representation and atomic load/store expectations; this never established a working concurrent runtime."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/partial_operations_test.go#TestPartialIntegerAndArenaOperationsTrap",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Acceptance division_zero_u32, remainder_zero_u32, division_overflow_i32, remainder_overflow_i32, shift_left_width_u32, shift_right_width_u32, arena_exhaustion and arena_dynamic_exhaustion check explicit llvm.trap and SIGILL at -O0/-O2."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/partial_operations_test.go#TestArenaDynamicAllocationWithinCapacity",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts performs two dynamic 8-byte allocations in a 16-byte arena and verifies separate stored values at -O0/-O2."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/partial_operations_test.go#TestIntegerOverflowWraps",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "scripts/semantic_checks.py independently checks u8/i8 addition, u8 subtraction and multiplication at boundaries at -O0/-O2; all four original arithmetic expectations retained by the oracle."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution",
+      "groups": [
+        "current_subset",
+        "extended_frontend"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "scripts/semantic_checks.py checks unsigned division/remainder/right shift, all four unsigned comparisons, signed comparison, signed/unsigned widening and u64 high-bit division at -O0/-O2. The three compound assignments /=, %= and >>= are absent from GSL; unsigned_compound_division/remainder/shift retain exact source, zero exit and historical opcode expectations as deferred cases."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/comptime/eval_test.go#TestEvalDivisionByZero",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/comptime/eval_test.go#TestEvalComptimeBlock",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/diag/diagnostic_test.go#TestSpanMerge",
+      "groups": [
+        "diagnostic_presentation"
+      ]
+    },
+    {
+      "origin": "pkg/diag/diagnostic_test.go#TestDiagnosticFormat",
+      "groups": [
+        "diagnostic_presentation"
+      ]
+    },
+    {
+      "origin": "pkg/ir/builder_test.go#TestBuildSimpleFunction",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts executes named add with two parameters. compiler_api checks generated function count; Go Module/Function objects, stack strategy and IR printing are internal representations."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/ir/builder_test.go#TestBuildVolatileMMIO",
+      "groups": [
+        "current_subset"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts checks store volatile and executes the pointer write."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/ir/builder_test.go#TestBuildIfElseBranches",
+      "groups": [
+        "current_subset",
+        "extended_frontend"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "backend_contracts executes both zero/nonzero branches; block labels and Go IR string spelling are internal.",
+          "The original function with only returning branches is preserved as branch_complete_check. GSL currently requires a trailing return; backend_contracts uses that supported form. Return-path completeness is deferred, not claimed as parity."
+        ]
+      }
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestLexerKeywordsAndIdentifiers",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestAutomaticSemicolonInsertion",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestLexerSwitchCase",
+      "groups": [
+        "current_subset",
+        "extended_frontend"
+      ]
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestLexerNumberLiterals",
+      "groups": [
+        "current_subset",
+        "extended_frontend"
+      ]
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestLexerComments",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/lexer/lexer_test.go#TestLexerKernelKeywords",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/parser/parser_test.go#TestParsePrecedence",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/parser/parser_test.go#TestParseFuncDecl",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/parser/parser_test.go#TestParseStructAndArena",
+      "groups": [
+        "current_subset",
+        "extended_frontend",
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/parser/parser_test.go#TestParseSampleFile",
+      "groups": [
+        "current_subset",
+        "extended_frontend",
+        "comptime_arenas",
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/parser/parser_test.go#TestParsePackedStructAndAsm",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestDescriptorPrimitivesRequireUnsafeAndValidSymbols",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaSampleFile",
+      "groups": [
+        "current_subset",
+        "extended_frontend",
+        "comptime_arenas",
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaImmutabilityEnforcement",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaZeroImplicitCasting",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaUnsafeEnforcement",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaOptionAndResult",
+      "groups": [
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestSemaKernelPrimitivesUnsafeEnforcement",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/analyzer_test.go#TestStructFieldResolution",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaValidUsage",
+      "groups": [
+        "comptime_arenas",
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaReturnEscape",
+      "groups": [
+        "comptime_arenas",
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaDirectReturnEscape",
+      "groups": [
+        "comptime_arenas",
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaOuterAssignmentEscape",
+      "groups": [
+        "comptime_arenas",
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaGlobalReturnAllowed",
+      "groups": [
+        "comptime_arenas",
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesRequireUnsafe",
+      "groups": [
+        "synchronization"
+      ]
+    },
+    {
+      "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesValidInUnsafe",
+      "groups": [
+        "synchronization"
+      ]
+    },
+    {
+      "origin": "pkg/sema/comptime_test.go#TestConstDeclarationAndUsage",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/comptime_test.go#TestComptimeArenaSizing",
+      "groups": [
+        "comptime_arenas"
+      ]
+    },
+    {
+      "origin": "pkg/sema/comptime_test.go#TestSizeOfAndAlignOfBuiltins",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/sema/comptime_test.go#TestChannelTypeAndMethods",
+      "groups": [
+        "channels"
+      ]
+    },
+    {
+      "origin": "pkg/sema/comptime_test.go#TestChannelTypeMismatchError",
+      "groups": [
+        "channels"
+      ]
+    },
+    {
+      "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch",
+      "groups": [
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch",
+      "groups": [
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics",
+      "groups": [
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/move_test.go#TestCopyStructRejectsOwnedField",
+      "groups": [
+        "ownership"
+      ]
+    },
+    {
+      "origin": "pkg/sema/unsupported_lvalue_test.go#TestUnsupportedIndexAndPointerOperationsAreRejected",
+      "groups": [
+        "superseded_rejections"
+      ]
+    },
+    {
+      "origin": "pkg/sema/unsupported_lvalue_test.go#TestCharacterLiteralIsRejectedBeforeCodegen",
+      "groups": [
+        "superseded_rejections"
+      ]
+    },
+    {
+      "origin": "pkg/types/types_test.go#TestPrimitiveTypes",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/types/types_test.go#TestStructLayout",
+      "groups": [
+        "current_subset"
+      ]
+    },
+    {
+      "origin": "pkg/types/types_test.go#TestAlgebraicTypes",
+      "groups": [
+        "tagged_values"
+      ]
+    },
+    {
+      "origin": "pkg/types/types_test.go#TestPackedStructLayout",
+      "groups": [
+        "current_subset"
+      ]
+    }
+  ],
+  "deferred_cases": [
+    {
+      "name": "TestExhaustiveBoolMatch-complete",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main(flag: bool) u32 { return match flag { true => 1, false => 2 } }\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch"
+    },
+    {
+      "name": "TestExhaustiveBoolMatch-missing arm",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main(flag: bool) u32 { return match flag { true => 1 } }\n",
+      "expected": {
+        "accept": false,
+        "historical_message_contains": "non-exhaustive bool match"
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch"
+    },
+    {
+      "name": "TestExhaustiveBoolMatch-default",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main(flag: bool) u32 { return match flag { true => 1, _ => 2 } }\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch"
+    },
+    {
+      "name": "TestExhaustiveBoolMatch-duplicate",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main(flag: bool) u32 { return match flag { true => 1, true => 2, false => 3 } }\n",
+      "expected": {
+        "accept": false,
+        "historical_message_contains": "duplicate match pattern"
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch"
+    },
+    {
+      "name": "TestExhaustiveAlgebraicMatch-option complete",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func get(value: Option[u32]) u32 { return match value { Option.Some(n) => n, Option.None() => 0 } }\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch"
+    },
+    {
+      "name": "TestExhaustiveAlgebraicMatch-option missing none",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func get(value: Option[u32]) u32 { return match value { Option.Some(n) => n } }\n",
+      "expected": {
+        "accept": false,
+        "historical_message_contains": "non-exhaustive Option match"
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch"
+    },
+    {
+      "name": "TestExhaustiveAlgebraicMatch-result complete",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func get(value: Result[u32, u32]) u32 { return match value { Result.Ok(n) => n, Result.Err(e) => e } }\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch"
+    },
+    {
+      "name": "TestExhaustiveAlgebraicMatch-result missing err",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func get(value: Result[u32, u32]) u32 { return match value { Result.Ok(n) => n } }\n",
+      "expected": {
+        "accept": false,
+        "historical_message_contains": "non-exhaustive Result match"
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch"
+    },
+    {
+      "name": "TestExhaustiveAlgebraicMatch-duplicate variant",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func get(value: Option[u32]) u32 { return match value { Option.Some(a) => a, Option.Some(b) => b, Option.None() => 0 } }\n",
+      "expected": {
+        "accept": false,
+        "historical_message_contains": "duplicate match pattern"
+      },
+      "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch"
+    },
+    {
+      "name": "TestMoveSemantics-use after move",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main() { let first = Channel.new(2); let second = first; first.recv() }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-branch move",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main(flag: bool) { let first = Channel.new(2); if flag { let second = first }; first.recv() }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-reinitialize",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main() { var first = Channel.new(2); let second = first; first = Channel.new(3); first.recv() }\n",
+      "expected": {
+        "accept": true,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-copy value",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main() { let first: u32 = 2; let second = first; let third = first }\n",
+      "expected": {
+        "accept": true,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-borrow value",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main() { let first = Channel.new(2); let view = &first; first.recv() }\n",
+      "expected": {
+        "accept": true,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-move in loop",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func main() { let first = Channel.new(2); while true { let second = first } }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-function argument",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func take(value: Channel[u32]) {} func main() { let first = Channel.new(2); take(first); first.recv() }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-return value",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func forward(value: Channel[u32]) Channel[u32] { return value }\n",
+      "expected": {
+        "accept": true,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-move field",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Holder { ch: Channel[u32] } func main(holder: Holder) { let second = holder.ch; holder.ch.recv() }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-plain struct moves",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Token { kind: u32 } func main(value: Token) { let next = value; let again = value }\n",
+      "expected": {
+        "accept": false,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestMoveSemantics-copy struct",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "copy struct Token { kind: u32 } func main(value: Token) { let next = value; let again = value }\n",
+      "expected": {
+        "accept": true,
+        "rule": "ownership/move checks"
+      },
+      "origin": "pkg/sema/move_test.go#TestMoveSemantics"
+    },
+    {
+      "name": "TestCopyStructRejectsOwnedField",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "copy struct Holder { channel: Channel[u32] }\n",
+      "expected": {
+        "accept": false,
+        "rule": "copy structs must not contain owned fields"
+      },
+      "origin": "pkg/sema/move_test.go#TestCopyStructRejectsOwnedField"
+    },
+    {
+      "name": "TestScopedArenaValidUsage",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Packet {\n    id: u32,\n    len: u32\n}\n\nfunc process() u32 {\n    arena local_pool(4096)\n    let p = local_pool.alloc(Packet)\n    return 42\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "typed scoped allocation"
+      },
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaValidUsage"
+    },
+    {
+      "name": "TestScopedArenaReturnEscape",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Packet {\n    id: u32\n}\n\nfunc leak() *Packet {\n    arena local_pool(1024)\n    let p = local_pool.alloc(Packet)\n    return p\n}\n",
+      "expected": {
+        "accept": false,
+        "rule": "returning an arena-owned local pointer"
+      },
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaReturnEscape"
+    },
+    {
+      "name": "TestScopedArenaDirectReturnEscape",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Packet {\n    id: u32\n}\n\nfunc leak_direct() *Packet {\n    arena local_pool(1024)\n    return local_pool.alloc(Packet)\n}\n",
+      "expected": {
+        "accept": false,
+        "rule": "returning a direct scoped allocation"
+      },
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaDirectReturnEscape"
+    },
+    {
+      "name": "TestScopedArenaOuterAssignmentEscape",
+      "group": "ownership",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "struct Packet {\n    id: u32\n}\n\nfunc escape_assignment() {\n    var outer_p: *Packet\n    if true {\n        arena inner_pool(1024)\n        let local_p = inner_pool.alloc(Packet)\n        outer_p = local_p\n    }\n}\n",
+      "expected": {
+        "accept": false,
+        "rule": "assigning an inner-arena pointer to an outer scope"
+      },
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaOuterAssignmentEscape"
+    },
+    {
+      "name": "TestScopedArenaGlobalReturnAllowed",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "arena global_pool(64 * 1024)\n\nstruct Node {\n    val: u64\n}\n\nfunc create_node() *Node {\n    let n = global_pool.alloc(Node)\n    return n\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "global arena storage may outlive the callee"
+      },
+      "origin": "pkg/sema/arena_test.go#TestScopedArenaGlobalReturnAllowed"
+    },
+    {
+      "name": "TestAtomicPrimitivesRequireUnsafe",
+      "group": "synchronization",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func bad() {\n    let addr: usize = 0x1000\n    let ptr = addr as *u64\n    let v = atomic_load(ptr)\n}\n",
+      "expected": {
+        "accept": false,
+        "rule": "atomic access requires unsafe"
+      },
+      "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesRequireUnsafe"
+    },
+    {
+      "name": "TestAtomicPrimitivesValidInUnsafe",
+      "group": "synchronization",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func ok_atomics() {\n    unsafe {\n        let addr: usize = 0x1000\n        let ptr = addr as *u64\n        atomic_store(ptr, 42 as u64)\n        let v = atomic_load(ptr)\n        let ok = atomic_cas(ptr, 42 as u64, 99 as u64)\n    }\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "typed atomic load/store/CAS"
+      },
+      "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesValidInUnsafe"
+    },
+    {
+      "name": "TestComptimeArenaSizing",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "const PACKET_CAP = comptime 64 * 1024\n\narena memory_pool(PACKET_CAP)\n\nfunc test_arena() {\n    arena local_pool(comptime 1024 * 4)\n    let ptr = local_pool.alloc(u64)\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "compile-time capacities and typed allocation"
+      },
+      "origin": "pkg/sema/comptime_test.go#TestComptimeArenaSizing"
+    },
+    {
+      "name": "TestChannelTypeAndMethods",
+      "group": "channels",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func worker(ch: Channel[u32]) {\n    let ok = ch.send(42 as u32)\n    yield()\n    let msg = ch.recv()\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "typed send and receive"
+      },
+      "origin": "pkg/sema/comptime_test.go#TestChannelTypeAndMethods"
+    },
+    {
+      "name": "TestChannelTypeMismatchError",
+      "group": "channels",
+      "status": "deferred",
+      "phase": "semantic",
+      "source": "func bad_worker(ch: Channel[u32]) {\n    ch.send(\"wrong type\")\n}\n",
+      "expected": {
+        "accept": false,
+        "rule": "send must match channel element type"
+      },
+      "origin": "pkg/sema/comptime_test.go#TestChannelTypeMismatchError"
+    },
+    {
+      "name": "bool-match",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "execution",
+      "source": "func choose(flag: bool) u32 {\n    return match flag {\n        true => 1,\n        false => 2\n    }\n}\n\nfunc choose_number(value: u32) u32 {\n    return match value {\n        1 => 11,\n        2 => 22,\n        _ => 33\n    }\n}\n\nfunc main() u32 {\n    return choose(true) + choose(false) + choose_number(1) + choose_number(2) + choose_number(3) - 69\n}\n",
+      "expected": {
+        "exit": 0
+      },
+      "origin": "test/fixtures/match_bool.gsl"
+    },
+    {
+      "name": "tagged-propagation",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "execution",
+      "source": "func pick(flag: bool) Option[u32] {\n    if flag { return Option.Some(7) }\n    return Option.None()\n}\n\nfunc result(flag: bool) Result[u32, u32] {\n    if flag { return Result.Ok(3) }\n    return Result.Err(9)\n}\n\nfunc add(flag: bool) Result[u32, u32] {\n    let value: u32 = result(flag)?\n    return Result.Ok(value + 1)\n}\n\nfunc main() u32 {\n    let yes: Option[u32] = pick(true)\n    let a: u32 = match yes { Option.Some(n) => n, Option.None() => 0 }\n    let no: Option[u32] = pick(false)\n    let b: u32 = match no { Option.Some(n) => n, Option.None() => 2 }\n    let okay: Result[u32, u32] = add(true)\n    let c: u32 = match okay { Result.Ok(n) => n, Result.Err(e) => e }\n    let fail: Result[u32, u32] = add(false)\n    let d: u32 = match fail { Result.Ok(n) => n, Result.Err(e) => e }\n    return a + b + c + d\n}\n",
+      "expected": {
+        "exit": 22
+      },
+      "origin": "test/fixtures/match_variants.gsl"
+    },
+    {
+      "name": "TestEvalArithmetic-33",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 10 + 20;\n",
+      "expected": {
+        "constant_value": 30
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-34",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 100 - 45;\n",
+      "expected": {
+        "constant_value": 55
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-35",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 8 * 1024;\n",
+      "expected": {
+        "constant_value": 8192
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-36",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 1024 / 4;\n",
+      "expected": {
+        "constant_value": 256
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-37",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 15 % 4;\n",
+      "expected": {
+        "constant_value": 3
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-38",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 1 << 10;\n",
+      "expected": {
+        "constant_value": 1024
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-39",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 1024 >> 2;\n",
+      "expected": {
+        "constant_value": 256
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-40",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 0xFF & 0x0F;\n",
+      "expected": {
+        "constant_value": 15
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-41",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 0xF0 | 0x0F;\n",
+      "expected": {
+        "constant_value": 255
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-42",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 0xAA ^ 0x55;\n",
+      "expected": {
+        "constant_value": 255
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-43",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = -42;\n",
+      "expected": {
+        "constant_value": -42
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-44",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = ~0;\n",
+      "expected": {
+        "constant_value": -1
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalArithmetic-45",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = (10 + 2) * 5;\n",
+      "expected": {
+        "constant_value": 60
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-46",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = true && false;\n",
+      "expected": {
+        "constant_value": false
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-47",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = true || false;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-48",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = !false;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-49",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 10 == 10;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-50",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 10 != 20;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-51",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 5 < 10;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-52",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 15 <= 15;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-53",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 20 > 5;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "TestEvalBooleansAndLogic-54",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 10 >= 10;\n",
+      "expected": {
+        "constant_value": true
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic"
+    },
+    {
+      "name": "invalid-constant-55",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 100 / 0;\n",
+      "expected": {
+        "accept": false,
+        "rule": "division/remainder by zero in constant evaluation"
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalDivisionByZero"
+    },
+    {
+      "name": "invalid-constant-56",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = 100 % 0;\n",
+      "expected": {
+        "accept": false,
+        "rule": "division/remainder by zero in constant evaluation"
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalDivisionByZero"
+    },
+    {
+      "name": "comptime-block",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const RESULT = comptime { const A = 512; const B = 2; A * B };\n",
+      "expected": {
+        "constant_value": 1024
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalComptimeBlock"
+    },
+    {
+      "name": "TestLexerSwitchCase",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lexing",
+      "source": "switch event {\ncase Event.Data:\n    handle()\ndefault:\n    ignore()\n}\n",
+      "expected": {
+        "first_token": "switch"
+      },
+      "origin": "pkg/lexer/lexer_test.go#TestLexerSwitchCase"
+    },
+    {
+      "name": "TestLexerNumberLiterals",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lexing",
+      "source": "123 0xFF_A0 0b1011_0001 0o755 3.1415 1e-4 2.5e+3\n",
+      "expected": {
+        "tokens": [
+          "int",
+          "int",
+          "int",
+          "int",
+          "float",
+          "float",
+          "float"
+        ]
+      },
+      "origin": "pkg/lexer/lexer_test.go#TestLexerNumberLiterals"
+    },
+    {
+      "name": "TestParseStructAndArena",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "parsing",
+      "source": "arena global_pool(1024 * 1024)\n\nstruct Node {\n    id: u64,\n    next: *Node,\n}\n",
+      "expected": {
+        "accept": true,
+        "declarations": 2
+      },
+      "origin": "pkg/parser/parser_test.go#TestParseStructAndArena"
+    },
+    {
+      "name": "TestParseSampleFile",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "parsing",
+      "source": "arena memory_pool(64 * 1024)\n\nstruct UartPort {\n    base_address: usize,\n}\n\nfunc uart_write_byte(port: UartPort, byte: u8) {\n    unsafe {\n        let reg = port.base_address as *u8\n        volatile_write(reg, byte)\n    }\n}\n\nfunc process_packet(raw_data: []u8) Result[u32, Error] {\n    var counter: u32 = 0\n    for b in raw_data {\n        if b == 0 {\n            break\n        }\n        counter += 1\n    }\n    return Result.Ok(counter)\n}\n\nfunc process_event(event: Event) {\n    switch event {\n    case Event.Data(payload):\n        handle_data(payload)\n    case Event.Disconnect:\n        cleanup()\n    default:\n        log.warn(\"ignored event\")\n    }\n}\n",
+      "expected": {
+        "accept": true,
+        "declarations": 5
+      },
+      "origin": "pkg/parser/parser_test.go#TestParseSampleFile"
+    },
+    {
+      "name": "TestGenerateLLVMYield",
+      "group": "synchronization",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "func spin() {\n    yield()\n}\n",
+      "expected": {
+        "historical_ir_contains": [
+          "pause"
+        ],
+        "requires_runtime_test_before_activation": true
+      },
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMYield"
+    },
+    {
+      "name": "TestGenerateLLVMChannel",
+      "group": "channels",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "func test_channel() {\n    let ch = Channel.new(16)\n    let ok = ch.send(99 as u32)\n    let res = ch.recv()\n}\n",
+      "expected": {
+        "historical_ir_contains": [
+          "load atomic",
+          "store atomic",
+          "%struct.Channel"
+        ],
+        "requires_runtime_test_before_activation": true
+      },
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMChannel"
+    },
+    {
+      "name": "TestGenerateLLVMComptimeAndConstants",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "const BUFFER_CAP = comptime 1024 * 8\n\nfunc get_capacity() usize {\n    return BUFFER_CAP\n}\n",
+      "expected": {
+        "constant_value": 8192
+      },
+      "origin": "pkg/backend/llvm/concurrency_test.go#TestGenerateLLVMComptimeAndConstants"
+    },
+    {
+      "name": "TestGenerateLLVMScopedArena",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "struct Packet {\n    id: u32,\n    size: u32\n}\n\nfunc handle_packet() u32 {\n    arena temp(4096)\n    let p = temp.alloc(Packet)\n    return 0\n}\n",
+      "expected": {
+        "accept": true,
+        "rule": "typed scoped arena allocation, initialization and release",
+        "historical_ir_contains": [
+          "%struct.Arena = type { ptr, i64, i64 }",
+          "alloca [4096 x i8]",
+          "alloca %struct.Arena",
+          "getelementptr inbounds i8, ptr",
+          "store i64 0, ptr"
+        ]
+      },
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMScopedArena"
+    },
+    {
+      "name": "TestGenerateLLVMAtomics",
+      "group": "synchronization",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "func test_atomics() {\n    unsafe {\n        let addr: usize = 0x1000\n        let ptr = addr as *u64\n        atomic_store(ptr, 1 as u64)\n        let v = atomic_load(ptr)\n        let ok = atomic_cas(ptr, 1 as u64, 2 as u64)\n    }\n}\n",
+      "expected": {
+        "historical_ir_contains": [
+          "store atomic i64",
+          "load atomic i64",
+          "cmpxchg ptr",
+          "seq_cst"
+        ],
+        "requires_runtime_test_before_activation": true
+      },
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMAtomics"
+    },
+    {
+      "name": "comptime-layout-size_of(u32)",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "struct Packet { id: u32, data: u64 }\nconst RESULT = size_of(u32);\n",
+      "expected": {
+        "constant_value": 4
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf"
+    },
+    {
+      "name": "comptime-layout-size_of(u64)",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "struct Packet { id: u32, data: u64 }\nconst RESULT = size_of(u64);\n",
+      "expected": {
+        "constant_value": 8
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf"
+    },
+    {
+      "name": "comptime-layout-size_of(Packet)",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "struct Packet { id: u32, data: u64 }\nconst RESULT = size_of(Packet);\n",
+      "expected": {
+        "constant_value": 16
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf"
+    },
+    {
+      "name": "comptime-layout-align_of(Packet)",
+      "group": "comptime_arenas",
+      "status": "deferred",
+      "phase": "constant_evaluation",
+      "source": "struct Packet { id: u32, data: u64 }\nconst RESULT = align_of(Packet);\n",
+      "expected": {
+        "constant_value": 8
+      },
+      "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf"
+    },
+    {
+      "name": "diagnostic-snippet",
+      "group": "diagnostic_presentation",
+      "status": "deferred",
+      "phase": "diagnostic_rendering",
+      "source": "let val = 42;\nlet err = !@#;\n",
+      "expected": {
+        "render_contains": [
+          "error: unexpected token sequence",
+          "--> main.gsl:2:11",
+          "^^^",
+          "= hint: remove illegal characters"
+        ],
+        "rule": "presentation check with a supplied diagnostic; not a semantic-analysis expectation"
+      },
+      "origin": "pkg/diag/diagnostic_test.go#TestDiagnosticFormat"
+    },
+    {
+      "name": "legacy_core_imports",
+      "group": "synchronization",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "import \"core/mem\"\nimport \"core/sync\"\nimport \"core/io\"\n\nfunc main() u32 {\n    arena buf(256)\n    let p_a = buf.alloc(u8)\n    let p_b = buf.alloc(u8)\n\n    let lock_ptr = buf.alloc(u64)\n    unsafe {\n        atomic_store(lock_ptr, 0 as u64)\n    }\n    spinlock_acquire(lock_ptr)\n    yield()\n    spinlock_release(lock_ptr)\n\n    memset(p_a, 42 as u8, 1 as usize)\n    memcpy(p_b, p_a, 1 as usize)\n\n    print_raw(\"Core Library OK\\n\", 16 as u64)\n    return 0\n}\n",
+      "expected": {
+        "ir_contains": [
+          "@memcpy",
+          "@memset",
+          "@spinlock_acquire",
+          "@spinlock_release",
+          "@print_raw",
+          "@main"
+        ]
+      },
+      "origin": "cmd/gslc/main_test.go#TestCompileToLLVMCoreImports"
+    },
+    {
+      "name": "legacy_sample_lowering",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "arena memory_pool(64 * 1024)\n\nstruct Error {\n    code: u32\n}\n\nstruct Event {\n    kind: u32\n    data: u64\n}\n\nstruct UartPort {\n    base_address: usize\n}\n\nfunc uart_write_byte(port: UartPort, byte: u8) {\n    unsafe {\n        let reg = port.base_address as *u8\n        volatile_write(reg, byte)\n    }\n}\n\nfunc process_packet(raw_data: []u8) Result[u32, Error] {\n    var counter: u32 = 0\n    for b in raw_data {\n        if b == 0 {\n            break\n        }\n        counter += 1\n    }\n    return Result.Ok(counter)\n}\n\nfunc handle_data(data: u64) {\n}\n\nfunc cleanup() {\n}\n\nfunc process_event(event: Event) {\n    switch event.kind {\n    case 1:\n        handle_data(event.data)\n    case 2:\n        cleanup()\n    default:\n        log.warn(\"ignored event\")\n    }\n}\n\nfunc handle_temporary_event(event: Event) {\n    arena frame_arena(4096)\n    let temp_event = frame_arena.alloc(Event)\n    process_event(event)\n}\n",
+      "expected": {
+        "ir_contains": [
+          "target triple = \"x86_64-unknown-linux-gnu\"",
+          "define void @uart_write_byte",
+          "define { i64, [4 x i8] } @process_packet",
+          "define void @process_event"
+        ]
+      },
+      "origin": "cmd/gslc/main_test.go#TestCompileToLLVME2E"
+    },
+    {
+      "name": "unsigned_compound_division",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high /= 2; if high == 0x40000000 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "udiv i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
+    },
+    {
+      "name": "unsigned_compound_remainder",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high %= 3; if high == 2 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "urem i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
+    },
+    {
+      "name": "unsigned_compound_shift",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high >>= 1; if high == 0x40000000 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "lshr i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
+    },
+    {
+      "name": "branch_complete_maximum",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "func max(a: u32, b: u32) u32 { if a > b { return a } else { return b } }",
+      "expected": {
+        "accept": true,
+        "rule": "Both branches return; no trailing return required."
+      },
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMControlFlow"
+    },
+    {
+      "name": "branch_complete_check",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lowering",
+      "source": "func check(val: u32) u32 { if val == 0 { return 1 } else { return 2 } }",
+      "expected": {
+        "accept": true,
+        "rule": "Both branches return; no trailing return required."
+      },
+      "origin": "pkg/ir/builder_test.go#TestBuildIfElseBranches"
+    }
+  ],
+  "limitations": [
+    "This inventories test functions, not every assertion or all untested Go behavior.",
+    "Deferred examples retain historical phase expectations, not a promise of current GSL support.",
+    "Mixed tests still need assertion-level comparison before removal; mapped evidence alone does not authorize wholesale deletion."
+  ],
+  "next_removal_order": [
+    "cmd/gslc CLI and integration wrappers, after checking current CLI/import coverage and preserving match fixtures",
+    "LLVM/IR tests and implementation, after extracting deferred atomic/channel/comptime expectations and reviewing mixed cases",
+    "Frontend/sema/type/comptime packages and go.mod, after all retained contracts have a recorded disposition"
+  ],
+  "historical_layout_queries": [
+    {
+      "origin": "pkg/types/types_test.go#TestAlgebraicTypes",
+      "group": "tagged_values",
+      "status": "deferred",
+      "target": "x86_64",
+      "queries": {
+        "size_of(Result[u32,u64])": 16,
+        "size_of(Option[u32])": 16
+      },
+      "note": "Reconcile representation with executable ABI tests before activation."
+    }
+  ],
+  "retired_modules": [
+    {
+      "path": "cmd/gslc",
+      "tests": 8,
+      "replacement": "scripts/gsl.py and the GSL compiler; see per-test retirement assertions",
+      "untested_interfaces": "Go tokenize/parse/emit-ir debug dumps and the hardcoded Go version string are not current CLI compatibility requirements. Rich diagnostic presentation is deferred. Direct GSL emission and current runner build/help remain available."
+    },
+    {
+      "path": "pkg/backend/llvm",
+      "tests": 16,
+      "lines": 1309,
+      "replacement": "GSL compiler and current acceptance; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/ir",
+      "tests": 3,
+      "lines": 1878,
+      "replacement": "GSL compiler and current acceptance; see per-test retirement assertions"
+    }
+  ]
+}

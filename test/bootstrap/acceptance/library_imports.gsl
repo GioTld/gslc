@@ -1,0 +1,25 @@
+import "core/mem"
+import "core/io"
+import "std/fs"
+import "std/io"
+import "std/process"
+
+func main() u32 {
+    var source: [4]u8
+    var destination: [4]u8
+    let input = &source[0 as usize]
+    let output = &destination[0 as usize]
+    memset(input, 42 as u8, 4 as usize)
+    memcpy(output, input, 4 as usize)
+    if destination[0 as usize] != 42 as u8 || destination[3 as usize] != 42 as u8 { return 1 }
+    let fd = open("/dev/null", O_WRONLY, 0 as u64)
+    if fd < 0 { return 2 }
+    let count = write_string(fd as u64, "library imports")
+    let closed = close(fd as u64)
+    if count != 15 || closed != 0 { return 3 }
+    if close(-1 as u64) >= 0 { return 4 }
+    print_raw("core ", 5 as u64)
+    println("std")
+    exit(0)
+    return 5
+}

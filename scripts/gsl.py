@@ -12,6 +12,8 @@ import subprocess
 import sys
 import seed
 from output_checks import check_output
+from mutation_checks import check_mutations
+from semantic_checks import check_semantics
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {"hosted": "x86_64-unknown-linux-gnu", "kernel": "x86_64-unknown-none-elf"}
@@ -63,7 +65,7 @@ class Runner:
             raise seed.SeedError(f"command failed: {args[0]}: {error}") from error
         self.commands.append({"args": args, "status": result.returncode, "stdout_hex": result.stdout.hex(), "stderr_hex": result.stderr.hex()})
         self.save()
-        require(result.returncode == status, f"expected status {status}: {args}: got {result.returncode}\n{result.stdout!r}\n{result.stderr!r}")
+        require(status is None or result.returncode == status, f"expected status {status}: {args}: got {result.returncode}\n{result.stdout!r}\n{result.stderr!r}")
         return result
 
     def passed(self, name):
@@ -188,6 +190,8 @@ class Runner:
             for optimization in ["-O0", "-O2"]:
                 name = case["name"] + optimization
                 binary = self.build(source, name, "hosted", optimization)
+                for instruction in case.get("ir_contains", []):
+                    require(instruction in binary.with_suffix(".ll").read_text(), f"missing LLVM instruction: {instruction}")
                 if "definitions" in case:
                     text = binary.with_suffix(".ll").read_text()
                     previous = -1
@@ -266,6 +270,8 @@ class Runner:
             require(result.stdout == case["stdout"].encode() and not result.stderr, f"QEMU output mismatch: {case['name']}")
             self.passed(case["name"])
         check_output(self)
+        check_mutations(self)
+        check_semantics(self)
         self.report["acceptance"] = "passed"
         self.save()
 

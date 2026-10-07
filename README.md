@@ -64,7 +64,7 @@ python3 scripts/gsl.py test --compiler /tmp/gsl-initial/compiler \
   --output /tmp/gsl-acceptance
 ```
 
-`test` reconstruye el compilador, compara el IR y los ejecutables de generaciones sucesivas, ejecuta fixtures y arranca las pruebas freestanding en QEMU. El compilador reconstruido queda en `/tmp/gsl-acceptance/candidate-b`.
+`test` reconstruye el compilador, compara el IR y los ejecutables de generaciones sucesivas, ejecuta fixtures y arranca las pruebas freestanding en QEMU. También altera entradas de forma reproducible: exige terminación en cinco segundos, diagnósticos válidos y conservación de la salida en los rechazos; LLVM comprueba el IR aceptado. Los casos generados se conservan en el directorio de resultados. Una referencia aritmética independiente en Python comprueba los resultados completos de programas enteros a `-O0` y `-O2`, incluidos casts y valores extremos; los traps y el orden de evaluación se verifican por separado. El compilador reconstruido queda en `/tmp/gsl-acceptance/candidate-b`.
 
 CI usa Ubuntu 24.04 y Clang/LLD 18.1.3 mediante [scripts/ci.sh](scripts/ci.sh). Para seleccionar esas versiones localmente, añade `--clang clang-18 --linker ld.lld-18 --llvm-version 18.1.3`. Las pruebas de errores de E/S requieren permitir `ptrace` sobre procesos hijos.
 
@@ -74,4 +74,4 @@ El compilador GSL admite funciones, enteros de 8–64 bits, booleanos, strings t
 
 Siguen pendientes `match`, `Option`/`Result`, moves, `comptime`, concurrencia, floats y otras extensiones. Hay límites explícitos de almacenamiento y anidamiento; las capacidades están en [manifest.json](test/bootstrap/manifest.json). Los errores de compilación o escritura conservan la salida LLVM anterior. El destino debe ser un archivo regular o una ruta nueva.
 
-La implementación activa está en [lib/compiler](lib/compiler/). `cmd/gslc` y `pkg` conservan temporalmente la implementación Go y pruebas cuya cobertura aún se está trasladando a GSL.
+La implementación activa está en [lib/compiler](lib/compiler/). `pkg` conserva temporalmente módulos Go y pruebas pendientes de retirar. La antigua CLI, el backend LLVM y el IR de Go ya fueron eliminados; usa `scripts/gsl.py`. Los [contratos pospuestos](test/deferred/go_contracts.json) conservan ejemplos históricos con resultados esperados; son especificaciones inactivas, no capacidades ni pruebas aprobadas del compilador actual.

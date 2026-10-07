@@ -56,6 +56,33 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(status, 1)
                 self.assertFalse(output.exists())
 
+    def test_build_cli_forwards_source_output_and_native_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, boot, script, obj = [root / name for name in ("input.gsl", "boot.S", "link.ld", "extra.o")]
+            for path in (source, boot, script, obj):
+                path.touch()
+            for target in ("hosted", "kernel"):
+                output = root / target
+                options = [] if target == "hosted" else [
+                    "--target", "kernel", "--boot", str(boot), "--linker-script", str(script),
+                    "--object", str(obj), "--entry", "kernel_entry"]
+                with self.subTest(target=target), patch.object(gsl, "Runner") as runner, contextlib.redirect_stdout(io.StringIO()):
+                    status = gsl.main(["build", str(source), "--output", str(output), *options])
+                    self.assertEqual(status, 0)
+                    args = runner.call_args.args[0]
+                    self.assertEqual(args.output, output)
+                    runner.return_value.build.assert_called_once_with(
+                        source, "program", target, object_only=False,
+                        boot_source=boot if options else None,
+                        linker_script=script if options else None,
+                        objects=[obj] if options else [], entry="kernel_entry" if options else "_start")
+        with patch.object(gsl, "Runner") as runner, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                gsl.main(["build", "input.gsl"])
+            self.assertEqual(error.exception.code, 2)
+            runner.assert_not_called()
+
     def test_missing_seed_does_not_require_tools_or_start_go(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"

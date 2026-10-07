@@ -531,6 +531,25 @@
       "name": "parser_exhaustion",
       "fixture": "test/bootstrap/acceptance/parser_exhaustion.gsl",
       "exit": 0
+    },
+    {
+      "name": "library_imports",
+      "fixture": "test/bootstrap/acceptance/library_imports.gsl",
+      "exit": 0,
+      "stdout_hex": "636f7265207374640a"
+    },
+    {
+      "name": "backend_contracts",
+      "fixture": "test/bootstrap/acceptance/backend_contracts.gsl",
+      "exit": 0,
+      "ir_contains": [
+        "target triple = \"x86_64-unknown-linux-gnu\"",
+        "define i32 @add(i32",
+        "store volatile i8",
+        "inttoptr",
+        "icmp ugt i32",
+        "br i1"
+      ]
     }
   ],
   "objects": [
@@ -2064,6 +2083,10 @@
     {
       "name": "remainder_overflow_isize",
       "source": "func main() u32 { let value: isize = (9223372036854775808 as isize); let operand: isize = -1; return (value % operand) as u32; }"
+    },
+    {
+      "name": "arena_dynamic_exhaustion",
+      "source": "func main() u32 { arena a(16); var count: usize = 12; let first = a.alloc(count); let second = a.alloc(8 as usize); return 0 }"
     }
   ],
   "kernels": [

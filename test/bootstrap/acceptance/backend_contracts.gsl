@@ -1,0 +1,31 @@
+func add(a: u32, b: u32) u32 { return a + b }
+func maximum(a: u32, b: u32) u32 {
+    if a > b { return a } else { return b }
+    return 0
+}
+func classify(value: u32) u32 {
+    if value == 0 { return 1 } else { return 2 }
+    return 0
+}
+func write_byte(address: usize, value: u8) {
+    unsafe { volatile_write(address as *u8, value) }
+}
+func main() u32 {
+    if add(20, 22) != 42 { return 1 }
+    if maximum(0x80000000, 1) != 0x80000000 { return 2 }
+    if maximum(1, 0x80000000) != 0x80000000 { return 3 }
+    if classify(0) != 1 || classify(1) != 2 { return 4 }
+    var byte: u8
+    write_byte((&byte) as usize, 65 as u8)
+    if byte != 65 as u8 { return 5 }
+    arena storage(16)
+    var count: usize = 8
+    let first = storage.alloc(count)
+    let second = storage.alloc(count)
+    unsafe {
+        volatile_write(first, 11 as u8)
+        volatile_write(second, 22 as u8)
+        if volatile_read(first) != 11 as u8 || volatile_read(second) != 22 as u8 { return 6 }
+    }
+    return 0
+}
