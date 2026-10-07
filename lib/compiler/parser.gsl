@@ -715,7 +715,7 @@ func parse_stmt(p: *Parser) u32 {
     }
 
     let expr_idx = parse_expr(p, PREC_NONE)
-    if p.cur.kind == TOKEN_ASSIGN || p.cur.kind == TOKEN_PLUS_ASSIGN || p.cur.kind == TOKEN_MINUS_ASSIGN {
+    if p.cur.kind == TOKEN_ASSIGN || p.cur.kind == TOKEN_PLUS_ASSIGN || p.cur.kind == TOKEN_MINUS_ASSIGN || p.cur.kind == TOKEN_DIV_ASSIGN || p.cur.kind == TOKEN_REM_ASSIGN || p.cur.kind == TOKEN_SHR_ASSIGN {
         let op = p.cur.kind
         parser_advance(p)
         let value_idx = parse_expr(p, PREC_NONE)

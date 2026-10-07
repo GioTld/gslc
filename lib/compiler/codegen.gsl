@@ -683,12 +683,17 @@ func codegen_emit_assign(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx
     var value = right
     if stmt.assign.op != TOKEN_ASSIGN {
         let previous = codegen_emit_load(p, output, ctx, type_id, address)
+        var op = TOKEN_PLUS
+        if stmt.assign.op == TOKEN_MINUS_ASSIGN { op = TOKEN_MINUS }
+        if stmt.assign.op == TOKEN_DIV_ASSIGN { op = TOKEN_SLASH }
+        if stmt.assign.op == TOKEN_REM_ASSIGN { op = TOKEN_PERCENT }
+        if stmt.assign.op == TOKEN_SHR_ASSIGN { op = TOKEN_SHIFT_RIGHT }
         ctx.next_reg += 1
         value = ctx.next_reg
+        codegen_partial_guard(p, output, value, op, type_id, is_signed, previous, right)
         compiler_output_string(output, "  ")
         codegen_write_reg(output, value)
-        if stmt.assign.op == TOKEN_PLUS_ASSIGN { compiler_output_string(output, " = add ") }
-        if stmt.assign.op == TOKEN_MINUS_ASSIGN { compiler_output_string(output, " = sub ") }
+        compiler_output_string(output, codegen_binary_opcode(op, is_signed))
         codegen_write_type(p, output, type_id)
         compiler_output_string(output, " ")
         codegen_write_reg(output, previous)
@@ -799,7 +804,10 @@ func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *Com
             return true
         }
         if stmt.kind == STMT_IF {
-            codegen_emit_if(p, stmt_idx, output, ctx)
+            if codegen_emit_if(p, stmt_idx, output, ctx) {
+                ctx.local_count = saved_local_count
+                return true
+            }
         } else if stmt.kind == STMT_ARENA {
             codegen_emit_arena(p, stmt_idx, output, ctx)
         } else if stmt.kind == STMT_WHILE {
@@ -833,7 +841,7 @@ func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *Com
     return false
 }
 
-func codegen_emit_if(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) {
+func codegen_emit_if(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) bool {
     let stmt = parser_stmt(p, stmt_idx)
     let condition = codegen_emit_expr(p, stmt.block.condition_idx, output, ctx, 1, false)
     ctx.next_label += 1
@@ -863,8 +871,10 @@ func codegen_emit_if(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *C
         codegen_write_label(output, "if_merge_", label)
         compiler_output_string(output, "\n")
     }
+    if then_returns && else_returns { return true }
     codegen_write_label(output, "if_merge_", label)
     compiler_output_string(output, ":\n")
+    return false
 }
 
 func codegen_emit_while(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) {

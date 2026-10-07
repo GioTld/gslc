@@ -1,0 +1,12 @@
+/* import "does/not/exist" */
+func main() u32 {
+    let value = 20 /* nested /* inner */ comment */ + 22
+    let next = value /* newline must end this binding
+    */
+    if next != 42 { return 1 }
+    let continued = 20 + /* newline after operator must not end the expression
+    */ 22
+    if continued != 42 { return 2 }
+    return 0 /* ending a statement at EOF is handled normally */
+}
+/* comment at end of file */

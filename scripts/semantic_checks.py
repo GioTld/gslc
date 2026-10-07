@@ -57,16 +57,20 @@ def integer_program(type_name, bits, signed):
     functions, calls, results, cases, traps = [], [], [], [], []
     values = sorted({integer(x, bits, signed) for x in
                      [0, 1, 2, 2 ** (bits - 1) - 1, 2 ** (bits - 1), 2 ** bits - 1]})
-    for index, op in enumerate(OPERATORS):
+    for index, operation in enumerate([*OPERATORS, "/=", "%=", ">>="]):
+        compound = operation in ["/=", "%=", ">>="]
+        op = operation[:-1] if compound else operation
         boolean = op in ["==", "!=", "<", "<=", ">", ">="]
         body = f"if a {op} b {{ return 1; }} return 0;" if boolean else f"return (a {op} b) as u64;"
+        if compound:
+            body = f"var value = a; value {operation} b; return value as u64;"
         function = f"func op{index}(a: {type_name}, b: {type_name}) u64 {{ {body} }}\n"
         functions.append(function)
         right_values = [-1, 0, 1, bits - 1, bits] if op in ["<<", ">>"] and signed else ([0, 1, bits - 1, bits] if op in ["<<", ">>"] else values)
         trapped = set()
         for a, b in itertools.product(values, right_values):
             call = f"emit(op{index}({literal(a, type_name, bits)}, {literal(b, type_name, bits)}));"
-            case = {"type": type_name, "operation": op, "left": a, "right": b}
+            case = {"type": type_name, "operation": operation, "left": a, "right": b}
             try:
                 value = evaluate(op, a, b, bits, signed)
             except ArithmeticTrap:

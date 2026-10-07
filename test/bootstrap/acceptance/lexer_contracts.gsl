@@ -86,6 +86,27 @@ func main() u32 {
     if !next_is(&lex, TOKEN_INT, "3") { return 6 }
     if lexer_next_kind(&lex) != TOKEN_SEMICOLON { return 7 }
     if lexer_next_kind(&lex) != TOKEN_EOF { return 8 }
+    lexer_init(&lex, "/* outer /* nested */ end */\nlet value = 1/*\n*/let other = 2")
+    let start = lexer_next(&lex)
+    if start.kind != TOKEN_LET || start.line != 2 || start.col != 1 { return 9 }
+    if !next_is(&lex, TOKEN_IDENT, "value") { return 10 }
+    if lexer_next_kind(&lex) != TOKEN_ASSIGN { return 11 }
+    if !next_is(&lex, TOKEN_INT, "1") { return 12 }
+    let separator = lexer_next(&lex)
+    if separator.kind != TOKEN_SEMICOLON || separator.line != 2 { return 13 }
+    let after = lexer_next(&lex)
+    if after.kind != TOKEN_LET || after.line != 3 || after.col != 3 { return 14 }
+    lexer_init(&lex, "/* unclosed /* inner */")
+    let invalid = lexer_next(&lex)
+    if invalid.kind != TOKEN_ILLEGAL || invalid.offset != 0 as usize { return 15 }
+    if lexer_next_kind(&lex) != TOKEN_EOF { return 16 }
+    lexer_init(&lex, "/= %= >>= >> >= /")
+    if !next_is(&lex, TOKEN_DIV_ASSIGN, "/=") { return 17 }
+    if !next_is(&lex, TOKEN_REM_ASSIGN, "%=") { return 18 }
+    if !next_is(&lex, TOKEN_SHR_ASSIGN, ">>=") { return 19 }
+    if !next_is(&lex, TOKEN_SHIFT_RIGHT, ">>") { return 20 }
+    if !next_is(&lex, TOKEN_GE, ">=") { return 21 }
+    if !next_is(&lex, TOKEN_SLASH, "/") { return 22 }
     return 0
 }
 func lexer_next_kind(lex: *Lexer) u32 { let token = lexer_next(lex); return token.kind }

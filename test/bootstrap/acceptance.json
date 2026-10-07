@@ -560,6 +560,45 @@
       "name": "frontend_contracts",
       "fixture": "test/bootstrap/acceptance/frontend_contracts.gsl",
       "exit": 0
+    },
+    {
+      "name": "return_paths",
+      "fixture": "test/bootstrap/acceptance/return_paths.gsl",
+      "exit": 0
+    },
+    {
+      "name": "compound_effects",
+      "fixture": "test/bootstrap/acceptance/compound_effects.gsl",
+      "exit": 0
+    },
+    {
+      "name": "block_comments",
+      "fixture": "test/bootstrap/acceptance/block_comments.gsl",
+      "exit": 0
+    },
+    {
+      "name": "unsigned_compound_division",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high /= 2; if high == 0x40000000 { return 0 }; return 1 }",
+      "exit": 0,
+      "ir_contains": [
+        "udiv i32"
+      ]
+    },
+    {
+      "name": "unsigned_compound_remainder",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high %= 3; if high == 2 { return 0 }; return 1 }",
+      "exit": 0,
+      "ir_contains": [
+        "urem i32"
+      ]
+    },
+    {
+      "name": "unsigned_compound_shift",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high >>= 1; if high == 0x40000000 { return 0 }; return 1 }",
+      "exit": 0,
+      "ir_contains": [
+        "lshr i32"
+      ]
     }
   ],
   "objects": [
@@ -1687,6 +1726,69 @@
       "status": 1,
       "code": "E3000",
       "check_code": true
+    },
+    {
+      "name": "return_missing_else",
+      "source": "func main(flag: bool) u32 { if flag { return 1 } }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": true
+    },
+    {
+      "name": "return_loop_only",
+      "source": "func main() u32 { while true { return 1 } }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": true
+    },
+    {
+      "name": "return_partial_nested",
+      "source": "func main(a: bool, b: bool) u32 { if a { if b { return 1 } } else { return 2 } }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": true
+    },
+    {
+      "name": "comment_unclosed",
+      "source": "func main() u32 { return 0 } /* unclosed",
+      "status": 1,
+      "code": "E3000",
+      "check_code": true
+    },
+    {
+      "name": "comment_nested_unclosed",
+      "source": "/* outer /* inner */ func main() u32 { return 0 }",
+      "status": 1,
+      "code": "E3000",
+      "check_code": true
+    },
+    {
+      "name": "compound_immutable",
+      "source": "func main() { let x: u32 = 8; x /= 2 }",
+      "status": 2,
+      "code": "E2003",
+      "check_code": true
+    },
+    {
+      "name": "compound_bool",
+      "source": "func main() { var x: bool = true; x >>= false }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "compound_mixed_width",
+      "source": "func main() { var x: u32 = 8; let y: u64 = 2; x %= y }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "compound_pointer_unsafe",
+      "source": "func main() { var x: u32 = 8; *(&x) /= 2 }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true
     }
   ],
   "capacities": [
@@ -2118,6 +2220,10 @@
     {
       "name": "arena_dynamic_exhaustion",
       "source": "func main() u32 { arena a(16); var count: usize = 12; let first = a.alloc(count); let second = a.alloc(8 as usize); return 0 }"
+    },
+    {
+      "name": "compound_bounds_before_rhs",
+      "source": "func rhs() u32 { unsafe { syscall_write(1 as u64, \"bad\", 3 as u64) } return 1 } func main() u32 { var items: [1]u32; items[1] /= rhs(); return 0 }"
     }
   ],
   "kernels": [

@@ -1,0 +1,19 @@
+func choose(a: u32, b: u32) u32 {
+    if a > b { return a } else { return b }
+}
+func nested(value: u32) u32 {
+    if value == 0 { unsafe { return 10 } } else if value == 1 { return 20 } else { if value == 2 { return 30 } else { return 40 } }
+}
+func loop_exit() u32 {
+    var value: u32 = 0
+    while value < 5 {
+        if value == 3 { break } else { value += 1; continue }
+    }
+    return value
+}
+func main() u32 {
+    if choose(7, 2) != 7 || choose(2, 7) != 7 { return 1 }
+    if nested(0) != 10 || nested(1) != 20 || nested(2) != 30 || nested(3) != 40 { return 2 }
+    if loop_exit() != 3 { return 3 }
+    if true { return 0 } else { return 4 }
+}

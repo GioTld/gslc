@@ -1,7 +1,7 @@
 {
   "format": 1,
   "purpose": "M13A migration decisions and inactive historical contracts; not GSL conformance results.",
-  "execution": "These cases are not run by primary acceptance and must never count as passed or silently skipped tests.",
+  "execution": "Entries in deferred_cases are inactive and must never count as passed or silently skipped tests. Activated entries link to executable coverage; this historical inventory is not itself a test runner.",
   "classification_policy": "Current-subset behavior is needed now; unsupported capabilities are deferred, not discarded. No language contract is deliberately dropped in this inventory.",
   "groups": {
     "current_subset": {
@@ -211,7 +211,8 @@
         "assertions": [
           "backend_contracts checks icmp ugt and br i1, and executes both branches with high-bit unsigned operands; label spelling is internal.",
           "The original function with only returning branches is preserved as branch_complete_maximum. GSL currently requires a trailing return; backend_contracts uses that supported form. Return-path completeness is deferred, not claimed as parity."
-        ]
+        ],
+        "follow_up": "Compound /=, %=, >>=, complete conditional returns and block comments are implemented by the GSL follow-up; see activated_cases for the applicable original cases. Other historical deferrals remain unchanged."
       }
     },
     {
@@ -371,7 +372,8 @@
         "status": "accounted_for",
         "assertions": [
           "scripts/semantic_checks.py checks unsigned division/remainder/right shift, all four unsigned comparisons, signed comparison, signed/unsigned widening and u64 high-bit division at -O0/-O2. The three compound assignments /=, %= and >>= are absent from GSL; unsigned_compound_division/remainder/shift retain exact source, zero exit and historical opcode expectations as deferred cases."
-        ]
+        ],
+        "follow_up": "Compound /=, %=, >>=, complete conditional returns and block comments are implemented by the GSL follow-up; see activated_cases for the applicable original cases. Other historical deferrals remain unchanged."
       }
     },
     {
@@ -493,7 +495,8 @@
         "assertions": [
           "backend_contracts executes both zero/nonzero branches; block labels and Go IR string spelling are internal.",
           "The original function with only returning branches is preserved as branch_complete_check. GSL currently requires a trailing return; backend_contracts uses that supported form. Return-path completeness is deferred, not claimed as parity."
-        ]
+        ],
+        "follow_up": "Compound /=, %=, >>=, complete conditional returns and block comments are implemented by the GSL follow-up; see activated_cases for the applicable original cases. Other historical deferrals remain unchanged."
       }
     },
     {
@@ -556,7 +559,8 @@
         "status": "accounted_for",
         "assertions": [
           "lexer_contracts checks line comments. Block/nested comments are absent in GSL and retained as block_comments."
-        ]
+        ],
+        "follow_up": "Compound /=, %=, >>=, complete conditional returns and block comments are implemented by the GSL follow-up; see activated_cases for the applicable original cases. Other historical deferrals remain unchanged."
       }
     },
     {
@@ -1904,72 +1908,6 @@
       "origin": "cmd/gslc/main_test.go#TestCompileToLLVME2E"
     },
     {
-      "name": "unsigned_compound_division",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "execution",
-      "source": "func main() u32 { var high: u32 = 0x80000000; high /= 2; if high == 0x40000000 { return 0 }; return 1 }",
-      "expected": {
-        "exit": 0,
-        "historical_ir_contains": [
-          "udiv i32"
-        ]
-      },
-      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
-    },
-    {
-      "name": "unsigned_compound_remainder",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "execution",
-      "source": "func main() u32 { var high: u32 = 0x80000000; high %= 3; if high == 2 { return 0 }; return 1 }",
-      "expected": {
-        "exit": 0,
-        "historical_ir_contains": [
-          "urem i32"
-        ]
-      },
-      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
-    },
-    {
-      "name": "unsigned_compound_shift",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "execution",
-      "source": "func main() u32 { var high: u32 = 0x80000000; high >>= 1; if high == 0x40000000 { return 0 }; return 1 }",
-      "expected": {
-        "exit": 0,
-        "historical_ir_contains": [
-          "lshr i32"
-        ]
-      },
-      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution"
-    },
-    {
-      "name": "branch_complete_maximum",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "lowering",
-      "source": "func max(a: u32, b: u32) u32 { if a > b { return a } else { return b } }",
-      "expected": {
-        "accept": true,
-        "rule": "Both branches return; no trailing return required."
-      },
-      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMControlFlow"
-    },
-    {
-      "name": "branch_complete_check",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "lowering",
-      "source": "func check(val: u32) u32 { if val == 0 { return 1 } else { return 2 } }",
-      "expected": {
-        "accept": true,
-        "rule": "Both branches return; no trailing return required."
-      },
-      "origin": "pkg/ir/builder_test.go#TestBuildIfElseBranches"
-    },
-    {
       "name": "TestSemaSampleFile",
       "group": "extended_frontend",
       "status": "deferred",
@@ -2001,30 +1939,6 @@
         "accept": true
       },
       "origin": "pkg/sema/comptime_test.go#TestConstDeclarationAndUsage"
-    },
-    {
-      "name": "block_comments",
-      "group": "extended_frontend",
-      "status": "deferred",
-      "phase": "lexing",
-      "source": "/* block */ let a = 1\n/* outer /* nested */ still outer */ let b = 2\n",
-      "expected": {
-        "tokens": [
-          "let",
-          "a",
-          "=",
-          "1",
-          "semicolon",
-          "let",
-          "b",
-          "=",
-          "2",
-          "semicolon",
-          "eof"
-        ],
-        "diagnostics": []
-      },
-      "origin": "pkg/lexer/lexer_test.go#TestLexerComments"
     },
     {
       "name": "span_merge",
@@ -2188,5 +2102,103 @@
       "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
     }
   ],
-  "retirement_complete": true
+  "retirement_complete": true,
+  "activated_cases": [
+    {
+      "name": "unsigned_compound_division",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high /= 2; if high == 0x40000000 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "udiv i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution",
+      "evidence": "unsigned_compound_division"
+    },
+    {
+      "name": "unsigned_compound_remainder",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high %= 3; if high == 2 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "urem i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution",
+      "evidence": "unsigned_compound_remainder"
+    },
+    {
+      "name": "unsigned_compound_shift",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "execution",
+      "source": "func main() u32 { var high: u32 = 0x80000000; high >>= 1; if high == 0x40000000 { return 0 }; return 1 }",
+      "expected": {
+        "exit": 0,
+        "historical_ir_contains": [
+          "lshr i32"
+        ]
+      },
+      "origin": "pkg/backend/llvm/signedness_test.go#TestIntegerSignednessExecution",
+      "evidence": "unsigned_compound_shift"
+    },
+    {
+      "name": "branch_complete_maximum",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "lowering",
+      "source": "func max(a: u32, b: u32) u32 { if a > b { return a } else { return b } }",
+      "expected": {
+        "accept": true,
+        "rule": "Both branches return; no trailing return required."
+      },
+      "origin": "pkg/backend/llvm/codegen_test.go#TestGenerateLLVMControlFlow",
+      "evidence": "return_paths"
+    },
+    {
+      "name": "branch_complete_check",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "lowering",
+      "source": "func check(val: u32) u32 { if val == 0 { return 1 } else { return 2 } }",
+      "expected": {
+        "accept": true,
+        "rule": "Both branches return; no trailing return required."
+      },
+      "origin": "pkg/ir/builder_test.go#TestBuildIfElseBranches",
+      "evidence": "return_paths"
+    },
+    {
+      "name": "block_comments",
+      "group": "extended_frontend",
+      "status": "implemented",
+      "phase": "lexing",
+      "source": "/* block */ let a = 1\n/* outer /* nested */ still outer */ let b = 2\n",
+      "expected": {
+        "tokens": [
+          "let",
+          "a",
+          "=",
+          "1",
+          "semicolon",
+          "let",
+          "b",
+          "=",
+          "2",
+          "semicolon",
+          "eof"
+        ],
+        "diagnostics": []
+      },
+      "origin": "pkg/lexer/lexer_test.go#TestLexerComments",
+      "evidence": "lexer_contracts and block_comments"
+    }
+  ]
 }

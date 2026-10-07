@@ -70,8 +70,8 @@ CI usa Ubuntu 24.04 y Clang/LLD 18.1.3 mediante [scripts/ci.sh](scripts/ci.sh). 
 
 ## Estado del lenguaje
 
-El compilador GSL admite funciones, enteros de 8–64 bits, booleanos, strings terminados en NUL, variables, condicionales, bucles, structs normales y packed, punteros, arrays acotados, arenas, globals, secciones e intrínsecos de hardware. Los [casos de aceptación](test/bootstrap/acceptance.json) muestran el comportamiento verificado.
+El compilador GSL admite funciones, enteros de 8–64 bits, booleanos, strings terminados en NUL, variables, condicionales, bucles, structs normales y packed, punteros, arrays acotados, arenas, globals, secciones e intrínsecos de hardware. También admite comentarios de bloque anidados, retornos completos mediante `if/else` y asignaciones `/=`, `%=` y `>>=`. Los [casos de aceptación](test/bootstrap/acceptance.json) muestran el comportamiento verificado.
 
-Siguen pendientes `match`, `Option`/`Result`, moves, `comptime`, concurrencia, floats y otras extensiones. Hay límites explícitos de almacenamiento y anidamiento; las capacidades están en [manifest.json](test/bootstrap/manifest.json). Los errores de compilación o escritura conservan la salida LLVM anterior. El destino debe ser un archivo regular o una ruta nueva.
+Arenas y move semantics forman parte del diseño de memoria; las reglas de ownership y escapes todavía no están completas en GSL. Siguen pendientes `match`, `Option`/`Result`, moves, `comptime`, concurrencia, floats y otras extensiones. Hay límites explícitos de almacenamiento y anidamiento; las capacidades están en [manifest.json](test/bootstrap/manifest.json). Los errores de compilación o escritura conservan la salida LLVM anterior. El destino debe ser un archivo regular o una ruta nueva.
 
 La implementación activa está en [lib/compiler](lib/compiler/). La implementación Go fue retirada por completo; usa `scripts/gsl.py`. Los [contratos pospuestos](test/deferred/go_contracts.json) conservan ejemplos históricos con resultados esperados; son especificaciones inactivas, no capacidades ni pruebas aprobadas del compilador actual.

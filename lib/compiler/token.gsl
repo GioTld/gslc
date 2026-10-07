@@ -60,6 +60,10 @@ const TOKEN_BIT_OR: u32 = 60
 const TOKEN_BIT_XOR: u32 = 61
 const TOKEN_BIT_NOT: u32 = 62
 
+const TOKEN_DIV_ASSIGN: u32 = 63
+const TOKEN_REM_ASSIGN: u32 = 64
+const TOKEN_SHR_ASSIGN: u32 = 65
+
 copy struct Token {
     kind: u32,
     offset: usize,

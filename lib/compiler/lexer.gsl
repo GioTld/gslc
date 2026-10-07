@@ -124,6 +124,41 @@ func lexer_next(lex: *Lexer) Token {
                     while lexer_peek(lex) != 0 as u8 && lexer_peek(lex) != 10 as u8 {
                         lexer_advance(lex)
                     }
+                } else if next == 42 as u8 {
+                    var comment: Token
+                    comment.kind = TOKEN_ILLEGAL
+                    comment.offset = lex.cursor
+                    comment.line = lex.line
+                    comment.col = lex.col
+                    lexer_advance(lex)
+                    lexer_advance(lex)
+                    var depth: u32 = 1
+                    var newline = false
+                    var separator: Token
+                    while depth > 0 && lexer_peek(lex) != 0 as u8 {
+                        let current = lexer_peek(lex)
+                        if current == 10 as u8 && newline == false {
+                            newline = true
+                            separator.kind = TOKEN_SEMICOLON
+                            separator.offset = lex.cursor
+                            separator.len = 1 as usize
+                            separator.line = lex.line
+                            separator.col = lex.col
+                        }
+                        lexer_advance(lex)
+                        if current == 47 as u8 && lexer_peek(lex) == 42 as u8 {
+                            lexer_advance(lex)
+                            depth += 1
+                        } else if current == 42 as u8 && lexer_peek(lex) == 47 as u8 {
+                            lexer_advance(lex)
+                            depth -= 1
+                        }
+                    }
+                    if depth != 0 {
+                        comment.len = lex.cursor - comment.offset
+                        return lexer_emit(lex, comment)
+                    }
+                    if newline && lexer_can_end_statement(lex.last_kind) { return lexer_emit(lex, separator) }
                 } else {
                     break
                 }
@@ -228,8 +263,10 @@ func lexer_next(lex: *Lexer) Token {
         tok.kind = TOKEN_STAR
     } else if ch == 47 as u8 {
         tok.kind = TOKEN_SLASH
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_DIV_ASSIGN }
     } else if ch == 37 as u8 {
         tok.kind = TOKEN_PERCENT
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_REM_ASSIGN }
     } else if ch == 61 as u8 {
         tok.kind = TOKEN_ASSIGN
         if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_EQ }
@@ -275,9 +312,14 @@ func lexer_next(lex: *Lexer) Token {
     } else if ch == 46 as u8 {
         tok.kind = TOKEN_DOT
     }
-    if tok.kind == TOKEN_PLUS_ASSIGN || tok.kind == TOKEN_MINUS_ASSIGN || tok.kind == TOKEN_EQ || tok.kind == TOKEN_NE || tok.kind == TOKEN_LE || tok.kind == TOKEN_GE || tok.kind == TOKEN_SHIFT_LEFT || tok.kind == TOKEN_SHIFT_RIGHT || tok.kind == TOKEN_AND || tok.kind == TOKEN_OR {
+    if tok.kind == TOKEN_PLUS_ASSIGN || tok.kind == TOKEN_MINUS_ASSIGN || tok.kind == TOKEN_DIV_ASSIGN || tok.kind == TOKEN_REM_ASSIGN || tok.kind == TOKEN_EQ || tok.kind == TOKEN_NE || tok.kind == TOKEN_LE || tok.kind == TOKEN_GE || tok.kind == TOKEN_SHIFT_LEFT || tok.kind == TOKEN_SHIFT_RIGHT || tok.kind == TOKEN_AND || tok.kind == TOKEN_OR {
         lexer_advance(lex)
         tok.len = 2 as usize
+    }
+    if tok.kind == TOKEN_SHIFT_RIGHT && lexer_peek(lex) == 61 as u8 {
+        lexer_advance(lex)
+        tok.len = 3 as usize
+        tok.kind = TOKEN_SHR_ASSIGN
     }
     return lexer_emit(lex, tok)
 }

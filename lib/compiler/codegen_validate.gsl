@@ -2,8 +2,9 @@ import "compiler/codegen_types"
 
 func codegen_assignment_target(p: *Parser, expr_idx: u32, op: u32) bool {
     let target = parser_expr(p, expr_idx)
-    if target.kind == EXPR_UNARY { return target.unary.op == TOKEN_STAR && op == TOKEN_ASSIGN }
-    return target.kind == EXPR_IDENT || target.kind == EXPR_MEMBER || (target.kind == EXPR_INDEX && op == TOKEN_ASSIGN)
+    let scalar_update = op == TOKEN_ASSIGN || op == TOKEN_DIV_ASSIGN || op == TOKEN_REM_ASSIGN || op == TOKEN_SHR_ASSIGN
+    if target.kind == EXPR_UNARY { return target.unary.op == TOKEN_STAR && scalar_update }
+    return target.kind == EXPR_IDENT || target.kind == EXPR_MEMBER || (target.kind == EXPR_INDEX && scalar_update)
 }
 
 func codegen_preflight_control_block(p: *Parser, start: u32, count: u32, in_loop: bool) bool {
@@ -15,7 +16,7 @@ func codegen_preflight_control_block(p: *Parser, start: u32, count: u32, in_loop
             if stmt.next_idx != INVALID_INDEX { return false }
         } else if stmt.kind == STMT_ASSIGN {
             if codegen_assignment_target(p, stmt.assign.target_idx, stmt.assign.op) == false { return false }
-            if stmt.assign.op != TOKEN_ASSIGN && stmt.assign.op != TOKEN_PLUS_ASSIGN && stmt.assign.op != TOKEN_MINUS_ASSIGN { return false }
+            if stmt.assign.op != TOKEN_ASSIGN && stmt.assign.op != TOKEN_PLUS_ASSIGN && stmt.assign.op != TOKEN_MINUS_ASSIGN && stmt.assign.op != TOKEN_DIV_ASSIGN && stmt.assign.op != TOKEN_REM_ASSIGN && stmt.assign.op != TOKEN_SHR_ASSIGN { return false }
         } else if stmt.kind == STMT_LET || stmt.kind == STMT_VAR {
             if stmt.let_s.has_init == false && (stmt.kind == STMT_LET || stmt.let_s.type_len == 0 as usize) { return false }
             if stmt.let_s.type_len != 0 as usize && codegen_type(p, stmt.let_s.type_ptr, stmt.let_s.type_len) == 0 { return false }
@@ -133,13 +134,17 @@ func codegen_preflight(p: *Parser) bool {
 }
 
 func codegen_block_returns(p: *Parser, start: u32, count: u32) bool {
-    if count == 0 { return false }
     var index = start
-    var seen: u32 = 1
-    while seen < count { index = parser_stmt(p, index).next_idx; seen += 1; }
-    let stmt = parser_stmt(p, index)
-    if stmt.kind == STMT_RETURN { return true }
-    if stmt.kind == STMT_UNSAFE { return codegen_block_returns(p, stmt.block.body_start, stmt.block.body_count) }
+    var seen: u32 = 0
+    while index != INVALID_INDEX && seen < count {
+        let stmt = parser_stmt(p, index)
+        if stmt.kind == STMT_RETURN { return true }
+        if stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE { return false }
+        if stmt.kind == STMT_UNSAFE && codegen_block_returns(p, stmt.block.body_start, stmt.block.body_count) { return true }
+        if stmt.kind == STMT_IF && codegen_block_returns(p, stmt.block.body_start, stmt.block.body_count) && codegen_block_returns(p, stmt.block.else_start, stmt.block.else_count) { return true }
+        index = stmt.next_idx
+        seen += 1
+    }
     return false
 }
 
