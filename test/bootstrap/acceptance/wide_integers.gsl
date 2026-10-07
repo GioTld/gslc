@@ -1,0 +1,71 @@
+const WIDE: u64 = 4294967295
+func widen(value: u32) u64 { return value as u64; }
+func narrow(value: u64) u32 { return value as u32; }
+func unsigned_div(value: u64, divisor: u64) u64 { return value / divisor; }
+func unsigned_rem(value: u64, divisor: u64) u64 { return value % divisor; }
+func unsigned_gt(value: u64, other: u64) u32 { if value > other { return 1; } return 0; }
+func unsigned_lt(value: u64, other: u64) u32 { if value < other { return 1; } return 0; }
+func unsigned_ge(value: u64, other: u64) u32 { if value >= other { return 1; } return 0; }
+func unsigned_le(value: u64, other: u64) u32 { if value <= other { return 1; } return 0; }
+func wide_equal(value: u64, other: u64) u32 { if value == other { return 1; } return 0; }
+func wide_not_equal(value: u64, other: u64) u32 { if value != other { return 1; } return 0; }
+func wide_local(value: u64) u64 { var result = value; result += 12; result -= 1; return result; }
+func wide_assign(value: u64) u64 { var result: u64 = 0; result = value; return result; }
+func wrap_add(value: u64) u64 { return value + 1; }
+func wrap_sub(value: u64) u64 { return value - 1; }
+func wrap_mul(value: u64) u64 { return value * 2; }
+func wide_call(value: u64) u64 { return wide_local(unsigned_div(value, 2)); }
+func word_value(value: usize) usize { var result = value; result += 1; return result; }
+func wide_constant() u64 { return WIDE; }
+func narrow_arithmetic(value: u32) u64 { return (value + 1) as u64; }
+func narrow_literal_arithmetic() u64 { return (4294967295 + 1) as u64; }
+func expected_return() u64 { return 4294967295 + 1; }
+func expected_binding() u64 { let result: u64 = 4294967295 + 1; return result; }
+func expected_mutable() u64 { var result: u64 = 4294967295 + 1; return result; }
+func expected_call() u64 { return wide_local(4294967295 + 1); }
+func expected_assignment(value: u64) u64 { var result = value; result = 4294967295 + 1; return result; }
+func expected_operand(value: u64) u64 { return (4294967295 + 1) + value; }
+func constant_shadow(WIDE: u64) u64 { return WIDE; }
+func wide_scope(value: u64) u64 {
+    var result = value;
+    var count = 0;
+    while count < 2 {
+        var step = result + 1;
+        if count == 0 { var result = 12; result += 1; }
+        result = step;
+        count += 1;
+    }
+    return result;
+}
+func main() u32 {
+    let high = (1 as u64) << 63;
+    if !(widen((4294967295 as u32)) == (4294967295 as u64)) { return 1; }
+    if !(narrow(high + 11) == 11) { return 2; }
+    if !(unsigned_div(high, 2) == high / 2) { return 3; }
+    if !(unsigned_rem(high + 1, 3) == (high + 1) % 3) { return 4; }
+    if !(unsigned_gt(high, 1) == 1 && unsigned_gt(1, high) == 0) { return 5; }
+    if !(unsigned_lt(high, 1) == 0 && unsigned_lt(1, high) == 1) { return 6; }
+    if !(unsigned_ge(high, high) == 1 && unsigned_ge(1, high) == 0) { return 7; }
+    if !(unsigned_le(high, high) == 1 && unsigned_le(high, 1) == 0) { return 8; }
+    if !(wide_equal(high, high) == 1 && wide_equal(high, 0) == 0) { return 9; }
+    if !(wide_not_equal(high, 0) == 1 && wide_not_equal(high, high) == 0) { return 10; }
+    if !(wide_local(high) == high + 11) { return 11; }
+    if !(wide_assign(high) == high) { return 12; }
+    if !(wrap_add((18446744073709551615 as u64)) == 0) { return 13; }
+    if !(wrap_sub(0) == (18446744073709551615 as u64)) { return 14; }
+    if !(wrap_mul(high) == 0) { return 15; }
+    if !(wide_call(high) == high / 2 + 11) { return 16; }
+    if !((word_value(high as usize) as u64) == high + 1) { return 17; }
+    if !(wide_constant() == (4294967295 as u64)) { return 18; }
+    if !(narrow_arithmetic((4294967295 as u32)) == 0) { return 19; }
+    if !(narrow_literal_arithmetic() == 0) { return 20; }
+    if !(expected_return() == (4294967296 as u64)) { return 21; }
+    if !(expected_binding() == (4294967296 as u64)) { return 22; }
+    if !(expected_mutable() == (4294967296 as u64)) { return 23; }
+    if !(expected_call() == (4294967307 as u64)) { return 24; }
+    if !(expected_assignment(high) == (4294967296 as u64)) { return 25; }
+    if !(expected_operand(high) == high + (4294967296 as u64)) { return 26; }
+    if !(constant_shadow(high) == high) { return 27; }
+    if !(wide_scope(high) == high + 2) { return 28; }
+    return 0;
+}

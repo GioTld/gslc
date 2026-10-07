@@ -1,0 +1,3 @@
+import "left"
+import "right"
+func main() u32 { return left()+right(); }

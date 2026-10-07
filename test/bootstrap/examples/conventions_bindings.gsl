@@ -1,0 +1,6 @@
+func main() u32 {
+    let total: u32 = 10;      // immutable
+    var counter: u32 = 0;     // mutable
+    counter += total;
+    return counter;
+}

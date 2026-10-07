@@ -1,0 +1,30 @@
+import "core/serial"
+import "core/descriptors"
+
+packed struct IDTR { limit: u16, base: usize }
+
+func interrupt_gate() {
+    serial_write_byte(80 as u8)
+    serial_write_byte(75 as u8)
+    serial_write_byte(68 as u8)
+    serial_write_byte(10 as u8)
+}
+
+func kernel_main() {
+    serial_init()
+    gdt_init()
+    idt_init()
+    var storage: [11]u8
+    unsafe {
+        let descriptor = (&storage[1]) as *IDTR
+        descriptor.limit = 4095 as u16
+        descriptor.base = symbol_address("kernel_idt")
+        if size_of(IDTR) != 10 as usize || align_of(IDTR) != 1 as usize || (&descriptor.base as usize) - (descriptor as usize) != 2 as usize {
+            outb(0xf4 as u16, 1 as u8); hlt();
+        }
+        lidt(descriptor as usize)
+        asm("int3")
+        outb(0xf4 as u16, 0 as u8)
+        hlt()
+    }
+}

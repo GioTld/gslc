@@ -1,0 +1,13 @@
+import "core/io"
+
+func println(msg: string) {
+    print(msg)
+    print("\n")
+}
+
+func eprintln(msg: string) {
+    unsafe {
+        syscall_write(2 as u64, msg, 0 as u64)
+        syscall_write(2 as u64, "\n", 1 as u64)
+    }
+}

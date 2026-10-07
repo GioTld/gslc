@@ -1,0 +1,22 @@
+import "core/mem"
+func main() u32 {
+    var bytes: [16]u8
+    var other: [16]u8
+    let base = &bytes[0 as usize]
+    let copied = &other[0 as usize]
+    if memset(base, 255 as u8, 16 as usize) != base { return 1 }
+    if memcpy(copied, base, 16 as usize) != copied { return 2 }
+    if memcmp(base, copied, 16 as usize) != 0 as i32 { return 3 }
+    bytes[0 as usize] = 0 as u8
+    bytes[1 as usize] = 128 as u8
+    if memcmp(base, copied, 16 as usize) >= 0 as i32 { return 4 }
+    if memcmp(copied, base, 16 as usize) <= 0 as i32 { return 5 }
+    let next = &bytes[1 as usize]
+    if memmove(next, base, 15 as usize) != next { return 6 }
+    if bytes[1 as usize] != 0 as u8 || bytes[2 as usize] != 128 as u8 { return 7 }
+    if memmove(base, next, 15 as usize) != base { return 8 }
+    if bytes[0 as usize] != 0 as u8 || bytes[1 as usize] != 128 as u8 { return 9 }
+    if memcmp(base, next, 0 as usize) != 0 as i32 { return 10 }
+    if memmove(base, base, 16 as usize) != base { return 12 }
+    return 11
+}

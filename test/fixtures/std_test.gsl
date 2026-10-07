@@ -1,0 +1,17 @@
+import "std/io"
+import "std/fs"
+import "std/process"
+
+func main() u32 {
+    println("Probando lib/std en GSL")
+
+    // Open/create file for writing (O_WRONLY | O_CREAT = 65, mode 420 = 0644)
+    let fd = open("/tmp/gsl_test_file.txt", 65 as u64, 420 as u64)
+    if fd >= 0 {
+        write_string(fd as u64, "Hola desde lib/std\n")
+        close(fd as u64)
+        println("Operaciones de archivo completadas")
+    }
+
+    return 0
+}

@@ -1,0 +1,18 @@
+import "core/serial"
+
+func interrupt_gate() {}
+
+func kernel_main() {
+    serial_init()
+    arena memory(32)
+    unsafe {
+        let word = ((memory.alloc(16 as usize) as usize) + 1 as usize) as *u64
+        *word = 0xfedcba9876543210 as u64
+        if *word != 0xfedcba9876543210 as u64 { outb(0xf4 as u16, 1 as u8); hlt(); }
+    }
+    serial_write_byte(80 as u8)
+    serial_write_byte(84 as u8)
+    serial_write_byte(82 as u8)
+    serial_write_byte(10 as u8)
+    unsafe { outb(0xf4 as u16, 0 as u8); hlt(); }
+}

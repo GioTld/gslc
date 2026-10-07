@@ -1,0 +1,68 @@
+copy struct Pair { first: u32, second: u64 }
+copy struct Counter { calls: u32 }
+
+func locate(counter: *Counter, target: *u32) *u32 {
+    counter.calls += 1
+    return target
+}
+
+func next_value(counter: *Counter) u32 {
+    counter.calls += 10
+    return counter.calls
+}
+
+func main() u32 {
+    var byte: u8
+    var word: u16
+    var dword: u32
+    var qword: u64
+    var signed_byte: i8
+    var signed_word: i16
+    var signed_dword: i32
+    var signed_qword: i64
+    var native_unsigned: usize
+    var native_signed: isize
+    var flag: bool
+    var pair: Pair
+    var original: Pair
+    var counter: Counter
+    var pointer: *u32 = &dword
+    var text = "old"
+    original.first = 7
+    original.second = 0xffffffffffffffff as u64
+    counter.calls = 0
+    arena bytes(32)
+    unsafe {
+        let byte_pointer = &byte
+        *byte_pointer = 255
+        *(&word) = 65535
+        *(&dword) = 0xffffffff as u32
+        *(&qword) = 0xffffffffffffffff as u64
+        *(&signed_byte) = -128 as i8
+        *(&signed_word) = -32768 as i16
+        *(&signed_dword) = -2147483648 as i32
+        *(&signed_qword) = 0x8000000000000000 as i64
+        *(&native_unsigned) = 0xffffffffffffffff as usize
+        *(&native_signed) = -1 as isize
+        *(&flag) = true
+        *(&pair) = original
+        *(&pointer) = &pair.first
+        *pointer = 19
+        *(&text) = "new"
+        let unaligned = ((bytes.alloc(16 as usize) as usize) + 1 as usize) as *u64
+        *unaligned = 0xfedcba9876543210 as u64
+        if *unaligned != 0xfedcba9876543210 as u64 { return 1 }
+        *locate(&counter, &dword) = next_value(&counter)
+        var index: u32 = 0
+        while index < 4 {
+            if index < 2 { *(&word) = index as u16 } else { *(&word) = (index + 1) as u16 }
+            index += 1
+        }
+        if *(text as *u8) != 110 as u8 { return 2 }
+    }
+    if byte != 255 as u8 || word != 4 as u16 || dword != 11 || qword != 0xffffffffffffffff as u64 { return 3 }
+    if signed_byte != -128 as i8 || signed_word != -32768 as i16 || signed_dword != -2147483648 as i32 || signed_qword != 0x8000000000000000 as i64 { return 4 }
+    if native_unsigned != 0xffffffffffffffff as usize || native_signed != -1 as isize || !flag { return 5 }
+    if pair.first != 19 || pair.second != 0xffffffffffffffff as u64 || counter.calls != 11 { return 6 }
+    return 0
+}

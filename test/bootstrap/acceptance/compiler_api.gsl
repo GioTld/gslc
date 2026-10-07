@@ -1,0 +1,7 @@
+import "compiler/driver"
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 2 { return 1; }
+    var output: string;
+    unsafe { output = (*(((argv as usize) + size_of(usize)) as *usize)) as string; }
+    return compile_string("func add(x: u32, y: u32) u32 { let value=x+y; return value; } func main() u32 { let answer=add(5,6); return answer; }",output);
+}

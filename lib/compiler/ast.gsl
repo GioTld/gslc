@@ -1,0 +1,216 @@
+import "compiler/token"
+
+const INVALID_INDEX: u32 = 4294967295
+
+struct NodeSpan {
+    start: usize,
+    end: usize,
+    line: u32,
+    col: u32
+}
+
+const EXPR_IDENT: u32 = 1
+const EXPR_INT:   u32 = 2
+const EXPR_BINARY: u32 = 3
+const EXPR_CALL:  u32 = 4
+const EXPR_CAST:  u32 = 5
+const EXPR_MEMBER: u32 = 6
+const EXPR_BOOL:  u32 = 7
+const EXPR_STRING: u32 = 8
+const EXPR_UNARY: u32 = 9
+const EXPR_INDEX: u32 = 10
+const EXPR_DATA: u32 = 11
+
+const STMT_LET:    u32 = 1
+const STMT_VAR:    u32 = 2
+const STMT_RETURN: u32 = 3
+const STMT_EXPR:   u32 = 4
+const STMT_IF:     u32 = 5
+const STMT_WHILE:  u32 = 6
+const STMT_UNSAFE: u32 = 7
+const STMT_BREAK:  u32 = 8
+const STMT_CONTINUE: u32 = 9
+const STMT_ASSIGN: u32 = 10
+const STMT_ARENA: u32 = 11
+
+const DECL_FUNC: u32 = 1
+
+struct IdentNode {
+    name_ptr: *u8,
+    name_len: usize,
+    span: NodeSpan
+}
+
+struct IntLitNode {
+    val: i64,
+    span: NodeSpan
+}
+
+struct BinaryNode {
+    op: u32,
+    left_idx: u32,
+    right_idx: u32,
+    span: NodeSpan
+}
+
+struct CallNode {
+    callee_ptr: *u8,
+    callee_len: usize,
+    callee_expr_idx: u32,
+    arg_start: u32,
+    arg_count: u32,
+    span: NodeSpan
+}
+
+struct CastNode {
+    source_idx: u32,
+    type_ptr: *u8,
+    type_len: usize,
+    line: u32,
+    col: u32
+}
+
+struct MemberNode {
+    base_idx: u32,
+    name_ptr: *u8,
+    name_len: usize,
+    line: u32,
+    col: u32
+}
+
+struct StringLitNode {
+    span: NodeSpan
+}
+
+struct UnaryNode {
+    op: u32,
+    operand_idx: u32,
+    span: NodeSpan
+}
+
+// Flat tagged slots keep AST storage bounded without heap allocation.
+struct Expr {
+    kind: u32,
+    next_arg: u32,
+    value_reg: u32,
+    ident: IdentNode,
+    int_lit: IntLitNode,
+    binary: BinaryNode,
+    call: CallNode,
+    cast: CastNode,
+    member: MemberNode,
+    string_lit: StringLitNode,
+    unary: UnaryNode
+}
+
+struct LetStmt {
+    name_ptr: *u8,
+    name_len: usize,
+    type_ptr: *u8,
+    type_len: usize,
+    is_mut: bool,
+    has_init: bool,
+    expr_idx: u32,
+    span: NodeSpan
+}
+
+struct ReturnStmt {
+    expr_idx: u32,
+    has_expr: bool,
+    span: NodeSpan
+}
+
+struct BlockStmt {
+    condition_idx: u32,
+    body_start: u32,
+    body_count: u32,
+    else_start: u32,
+    else_count: u32
+}
+
+struct AssignStmt {
+    target_idx: u32,
+    op: u32,
+    value_idx: u32
+}
+
+struct ArenaStmt {
+    name_ptr: *u8,
+    name_len: usize,
+    size_expr_idx: u32
+}
+
+struct Stmt {
+    kind: u32,
+    value_reg: u32,
+    next_idx: u32,
+    let_s: LetStmt,
+    ret_s: ReturnStmt,
+    block: BlockStmt,
+    assign: AssignStmt,
+    arena_s: ArenaStmt,
+    expr_idx: u32
+}
+
+struct VarDeclNode {
+    name_ptr: *u8,
+    name_len: usize,
+    type_ptr: *u8,
+    type_len: usize,
+    is_mut: bool,
+    span: NodeSpan
+}
+
+struct Param {
+    name_ptr: *u8,
+    name_len: usize,
+    type_ptr: *u8,
+    type_len: usize
+}
+
+struct FuncDecl {
+    section_idx: u32,
+    name_ptr: *u8,
+    name_len: usize,
+    param_start: u32,
+    param_count: u32,
+    ret_type_ptr: *u8,
+    ret_type_len: usize,
+    body_start: u32,
+    body_count: u32,
+    span: NodeSpan
+}
+
+struct CompilerConst {
+    is_global: bool,
+    has_init: bool,
+    section_idx: u32,
+    name_ptr: *u8,
+    name_len: usize,
+    type_ptr: *u8,
+    type_len: usize,
+    value_idx: u32,
+    span: NodeSpan
+}
+
+struct CompilerField {
+    name_ptr: *u8,
+    name_len: usize,
+    type_ptr: *u8,
+    type_len: usize
+}
+
+struct CompilerStruct {
+    is_array: bool,
+    array_count: u32,
+    element_ptr: *u8,
+    element_len: usize,
+    name_ptr: *u8,
+    name_len: usize,
+    field_start: u32,
+    field_count: u32,
+    is_copy: bool,
+    is_packed: bool,
+    size: u32,
+    alignment: u32
+}

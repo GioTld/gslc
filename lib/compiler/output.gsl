@@ -1,0 +1,28 @@
+import "std/fs"
+
+const OUTPUT_EINTR: i64 = 4
+
+struct CompilerOutput {
+    fd: u64,
+    error: bool
+}
+
+func compiler_output_write(output: *CompilerOutput, data: *u8, length: usize) {
+    var offset: usize = 0
+    while offset < length && output.error == false {
+        var current: *u8
+        unsafe { current = ((data as usize) + offset) as *u8 }
+        let count = write(output.fd, current, length - offset)
+        if count != -OUTPUT_EINTR {
+            if count <= 0 || count as u64 > (length - offset) as u64 {
+                output.error = true
+            } else {
+                offset += count as usize
+            }
+        }
+    }
+}
+
+func compiler_output_string(output: *CompilerOutput, value: string) {
+    unsafe { compiler_output_write(output, value as *u8, strlen(value) as usize) }
+}

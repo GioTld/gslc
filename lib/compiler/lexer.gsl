@@ -1,0 +1,283 @@
+import "compiler/token"
+import "core/io"
+
+struct Lexer {
+    src: *u8,
+    src_len: usize,
+    cursor: usize,
+    line: u32,
+    col: u32,
+    last_kind: u32
+}
+
+func lexer_init(lex: *Lexer, s: string) {
+    let len = strlen(s)
+    unsafe {
+        lex.src = (s as usize) as *u8
+    }
+    lex.src_len = len as usize
+    lex.cursor = 0 as usize
+    lex.line = 1
+    lex.col = 1
+    lex.last_kind = TOKEN_EOF
+}
+
+func lexer_peek(lex: *Lexer) u8 {
+    if lex.cursor >= lex.src_len {
+        return 0 as u8
+    }
+    unsafe {
+        return volatile_read(((lex.src as usize) + lex.cursor) as *u8)
+    }
+}
+
+func lexer_advance(lex: *Lexer) u8 {
+    if lex.cursor >= lex.src_len {
+        return 0 as u8
+    }
+    unsafe {
+        let ch = volatile_read(((lex.src as usize) + lex.cursor) as *u8)
+        lex.cursor += 1 as usize
+        if ch == 10 as u8 {
+            lex.line += 1
+            lex.col = 1
+        } else {
+            lex.col += 1
+        }
+        return ch
+    }
+}
+
+func is_alpha(ch: u8) bool {
+    return (ch >= 65 as u8 && ch <= 90 as u8) || (ch >= 97 as u8 && ch <= 122 as u8) || ch == 95 as u8
+}
+
+func is_digit(ch: u8) bool {
+    return ch >= 48 as u8 && ch <= 57 as u8
+}
+
+func is_hex_digit(ch: u8) bool {
+    return is_digit(ch) || (ch >= 65 as u8 && ch <= 70 as u8) || (ch >= 97 as u8 && ch <= 102 as u8)
+}
+
+func lexer_word_is(lex: *Lexer, start: usize, length: usize, word: string) bool {
+    if length != (strlen(word) as usize) {
+        return false
+    }
+    var offset: usize = 0 as usize
+    unsafe {
+        while offset < length {
+            let actual = volatile_read(((lex.src as usize) + start + offset) as *u8)
+            let expected = volatile_read(((word as usize) + offset) as *u8)
+            if actual != expected {
+                return false
+            }
+            offset += 1 as usize
+        }
+    }
+    return true
+}
+
+func lexer_keyword(lex: *Lexer, start: usize, length: usize) u32 {
+    if lexer_word_is(lex, start, length, "let") { return TOKEN_LET }
+    if lexer_word_is(lex, start, length, "var") { return TOKEN_VAR }
+    if lexer_word_is(lex, start, length, "func") { return TOKEN_FUNC }
+    if lexer_word_is(lex, start, length, "return") { return TOKEN_RETURN }
+    if lexer_word_is(lex, start, length, "if") { return TOKEN_IF }
+    if lexer_word_is(lex, start, length, "else") { return TOKEN_ELSE }
+    if lexer_word_is(lex, start, length, "while") { return TOKEN_WHILE }
+    if lexer_word_is(lex, start, length, "struct") { return TOKEN_STRUCT }
+    if lexer_word_is(lex, start, length, "unsafe") { return TOKEN_UNSAFE }
+    if lexer_word_is(lex, start, length, "arena") { return TOKEN_ARENA }
+    if lexer_word_is(lex, start, length, "comptime") { return TOKEN_COMPTIME }
+    if lexer_word_is(lex, start, length, "import") { return TOKEN_IMPORT }
+    if lexer_word_is(lex, start, length, "const") { return TOKEN_CONST }
+    if lexer_word_is(lex, start, length, "as") { return TOKEN_AS }
+    if lexer_word_is(lex, start, length, "break") { return TOKEN_BREAK }
+    if lexer_word_is(lex, start, length, "continue") { return TOKEN_CONTINUE }
+    if lexer_word_is(lex, start, length, "true") { return TOKEN_TRUE }
+    if lexer_word_is(lex, start, length, "false") { return TOKEN_FALSE }
+    if lexer_word_is(lex, start, length, "packed") { return TOKEN_PACKED }
+    if lexer_word_is(lex, start, length, "copy") { return TOKEN_COPY }
+    return TOKEN_IDENT
+}
+
+func lexer_can_end_statement(kind: u32) bool {
+    return kind == TOKEN_IDENT || kind == TOKEN_INT || kind == TOKEN_STRING || kind == TOKEN_TRUE || kind == TOKEN_FALSE || kind == TOKEN_RETURN || kind == TOKEN_BREAK || kind == TOKEN_RPAREN || kind == TOKEN_RBRACKET || kind == TOKEN_RBRACE
+}
+
+func lexer_emit(lex: *Lexer, tok: Token) Token {
+    lex.last_kind = tok.kind
+    return tok
+}
+
+func lexer_next(lex: *Lexer) Token {
+    // Preserve newlines after comments for automatic semicolon insertion.
+    while true {
+        let ch = lexer_peek(lex)
+        if ch == 32 as u8 || ch == 9 as u8 || ch == 13 as u8 {
+            lexer_advance(lex)
+        } else if ch == 47 as u8 && lex.cursor + 1 as usize < lex.src_len {
+            unsafe {
+                let next = volatile_read(((lex.src as usize) + lex.cursor + 1 as usize) as *u8)
+                if next == 47 as u8 {
+                    while lexer_peek(lex) != 0 as u8 && lexer_peek(lex) != 10 as u8 {
+                        lexer_advance(lex)
+                    }
+                } else {
+                    break
+                }
+            }
+        } else if ch == 10 as u8 {
+            let offset = lex.cursor
+            let line = lex.line
+            let col = lex.col
+            lexer_advance(lex)
+            if lexer_can_end_statement(lex.last_kind) {
+                var semi: Token
+                semi.kind = TOKEN_SEMICOLON
+                semi.offset = offset
+                semi.len = 1 as usize
+                semi.line = line
+                semi.col = col
+                return lexer_emit(lex, semi)
+            }
+        } else {
+            break
+        }
+    }
+
+    var tok: Token
+    tok.offset = lex.cursor
+    tok.line = lex.line
+    tok.col = lex.col
+    let ch = lexer_peek(lex)
+    if ch == 0 as u8 {
+        tok.len = 0 as usize
+        if lexer_can_end_statement(lex.last_kind) {
+            tok.kind = TOKEN_SEMICOLON
+        } else {
+            tok.kind = TOKEN_EOF
+        }
+        return lexer_emit(lex, tok)
+    }
+
+    if is_alpha(ch) {
+        let start = lex.cursor
+        while is_alpha(lexer_peek(lex)) || is_digit(lexer_peek(lex)) {
+            lexer_advance(lex)
+        }
+        tok.len = lex.cursor - start
+        tok.kind = lexer_keyword(lex, start, tok.len)
+        return lexer_emit(lex, tok)
+    }
+
+    if is_digit(ch) {
+        let start = lex.cursor
+        lexer_advance(lex)
+        if ch == 48 as u8 && (lexer_peek(lex) == 120 as u8 || lexer_peek(lex) == 88 as u8 || lexer_peek(lex) == 98 as u8 || lexer_peek(lex) == 66 as u8 || lexer_peek(lex) == 111 as u8 || lexer_peek(lex) == 79 as u8) {
+            lexer_advance(lex)
+            if is_hex_digit(lexer_peek(lex)) == false {
+                tok.kind = TOKEN_ILLEGAL
+                tok.len = lex.cursor - start
+                return lexer_emit(lex, tok)
+            }
+            while is_hex_digit(lexer_peek(lex)) || lexer_peek(lex) == 95 as u8 {
+                lexer_advance(lex)
+            }
+        } else {
+            while is_digit(lexer_peek(lex)) || lexer_peek(lex) == 95 as u8 {
+                lexer_advance(lex)
+            }
+        }
+        tok.kind = TOKEN_INT
+        tok.len = lex.cursor - start
+        return lexer_emit(lex, tok)
+    }
+
+    if ch == 34 as u8 {
+        lexer_advance(lex)
+        while lexer_peek(lex) != 0 as u8 && lexer_peek(lex) != 10 as u8 && lexer_peek(lex) != 34 as u8 {
+            if lexer_peek(lex) == 92 as u8 {
+                lexer_advance(lex)
+                if lexer_peek(lex) == 0 as u8 || lexer_peek(lex) == 10 as u8 {
+                    break
+                }
+            }
+            lexer_advance(lex)
+        }
+        tok.kind = TOKEN_ILLEGAL
+        if lexer_peek(lex) == 34 as u8 {
+            lexer_advance(lex)
+            tok.kind = TOKEN_STRING
+        }
+        tok.len = lex.cursor - tok.offset
+        return lexer_emit(lex, tok)
+    }
+
+    lexer_advance(lex)
+    tok.len = 1 as usize
+    tok.kind = TOKEN_ILLEGAL
+    if ch == 43 as u8 {
+        tok.kind = TOKEN_PLUS
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_PLUS_ASSIGN }
+    } else if ch == 45 as u8 {
+        tok.kind = TOKEN_MINUS
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_MINUS_ASSIGN }
+    } else if ch == 42 as u8 {
+        tok.kind = TOKEN_STAR
+    } else if ch == 47 as u8 {
+        tok.kind = TOKEN_SLASH
+    } else if ch == 37 as u8 {
+        tok.kind = TOKEN_PERCENT
+    } else if ch == 61 as u8 {
+        tok.kind = TOKEN_ASSIGN
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_EQ }
+    } else if ch == 33 as u8 {
+        tok.kind = TOKEN_NOT
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_NE }
+    } else if ch == 60 as u8 {
+        tok.kind = TOKEN_LT
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_LE }
+        if lexer_peek(lex) == 60 as u8 { tok.kind = TOKEN_SHIFT_LEFT }
+    } else if ch == 62 as u8 {
+        tok.kind = TOKEN_GT
+        if lexer_peek(lex) == 61 as u8 { tok.kind = TOKEN_GE }
+        if lexer_peek(lex) == 62 as u8 { tok.kind = TOKEN_SHIFT_RIGHT }
+    } else if ch == 38 as u8 {
+        tok.kind = TOKEN_AMP
+        if lexer_peek(lex) == 38 as u8 { tok.kind = TOKEN_AND }
+    } else if ch == 124 as u8 {
+        tok.kind = TOKEN_BIT_OR
+        if lexer_peek(lex) == 124 as u8 { tok.kind = TOKEN_OR }
+    } else if ch == 94 as u8 {
+        tok.kind = TOKEN_BIT_XOR
+    } else if ch == 126 as u8 {
+        tok.kind = TOKEN_BIT_NOT
+    } else if ch == 44 as u8 {
+        tok.kind = TOKEN_COMMA
+    } else if ch == 58 as u8 {
+        tok.kind = TOKEN_COLON
+    } else if ch == 59 as u8 {
+        tok.kind = TOKEN_SEMICOLON
+    } else if ch == 40 as u8 {
+        tok.kind = TOKEN_LPAREN
+    } else if ch == 41 as u8 {
+        tok.kind = TOKEN_RPAREN
+    } else if ch == 123 as u8 {
+        tok.kind = TOKEN_LBRACE
+    } else if ch == 125 as u8 {
+        tok.kind = TOKEN_RBRACE
+    } else if ch == 91 as u8 {
+        tok.kind = TOKEN_LBRACKET
+    } else if ch == 93 as u8 {
+        tok.kind = TOKEN_RBRACKET
+    } else if ch == 46 as u8 {
+        tok.kind = TOKEN_DOT
+    }
+    if tok.kind == TOKEN_PLUS_ASSIGN || tok.kind == TOKEN_MINUS_ASSIGN || tok.kind == TOKEN_EQ || tok.kind == TOKEN_NE || tok.kind == TOKEN_LE || tok.kind == TOKEN_GE || tok.kind == TOKEN_SHIFT_LEFT || tok.kind == TOKEN_SHIFT_RIGHT || tok.kind == TOKEN_AND || tok.kind == TOKEN_OR {
+        lexer_advance(lex)
+        tok.len = 2 as usize
+    }
+    return lexer_emit(lex, tok)
+}

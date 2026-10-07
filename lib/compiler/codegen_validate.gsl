@@ -1,0 +1,352 @@
+import "compiler/codegen_types"
+
+func codegen_assignment_target(p: *Parser, expr_idx: u32, op: u32) bool {
+    let target = parser_expr(p, expr_idx)
+    if target.kind == EXPR_UNARY { return target.unary.op == TOKEN_STAR && op == TOKEN_ASSIGN }
+    return target.kind == EXPR_IDENT || target.kind == EXPR_MEMBER || (target.kind == EXPR_INDEX && op == TOKEN_ASSIGN)
+}
+
+func codegen_preflight_control_block(p: *Parser, start: u32, count: u32, in_loop: bool) bool {
+    var stmt_idx = start
+    var seen: u32 = 0
+    while stmt_idx != INVALID_INDEX && seen < count {
+        let stmt = parser_stmt(p, stmt_idx)
+        if stmt.kind == STMT_RETURN {
+            if stmt.next_idx != INVALID_INDEX { return false }
+        } else if stmt.kind == STMT_ASSIGN {
+            if codegen_assignment_target(p, stmt.assign.target_idx, stmt.assign.op) == false { return false }
+            if stmt.assign.op != TOKEN_ASSIGN && stmt.assign.op != TOKEN_PLUS_ASSIGN && stmt.assign.op != TOKEN_MINUS_ASSIGN { return false }
+        } else if stmt.kind == STMT_LET || stmt.kind == STMT_VAR {
+            if stmt.let_s.has_init == false && (stmt.kind == STMT_LET || stmt.let_s.type_len == 0 as usize) { return false }
+            if stmt.let_s.type_len != 0 as usize && codegen_type(p, stmt.let_s.type_ptr, stmt.let_s.type_len) == 0 { return false }
+        } else if stmt.kind == STMT_IF {
+            if codegen_preflight_control_block(p, stmt.block.body_start, stmt.block.body_count, in_loop) == false { return false }
+            if codegen_preflight_control_block(p, stmt.block.else_start, stmt.block.else_count, in_loop) == false { return false }
+        } else if stmt.kind == STMT_WHILE {
+            if codegen_preflight_control_block(p, stmt.block.body_start, stmt.block.body_count, true) == false { return false }
+        } else if stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE {
+            if in_loop == false || stmt.next_idx != INVALID_INDEX { return false }
+        } else if stmt.kind == STMT_UNSAFE {
+            if codegen_preflight_control_block(p, stmt.block.body_start, stmt.block.body_count, in_loop) == false { return false }
+        } else if stmt.kind == STMT_ARENA {
+            if codegen_capacity(p, stmt.arena_s.size_expr_idx) == 0 { return false }
+        } else if stmt.kind != STMT_EXPR {
+            return false
+        }
+        stmt_idx = stmt.next_idx
+        seen += 1
+    }
+    return seen == count
+}
+
+// Keep unsupported input from creating temporary files.
+func codegen_preflight(p: *Parser) bool {
+    if p.decl_count == 0 { return false }
+    arena struct_states(PARSER_MAX_STRUCTS)
+    let states = struct_states.alloc(PARSER_MAX_STRUCTS as usize)
+    var struct_idx: u32 = 0
+    while struct_idx < p.struct_count {
+        unsafe { volatile_write(((states as usize) + (struct_idx as usize)) as *u8, 0 as u8); }
+        struct_idx += 1
+    }
+    struct_idx = 0
+    while struct_idx < p.struct_count {
+        if codegen_struct_valid(p, struct_idx, states) == false { return false }
+        struct_idx += 1
+    }
+    var const_idx: u32 = 0
+    while const_idx < p.const_count {
+        let constant = parser_const(p, const_idx)
+        if codegen_section_valid(p, constant.section_idx) == false { return false }
+        if constant.is_global {
+            let type_id = codegen_type(p, constant.type_ptr, constant.type_len)
+            if type_id == 0 || type_id == CODEGEN_ARENA || codegen_type_size(p, type_id) == 0 { return false }
+            if constant.has_init {
+                let value = parser_expr(p, constant.value_idx)
+                if value.kind == EXPR_DATA {
+                    if codegen_is_array(p, type_id) == false { return false }
+                    let array_type = parser_struct(p, type_id - CODEGEN_STRUCT_BASE)
+                    let element = codegen_type(p, array_type.element_ptr, array_type.element_len)
+                    if element > 64 || value.call.arg_count != array_type.array_count { return false }
+                    var item = value.call.arg_start
+                    var count: u32 = 0
+                    while count < value.call.arg_count {
+                        if parser_expr(p, item).kind != EXPR_INT && parser_expr(p, item).kind != EXPR_BOOL { return false }
+                        item = parser_expr(p, item).next_arg
+                        count += 1
+                    }
+                } else if type_id > 64 || (value.kind != EXPR_INT && value.kind != EXPR_BOOL) { return false }
+            }
+            const_idx += 1
+            continue
+        }
+        if constant.type_len != 0 as usize {
+            let type_id = codegen_type(p, constant.type_ptr, constant.type_len)
+            if type_id == 0 || type_id >= CODEGEN_STRUCT_BASE { return false }
+        }
+        let kind = parser_expr(p, constant.value_idx).kind
+        if kind != EXPR_INT && kind != EXPR_BOOL { return false }
+        const_idx += 1
+    }
+    var decl_idx: u32 = 0
+    while decl_idx < p.decl_count {
+        let decl = parser_decl(p, decl_idx)
+        if codegen_section_valid(p, decl.section_idx) == false { return false }
+        if codegen_type(p, decl.ret_type_ptr, decl.ret_type_len) == 0 && codegen_type_void(decl.ret_type_ptr, decl.ret_type_len) == false { return false }
+        var param_idx = decl.param_start
+        while param_idx < decl.param_start + decl.param_count {
+            let param = parser_param(p, param_idx)
+            if codegen_type(p, param.type_ptr, param.type_len) == 0 { return false }
+            param_idx += 1
+        }
+        if codegen_preflight_control_block(p, decl.body_start, decl.body_count, false) == false { return false }
+        if codegen_type_void(decl.ret_type_ptr, decl.ret_type_len) == false && codegen_block_returns(p, decl.body_start, decl.body_count) == false { return false }
+        decl_idx += 1
+    }
+    var expr_idx: u32 = 0
+    while expr_idx < p.expr_count {
+        let node = parser_expr(p, expr_idx)
+        if node.kind == EXPR_BINARY {
+            let op = node.binary.op
+            if op != TOKEN_AND && op != TOKEN_OR && strlen(codegen_binary_opcode(op, false)) == 0 as u64 { return false }
+        } else if node.kind == EXPR_INT {
+            let value = codegen_parse_integer(p, expr_idx)
+            if value.valid == false { return false }
+            node.int_lit.val = value.value as i64
+        } else if node.kind == EXPR_STRING {
+            if codegen_string_size(p, expr_idx) == INVALID_INDEX { return false }
+        } else if node.kind == EXPR_CALL {
+            if codegen_builtin(p, expr_idx) == BUILTIN_NONE {
+                if node.call.callee_expr_idx != INVALID_INDEX { return false }
+                if codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len) == INVALID_INDEX { return false }
+            }
+        } else if node.kind == EXPR_CAST {
+            if codegen_type(p, node.cast.type_ptr, node.cast.type_len) == 0 { return false }
+        } else if node.kind == EXPR_UNARY {
+            if node.unary.op != TOKEN_NOT && node.unary.op != TOKEN_MINUS && node.unary.op != TOKEN_BIT_NOT && node.unary.op != TOKEN_AMP && node.unary.op != TOKEN_STAR { return false }
+        } else if node.kind != EXPR_IDENT && node.kind != EXPR_BOOL && node.kind != EXPR_MEMBER && node.kind != EXPR_INDEX && node.kind != EXPR_DATA {
+            return false
+        }
+        expr_idx += 1
+    }
+    return codegen_preflight_types(p)
+}
+
+func codegen_block_returns(p: *Parser, start: u32, count: u32) bool {
+    if count == 0 { return false }
+    var index = start
+    var seen: u32 = 1
+    while seen < count { index = parser_stmt(p, index).next_idx; seen += 1; }
+    let stmt = parser_stmt(p, index)
+    if stmt.kind == STMT_RETURN { return true }
+    if stmt.kind == STMT_UNSAFE { return codegen_block_returns(p, stmt.block.body_start, stmt.block.body_count) }
+    return false
+}
+
+func codegen_validate_expr(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) bool {
+    let node = parser_expr(p, expr_idx)
+    let type_id = codegen_expr_type(p, expr_idx, ctx, expected)
+    if node.kind == EXPR_INDEX {
+        if codegen_index_array(p, expr_idx, ctx) == 0 { return false }
+        let base_type = codegen_expr_type(p, node.binary.left_idx, ctx, 0)
+        if base_type < CODEGEN_POINTER_STEP && codegen_addressable(p, node.binary.left_idx, ctx) == false { return false }
+        return codegen_validate_expr(p, node.binary.left_idx, ctx, base_type) && codegen_validate_expr(p, node.binary.right_idx, ctx, 64)
+    }
+    if node.kind == EXPR_IDENT && (type_id == 0 || type_id == CODEGEN_ARENA) { return false }
+    if node.kind == EXPR_INT {
+        if type_id == 0 || type_id == 1 || type_id > 64 { return false }
+        let value = node.int_lit.val as u64
+        if type_id < 64 { return value <= ((1 as u64) << (type_id as u64)) - 1 as u64 }
+        return true
+    }
+    if node.kind == EXPR_CAST {
+        let source_type = codegen_natural_type(p, node.cast.source_idx, ctx)
+        if source_type == 0 { return false }
+        if source_type >= CODEGEN_STRUCT_BASE && source_type < CODEGEN_POINTER_STEP { return false }
+        if type_id >= CODEGEN_STRUCT_BASE && type_id < CODEGEN_POINTER_STEP { return false }
+        return codegen_validate_expr(p, node.cast.source_idx, ctx, source_type)
+    }
+    if node.kind == EXPR_MEMBER {
+        if type_id == 0 { return false }
+        let base_type = codegen_expr_type(p, node.member.base_idx, ctx, 0)
+        return codegen_validate_expr(p, node.member.base_idx, ctx, base_type)
+    }
+    if node.kind == EXPR_UNARY {
+        if type_id == 0 { return false }
+        if node.unary.op == TOKEN_AMP && codegen_addressable(p, node.unary.operand_idx, ctx) == false { return false }
+        let operand_type = codegen_expr_type(p, node.unary.operand_idx, ctx, type_id)
+        if node.unary.op == TOKEN_STAR && operand_type < CODEGEN_POINTER_STEP { return false }
+        if node.unary.op != TOKEN_STAR && node.unary.op != TOKEN_AMP && (operand_type >= CODEGEN_STRUCT_BASE || operand_type == CODEGEN_STRING) { return false }
+        return codegen_validate_expr(p, node.unary.operand_idx, ctx, operand_type)
+    }
+    if node.kind == EXPR_BINARY {
+        var operand_expected = expected
+        let op = node.binary.op
+        if op == TOKEN_EQ || op == TOKEN_NE || op == TOKEN_LT || op == TOKEN_LE || op == TOKEN_GT || op == TOKEN_GE { operand_expected = 32 }
+        let operand_type = codegen_operand_type(p, node.binary.left_idx, node.binary.right_idx, ctx, operand_expected)
+        if operand_type == 0 || operand_type == CODEGEN_STRING { return false }
+        if operand_type >= CODEGEN_STRUCT_BASE && operand_type < CODEGEN_POINTER_STEP { return false }
+        if operand_type >= CODEGEN_POINTER_STEP && op != TOKEN_EQ && op != TOKEN_NE { return false }
+        if codegen_expr_type(p, node.binary.left_idx, ctx, operand_type) == 0 || codegen_expr_type(p, node.binary.right_idx, ctx, operand_type) == 0 { return false }
+        return codegen_validate_expr(p, node.binary.left_idx, ctx, operand_type) && codegen_validate_expr(p, node.binary.right_idx, ctx, operand_type)
+    }
+    if node.kind == EXPR_CALL {
+        let builtin = codegen_builtin(p, expr_idx)
+        if builtin >= BUILTIN_INB {
+            if builtin == BUILTIN_CLI || builtin == BUILTIN_HLT || builtin == BUILTIN_ASM || builtin == BUILTIN_SYMBOL_ADDRESS || builtin == BUILTIN_STI || builtin == BUILTIN_READ_CR2 || builtin == BUILTIN_READ_CR3 { return true }
+            if builtin == BUILTIN_ASM_U64 || builtin == BUILTIN_ASM_VOID {
+                var arg = parser_expr(p, node.call.arg_start).next_arg
+                arg = parser_expr(p, arg).next_arg
+                var position: u32 = 2
+                while position < node.call.arg_count {
+                    if codegen_validate_expr(p, arg, ctx, 64) == false { return false }
+                    arg = parser_expr(p, arg).next_arg
+                    position += 1
+                }
+                return true
+            }
+            var width: u32 = 64
+            if builtin == BUILTIN_INB || builtin == BUILTIN_OUTB || builtin == BUILTIN_INW || builtin == BUILTIN_OUTW { width = 16 }
+            if codegen_validate_expr(p, node.call.arg_start, ctx, width) == false { return false }
+            if builtin == BUILTIN_OUTB { return codegen_validate_expr(p, parser_expr(p, node.call.arg_start).next_arg, ctx, 8) }
+            if builtin == BUILTIN_OUTW { return codegen_validate_expr(p, parser_expr(p, node.call.arg_start).next_arg, ctx, 16) }
+            return true
+        }
+        if builtin == BUILTIN_SYSCALL || builtin == BUILTIN_SYSCALL_WRITE {
+            var arg_idx = node.call.arg_start
+            var count: u32 = 0
+            while count < node.call.arg_count {
+                let arg_type = codegen_expr_type(p, arg_idx, ctx, 64)
+                if arg_type == 0 || (arg_type > 64 && codegen_is_pointer(arg_type) == false) { return false }
+                if codegen_validate_expr(p, arg_idx, ctx, 64) == false { return false }
+                arg_idx = parser_expr(p, arg_idx).next_arg
+                count += 1
+            }
+            return true
+        }
+        if builtin == BUILTIN_SIZE_OF || builtin == BUILTIN_ALIGN_OF {
+            let arg = parser_expr(p, node.call.arg_start)
+            return arg.kind == EXPR_IDENT && codegen_type(p, arg.ident.name_ptr, arg.ident.name_len) != 0
+        }
+        if builtin == BUILTIN_VOLATILE_READ || builtin == BUILTIN_VOLATILE_WRITE {
+            if codegen_validate_expr(p, node.call.arg_start, ctx, CODEGEN_POINTER_STEP + 8) == false { return false }
+            if builtin == BUILTIN_VOLATILE_WRITE { return codegen_validate_expr(p, parser_expr(p, node.call.arg_start).next_arg, ctx, 8) }
+            return true
+        }
+        if builtin == BUILTIN_ARENA_ALLOC {
+            let callee = parser_expr(p, node.call.callee_expr_idx)
+            let receiver = parser_expr(p, callee.member.base_idx)
+            if receiver.kind != EXPR_IDENT { return false }
+            let local_idx = codegen_find_local(ctx, receiver.ident.name_ptr, receiver.ident.name_len)
+            if local_idx == INVALID_INDEX || codegen_local(ctx, local_idx).type_id != CODEGEN_ARENA { return false }
+            let arg_type = codegen_expr_type(p, node.call.arg_start, ctx, 64)
+            if arg_type == 0 || arg_type > 64 { return false }
+            return codegen_validate_expr(p, node.call.arg_start, ctx, arg_type)
+        }
+        let decl = parser_decl(p, codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len))
+        var arg_idx = node.call.arg_start
+        var count: u32 = 0
+        while count < node.call.arg_count {
+            let param = parser_param(p, decl.param_start + count)
+            let param_type = codegen_type(p, param.type_ptr, param.type_len)
+            if codegen_expr_type(p, arg_idx, ctx, param_type) == 0 || codegen_validate_expr(p, arg_idx, ctx, param_type) == false { return false }
+            arg_idx = parser_expr(p, arg_idx).next_arg
+            count += 1
+        }
+    }
+    return true
+}
+
+func codegen_validate_block(p: *Parser, start: u32, count: u32, ctx: *Codegen) bool {
+    let saved_local_count = ctx.local_count
+    var stmt_idx = start
+    var seen: u32 = 0
+    while stmt_idx != INVALID_INDEX && seen < count {
+        let stmt = parser_stmt(p, stmt_idx)
+        if stmt.kind == STMT_LET || stmt.kind == STMT_VAR {
+            var type_id = codegen_type(p, stmt.let_s.type_ptr, stmt.let_s.type_len)
+            if type_id == 0 { type_id = codegen_natural_type(p, stmt.let_s.expr_idx, ctx) }
+            if type_id == 0 { return false }
+            if codegen_is_array(p, type_id) && stmt.let_s.has_init { return false }
+            if stmt.let_s.has_init && codegen_validate_expr(p, stmt.let_s.expr_idx, ctx, type_id) == false { return false }
+            var is_signed = codegen_type_signed(stmt.let_s.type_ptr, stmt.let_s.type_len)
+            if stmt.let_s.type_len == 0 as usize { is_signed = codegen_expr_signed(p, stmt.let_s.expr_idx, ctx, false) }
+            codegen_bind(ctx, stmt.let_s.name_ptr, stmt.let_s.name_len, 0, type_id, is_signed, stmt.kind == STMT_VAR)
+        } else if stmt.kind == STMT_ARENA {
+            let size_expr = parser_expr(p, stmt.arena_s.size_expr_idx)
+            if size_expr.kind == EXPR_IDENT && codegen_find_local(ctx, size_expr.ident.name_ptr, size_expr.ident.name_len) != INVALID_INDEX { return false }
+            codegen_bind(ctx, stmt.arena_s.name_ptr, stmt.arena_s.name_len, 0, CODEGEN_ARENA, false, false)
+        } else if stmt.kind == STMT_IF || stmt.kind == STMT_WHILE || stmt.kind == STMT_UNSAFE {
+            if stmt.kind != STMT_UNSAFE && codegen_validate_expr(p, stmt.block.condition_idx, ctx, 1) == false { return false }
+            if codegen_validate_block(p, stmt.block.body_start, stmt.block.body_count, ctx) == false { return false }
+            if stmt.kind == STMT_IF && codegen_validate_block(p, stmt.block.else_start, stmt.block.else_count, ctx) == false { return false }
+        } else if stmt.kind == STMT_RETURN {
+            if stmt.ret_s.has_expr && codegen_validate_expr(p, stmt.ret_s.expr_idx, ctx, ctx.return_type) == false { return false }
+        } else if stmt.kind == STMT_ASSIGN {
+            if codegen_writable(p, stmt.assign.target_idx, ctx) == false { return false }
+            let target_type = codegen_expr_type(p, stmt.assign.target_idx, ctx, 0)
+            if target_type == 0 || codegen_is_array(p, target_type) { return false }
+            if stmt.assign.op != TOKEN_ASSIGN && target_type >= CODEGEN_STRUCT_BASE { return false }
+            if codegen_validate_expr(p, stmt.assign.target_idx, ctx, target_type) == false { return false }
+            if codegen_validate_expr(p, stmt.assign.value_idx, ctx, target_type) == false { return false }
+        } else if stmt.kind == STMT_EXPR {
+            if codegen_is_array(p, codegen_expr_type(p, stmt.expr_idx, ctx, 0)) { return false }
+            if codegen_validate_expr(p, stmt.expr_idx, ctx, 32) == false { return false }
+        }
+        stmt_idx = stmt.next_idx
+        seen += 1
+    }
+    ctx.local_count = saved_local_count
+    return ctx.error == false
+}
+
+func codegen_preflight_types(p: *Parser) bool {
+    arena local_storage(CODEGEN_LOCAL_ARENA_BYTES)
+    var ctx: Codegen
+    unsafe { ctx.locals = local_storage.alloc((CODEGEN_MAX_LOCALS as usize) * size_of(CodegenLocal)) as *CodegenLocal }
+    ctx.local_count = 0
+    ctx.param_start = 0
+    ctx.param_count = 0
+    ctx.error = false
+    var const_idx: u32 = 0
+    while const_idx < p.const_count {
+        let constant = parser_const(p, const_idx)
+        var type_id = codegen_type(p, constant.type_ptr, constant.type_len)
+        if constant.type_len == 0 as usize { type_id = codegen_natural_type(p, constant.value_idx, &ctx) }
+        if constant.has_init {
+            let value = parser_expr(p, constant.value_idx)
+            if value.kind == EXPR_DATA {
+                let array_type = parser_struct(p, type_id - CODEGEN_STRUCT_BASE)
+                let element = codegen_type(p, array_type.element_ptr, array_type.element_len)
+                var item = value.call.arg_start
+                var count: u32 = 0
+                while count < value.call.arg_count {
+                    if codegen_validate_expr(p, item, &ctx, element) == false { return false }
+                    item = parser_expr(p, item).next_arg
+                    count += 1
+                }
+            } else if codegen_validate_expr(p, constant.value_idx, &ctx, type_id) == false { return false }
+        }
+        const_idx += 1
+    }
+    var decl_idx: u32 = 0
+    while decl_idx < p.decl_count {
+        let decl = parser_decl(p, decl_idx)
+        ctx.param_start = decl.param_start
+        ctx.param_count = decl.param_count
+        ctx.return_type = codegen_type(p, decl.ret_type_ptr, decl.ret_type_len)
+        if codegen_is_array(p, ctx.return_type) { return false }
+        ctx.local_count = 0
+        var param_idx = decl.param_start
+        while param_idx < decl.param_start + decl.param_count {
+            let param = parser_param(p, param_idx)
+            if codegen_is_array(p, codegen_type(p, param.type_ptr, param.type_len)) { return false }
+            codegen_bind(&ctx, param.name_ptr, param.name_len, 0, codegen_type(p, param.type_ptr, param.type_len), codegen_type_signed(param.type_ptr, param.type_len), false)
+            param_idx += 1
+        }
+        if codegen_validate_block(p, decl.body_start, decl.body_count, &ctx) == false { return false }
+        decl_idx += 1
+    }
+    return true
+}
+

@@ -1,0 +1,7 @@
+func main() u32 {
+    unsafe {
+        // MMIO write to UART serial port at 0x1000_0000
+        volatile_write(0x1000_0000 as *u8, 65 as u8);
+    }
+    return 0;
+}

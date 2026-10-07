@@ -1,0 +1,18 @@
+func serial_init() {
+    unsafe {
+        outb(0x3f9 as u16, 0 as u8)
+        outb(0x3fb as u16, 0x80 as u8)
+        outb(0x3f8 as u16, 3 as u8)
+        outb(0x3f9 as u16, 0 as u8)
+        outb(0x3fb as u16, 3 as u8)
+        outb(0x3fa as u16, 0xc7 as u8)
+        outb(0x3fc as u16, 0x0b as u8)
+    }
+}
+
+func serial_write_byte(value: u8) {
+    unsafe {
+        while (inb(0x3fd as u16) & (0x20 as u8)) == (0 as u8) {}
+        outb(0x3f8 as u16, value)
+    }
+}

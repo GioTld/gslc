@@ -1,0 +1,2 @@
+import "common"
+func left() u32 { return base()+2; }

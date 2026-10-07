@@ -1,0 +1,52 @@
+func descriptor_write_byte(address: usize, value: u8) {
+    unsafe {
+        volatile_write(address as *u8, value)
+    }
+}
+
+func descriptor_write_u16(address: usize, value: u16) {
+    descriptor_write_byte(address, value as u8)
+    descriptor_write_byte(address + (1 as usize), (value >> (8 as u16)) as u8)
+}
+
+func descriptor_write_u32(address: usize, value: u32) {
+    descriptor_write_u16(address, value as u16)
+    descriptor_write_u16(address + (2 as usize), (value >> (16 as u32)) as u16)
+}
+
+func descriptor_write_u64(address: usize, value: u64) {
+    descriptor_write_u32(address, value as u32)
+    descriptor_write_u32(address + (4 as usize), (value >> (32 as u64)) as u32)
+}
+
+func gdt_init() {
+    unsafe {
+        let table = symbol_address("kernel_gdt")
+        let pointer = symbol_address("kernel_gdtr")
+        descriptor_write_u64(table, 0 as u64)
+        descriptor_write_u64(table + (8 as usize), 0x00af9a000000ffff as u64)
+        descriptor_write_u64(table + (16 as usize), 0x00cf92000000ffff as u64)
+        descriptor_write_u16(pointer, 23 as u16)
+        descriptor_write_u64(pointer + (2 as usize), table as u64)
+        lgdt(pointer)
+    }
+}
+
+func idt_init() {
+    unsafe {
+        let table = symbol_address("kernel_idt")
+        let pointer = symbol_address("kernel_idtr")
+        let handler = symbol_address("interrupt_stub") as u64
+        let gate = table + (48 as usize)
+        descriptor_write_u16(gate, handler as u16)
+        descriptor_write_u16(gate + (2 as usize), 8 as u16)
+        descriptor_write_byte(gate + (4 as usize), 0 as u8)
+        descriptor_write_byte(gate + (5 as usize), 0x8e as u8)
+        descriptor_write_u16(gate + (6 as usize), (handler >> (16 as u64)) as u16)
+        descriptor_write_u32(gate + (8 as usize), (handler >> (32 as u64)) as u32)
+        descriptor_write_u32(gate + (12 as usize), 0 as u32)
+        descriptor_write_u16(pointer, 4095 as u16)
+        descriptor_write_u64(pointer + (2 as usize), table as u64)
+        lidt(pointer)
+    }
+}

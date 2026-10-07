@@ -1,0 +1,247 @@
+import "compiler/token"
+import "compiler/lexer"
+import "std/fs"
+
+const COMPILER_MAX_SOURCE_BYTES: usize = 262144
+const COMPILER_MAX_MODULES: u32 = 64
+const COMPILER_MAX_IMPORT_DEPTH: u32 = 16
+const COMPILER_PATH_SLOT_BYTES: usize = 256
+
+struct ImportState {
+    output: *u8,
+    used: usize,
+    paths: *u8,
+    path_count: u32
+}
+
+func compiler_import_at(buffer: *u8, offset: usize) *u8 {
+    unsafe { return ((buffer as usize) + offset) as *u8 }
+}
+
+func compiler_import_string_ptr(value: string) *u8 {
+    unsafe { return (value as usize) as *u8 }
+}
+
+func compiler_import_as_string(value: *u8) string {
+    unsafe { return (value as usize) as string }
+}
+
+func compiler_import_byte(buffer: *u8, offset: usize) u8 {
+    unsafe { return volatile_read(compiler_import_at(buffer, offset)) }
+}
+
+func compiler_import_put(buffer: *u8, offset: usize, value: u8) {
+    unsafe { volatile_write(compiler_import_at(buffer, offset), value) }
+}
+
+func compiler_import_append(state: *ImportState, source: *u8, start: usize, end: usize) bool {
+    if end < start || end - start > COMPILER_MAX_SOURCE_BYTES - state.used {
+        return false
+    }
+    var offset = start
+    while offset < end {
+        compiler_import_put(state.output, state.used, compiler_import_byte(source, offset))
+        state.used += 1 as usize
+        offset += 1 as usize
+    }
+    return true
+}
+
+func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
+    return compiler_import_at(state.paths, (index as usize) * COMPILER_PATH_SLOT_BYTES)
+}
+
+func compiler_import_seen(state: *ImportState, path: string) u32 {
+    let length = strlen(path) as usize
+    if length == 0 as usize || length >= COMPILER_PATH_SLOT_BYTES {
+        return 2
+    }
+    var index: u32 = 0
+    while index < state.path_count {
+        let slot = compiler_import_path_slot(state, index)
+        var offset: usize = 0 as usize
+        while offset < length && compiler_import_byte(slot, offset) == compiler_import_byte(compiler_import_string_ptr(path), offset) {
+            offset += 1 as usize
+        }
+        if offset == length && compiler_import_byte(slot, offset) == 0 as u8 {
+            return 1
+        }
+        index += 1
+    }
+    if state.path_count >= COMPILER_MAX_MODULES {
+        return 2
+    }
+    let slot = compiler_import_path_slot(state, state.path_count)
+    var offset: usize = 0 as usize
+    while offset < length {
+        compiler_import_put(slot, offset, compiler_import_byte(compiler_import_string_ptr(path), offset))
+        offset += 1 as usize
+    }
+    compiler_import_put(slot, length, 0 as u8)
+    state.path_count += 1
+    return 0
+}
+
+func compiler_import_candidate(current: string, name: *u8, name_len: usize, fallback: bool, output: *u8) bool {
+    if name_len == 0 as usize || name_len > 200 as usize {
+        return false
+    }
+    var i: usize = 0 as usize
+    while i < name_len {
+        let ch = compiler_import_byte(name, i)
+        if (is_alpha(ch) || is_digit(ch) || ch == 47 as u8) == false {
+            return false
+        }
+        if ch == 47 as u8 && (i == 0 as usize || i + 1 as usize == name_len || compiler_import_byte(name, i - 1 as usize) == 47 as u8) {
+            return false
+        }
+        i += 1 as usize
+    }
+
+    var prefix: usize = 0 as usize
+    if fallback {
+        let current_len = strlen(current) as usize
+        i = 0 as usize
+        while i + 3 as usize < current_len {
+            let start = i == 0 as usize || compiler_import_byte(compiler_import_string_ptr(current), i - 1 as usize) == 47 as u8
+            if start && compiler_import_byte(compiler_import_string_ptr(current), i) == 108 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 1 as usize) == 105 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 2 as usize) == 98 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 3 as usize) == 47 as u8 {
+                prefix = i
+                break
+            }
+            i += 1 as usize
+        }
+        if prefix + 4 as usize + name_len + 4 as usize >= COMPILER_PATH_SLOT_BYTES {
+            return false
+        }
+        i = 0 as usize
+        while i < prefix {
+            compiler_import_put(output, i, compiler_import_byte(compiler_import_string_ptr(current), i))
+            i += 1 as usize
+        }
+        compiler_import_put(output, prefix, 108 as u8)
+        compiler_import_put(output, prefix + 1 as usize, 105 as u8)
+        compiler_import_put(output, prefix + 2 as usize, 98 as u8)
+        compiler_import_put(output, prefix + 3 as usize, 47 as u8)
+        prefix += 4 as usize
+    } else {
+        let current_len = strlen(current) as usize
+        i = 0 as usize
+        while i < current_len {
+            if compiler_import_byte(compiler_import_string_ptr(current), i) == 47 as u8 {
+                prefix = i + 1 as usize
+            }
+            i += 1 as usize
+        }
+        if prefix + name_len + 4 as usize >= COMPILER_PATH_SLOT_BYTES {
+            return false
+        }
+        i = 0 as usize
+        while i < prefix {
+            compiler_import_put(output, i, compiler_import_byte(compiler_import_string_ptr(current), i))
+            i += 1 as usize
+        }
+    }
+    if prefix + name_len + 4 as usize >= COMPILER_PATH_SLOT_BYTES {
+        return false
+    }
+    i = 0 as usize
+    while i < name_len {
+        compiler_import_put(output, prefix + i, compiler_import_byte(name, i))
+        i += 1 as usize
+    }
+    let end = prefix + name_len
+    compiler_import_put(output, end, 46 as u8)
+    compiler_import_put(output, end + 1 as usize, 103 as u8)
+    compiler_import_put(output, end + 2 as usize, 115 as u8)
+    compiler_import_put(output, end + 3 as usize, 108 as u8)
+    compiler_import_put(output, end + 4 as usize, 0 as u8)
+    return true
+}
+
+func compiler_import_exists(path: string) bool {
+    let fd = open(path, 0 as u64, 0 as u64)
+    if fd < 0 as i64 { return false }
+    close(fd as u64)
+    return true
+}
+
+func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
+    if depth >= COMPILER_MAX_IMPORT_DEPTH { return 9 }
+    let seen = compiler_import_seen(state, path)
+    if seen == 1 { return 0 }
+    if seen == 2 { return 9 }
+
+    arena module(262664)
+    let source = module.alloc(262145 as usize)
+    let resolved = module.alloc(512 as usize)
+    let fd = open(path, 0 as u64, 0 as u64)
+    if fd < 0 as i64 { return 5 }
+    var length: usize = 0 as usize
+    while length < 262145 as usize {
+        let count = read(fd as u64, compiler_import_at(source, length), (262145 as usize) - length)
+        if count < 0 as i64 {
+            close(fd as u64)
+            return 6
+        }
+        if count == 0 as i64 { break }
+        length += count as usize
+    }
+    close(fd as u64)
+    if length > COMPILER_MAX_SOURCE_BYTES { return 7 }
+    var offset: usize = 0 as usize
+    while offset < length {
+        if compiler_import_byte(source, offset) == 0 as u8 { return 8 }
+        offset += 1 as usize
+    }
+    compiler_import_put(source, length, 0 as u8)
+
+    var lex: Lexer
+    lexer_init(&lex, compiler_import_as_string(source))
+    var braces: u32 = 0
+    while true {
+        let tok = lexer_next(&lex)
+        if tok.kind == TOKEN_EOF { break }
+        if tok.kind == TOKEN_ILLEGAL { return 1 }
+        if tok.kind == TOKEN_LBRACE { braces += 1 }
+        if tok.kind == TOKEN_RBRACE && braces > 0 { braces -= 1 }
+        if tok.kind == TOKEN_IMPORT && braces == 0 {
+            let module_name = lexer_next(&lex)
+            if module_name.kind != TOKEN_STRING || module_name.len < 3 as usize { return 1 }
+            let name = compiler_import_at(source, module_name.offset + 1 as usize)
+            let name_len = module_name.len - 2 as usize
+            if compiler_import_candidate(path, name, name_len, false, resolved) == false { return 1 }
+            var target = compiler_import_as_string(resolved)
+            if compiler_import_exists(target) == false {
+                if compiler_import_candidate(path, name, name_len, true, resolved) == false { return 1 }
+                target = compiler_import_as_string(resolved)
+            }
+            let result = compiler_collect_file(target, state, depth + 1)
+            if result != 0 { return result }
+        }
+    }
+
+    if state.used > 0 as usize {
+        if state.used == COMPILER_MAX_SOURCE_BYTES { return 7 }
+        compiler_import_put(state.output, state.used, 10 as u8)
+        state.used += 1 as usize
+    }
+    lexer_init(&lex, compiler_import_as_string(source))
+    braces = 0
+    var segment: usize = 0 as usize
+    while true {
+        let tok = lexer_next(&lex)
+        if tok.kind == TOKEN_EOF { break }
+        if tok.kind == TOKEN_ILLEGAL { return 1 }
+        if tok.kind == TOKEN_LBRACE { braces += 1 }
+        if tok.kind == TOKEN_RBRACE && braces > 0 { braces -= 1 }
+        if tok.kind == TOKEN_IMPORT && braces == 0 {
+            if compiler_import_append(state, source, segment, tok.offset) == false { return 7 }
+            let module_name = lexer_next(&lex)
+            if module_name.kind != TOKEN_STRING { return 1 }
+            segment = module_name.offset + module_name.len
+        }
+    }
+    if compiler_import_append(state, source, segment, length) == false { return 7 }
+    compiler_import_put(state.output, state.used, 0 as u8)
+    return 0
+}

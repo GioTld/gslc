@@ -1,0 +1,34 @@
+import "core/serial"
+
+copy struct Counter { value: u32 }
+func select_port(counter: *Counter) u16 { counter.value += 1; return 0x1cf as u16; }
+func select_value(counter: *Counter) u16 { counter.value += 10; return 800 as u16; }
+func read_port(counter: *Counter) u16 { counter.value += 100; return 0x1cf as u16; }
+
+func interrupt_gate() {}
+
+func kernel_main() {
+    serial_init()
+    var counter: Counter
+    counter.value = 0
+    unsafe {
+        cli()
+        outb(0x21 as u16, 0xff as u8)
+        outb(0xa1 as u16, 0xff as u8)
+        outw(0x1ce as u16, 4 as u16)
+        outw(0x1cf as u16, 0 as u16)
+        outw(0x1ce as u16, 1 as u16)
+        outw(select_port(&counter), select_value(&counter))
+        let value = inw(read_port(&counter))
+        if value != 800 as u16 || counter.value != 111 { outb(0xf4 as u16, 1 as u8); hlt(); }
+        sti()
+        asm("pushfq\ntestq $512, (%rsp)\njnz 1f\nud2\n1: popfq")
+        cli()
+        asm("pushfq\ntestq $512, (%rsp)\njz 1f\nud2\n1: popfq")
+    }
+    serial_write_byte(67 as u8)
+    serial_write_byte(80 as u8)
+    serial_write_byte(85 as u8)
+    serial_write_byte(10 as u8)
+    unsafe { outw(0xf4 as u16, 0 as u16); hlt(); }
+}

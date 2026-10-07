@@ -1,0 +1,23 @@
+import "compiler/parser"
+
+func main() u32 {
+    arena work(7471104)
+    let storage = work.alloc((PARSER_MAX_EXPRS as usize) * size_of(Expr) + (PARSER_MAX_STMTS as usize) * size_of(Stmt) + (PARSER_MAX_PARAMS as usize) * size_of(Param) + (PARSER_MAX_DECLS as usize) * size_of(FuncDecl) + (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst) + (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct) + (PARSER_MAX_FIELDS as usize) * size_of(CompilerField))
+    var p: Parser
+    parser_init(&p, "1", storage)
+    parser_expr(&p, 0).kind = EXPR_STRING
+    p.expr_count = PARSER_MAX_EXPRS
+    let expression = parse_expr(&p, PREC_NONE)
+    if expression != INVALID_INDEX || p.error == false { return 1 }
+    if p.expr_count != PARSER_MAX_EXPRS || parser_expr(&p, 0).kind != EXPR_STRING { return 2 }
+    if p.error_line == 0 || p.error_col == 0 { return 3 }
+
+    parser_init(&p, "return;", storage)
+    parser_stmt(&p, 0).kind = STMT_ARENA
+    p.stmt_count = PARSER_MAX_STMTS
+    let statement = parse_stmt(&p)
+    if statement != INVALID_INDEX || p.error == false { return 4 }
+    if p.stmt_count != PARSER_MAX_STMTS || parser_stmt(&p, 0).kind != STMT_ARENA { return 5 }
+    if p.error_line == 0 || p.error_col == 0 { return 6 }
+    return 0
+}

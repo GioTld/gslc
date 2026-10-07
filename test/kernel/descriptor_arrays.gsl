@@ -1,0 +1,45 @@
+import "core/serial"
+import "core/descriptors"
+
+packed struct Gate {
+    offset_low: u16,
+    selector: u16,
+    ist: u8,
+    attributes: u8,
+    offset_middle: u16,
+    offset_high: u32,
+    reserved: u32
+}
+packed struct IDTR { limit: u16, base: usize }
+
+func interrupt_gate() {
+    serial_write_byte(84 as u8)
+    serial_write_byte(66 as u8)
+    serial_write_byte(76 as u8)
+    serial_write_byte(10 as u8)
+}
+func kernel_main() {
+    serial_init()
+    gdt_init()
+    var table: [256]Gate
+    var descriptor: IDTR
+    unsafe {
+        if size_of(Gate) != 16 as usize || size_of([256]Gate) != 4096 as usize || (&table[3] as usize) - (&table[0] as usize) != 48 as usize {
+            outb(0xf4 as u16, 1 as u8); hlt();
+        }
+        let handler = symbol_address("interrupt_stub") as u64
+        table[3].offset_low = handler as u16
+        table[3].selector = 8 as u16
+        table[3].ist = 0 as u8
+        table[3].attributes = 0x8e as u8
+        table[3].offset_middle = (handler >> (16 as u64)) as u16
+        table[3].offset_high = (handler >> (32 as u64)) as u32
+        table[3].reserved = 0 as u32
+        descriptor.limit = (size_of([256]Gate) - (1 as usize)) as u16
+        descriptor.base = &table as usize
+        lidt(&descriptor as usize)
+        asm("int3")
+        outb(0xf4 as u16, 0 as u8)
+        hlt()
+    }
+}

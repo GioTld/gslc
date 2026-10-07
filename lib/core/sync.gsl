@@ -1,0 +1,17 @@
+struct SpinLock {
+    state: u64
+}
+
+func spinlock_acquire(lock_ptr: *u64) {
+    unsafe {
+        while !atomic_cas(lock_ptr, 0 as u64, 1 as u64) {
+            yield()
+        }
+    }
+}
+
+func spinlock_release(lock_ptr: *u64) {
+    unsafe {
+        atomic_store(lock_ptr, 0 as u64)
+    }
+}

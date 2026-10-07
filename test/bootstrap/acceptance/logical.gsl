@@ -1,0 +1,18 @@
+copy struct Counter { value: u32 }
+func tick(counter: *Counter) bool { counter.value += 1; return true; }
+func exploding() bool { return 1 / 0 == 0; }
+func identity(value: bool) bool { return value; }
+func main() u32 {
+    var counter: Counter;
+    counter.value = 0;
+    let skipped_and = false && tick(&counter);
+    let skipped_or = true || tick(&counter);
+    if skipped_and || !skipped_or || counter.value != 0 { return 1; }
+    if false && exploding() { return 2; }
+    if !(true || exploding()) { return 3; }
+    let nested = identity((false || tick(&counter)) && (true || tick(&counter)));
+    if !nested || counter.value != 1 { return 4; }
+    while counter.value < 4 && tick(&counter) { }
+    if counter.value != 4 { return 5; }
+    return 0;
+}

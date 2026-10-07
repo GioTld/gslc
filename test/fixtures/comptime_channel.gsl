@@ -1,0 +1,16 @@
+const QUEUE_SIZE: usize = comptime 8 * 2
+const GREETING_LEN: u64 = comptime 14
+
+func main() u32 {
+    arena work_pool(comptime 4096 * 4)
+    let ch = Channel.new(QUEUE_SIZE)
+    
+    let ok = ch.send(42 as u32)
+    yield()
+    let item = ch.recv()
+
+    unsafe {
+        syscall_write(1 as u64, "Canal y Comptime OK\n", 20 as u64)
+    }
+    return 0
+}

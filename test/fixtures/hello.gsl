@@ -1,0 +1,6 @@
+func main() u32 {
+    unsafe {
+        syscall_write(1 as u64, "Hola Mundo\n", 11 as u64)
+    }
+    return 0
+}

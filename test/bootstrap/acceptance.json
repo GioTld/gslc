@@ -1,0 +1,2137 @@
+{
+  "format": 1,
+  "hosted": [
+    {
+      "name": "logical",
+      "fixture": "test/bootstrap/acceptance/logical.gsl",
+      "exit": 0
+    },
+    {
+      "name": "pointer_stores",
+      "fixture": "test/fixtures/pointer_stores.gsl",
+      "exit": 0
+    },
+    {
+      "name": "arrays",
+      "fixture": "test/fixtures/arrays.gsl",
+      "exit": 0
+    },
+    {
+      "name": "struct_arrays",
+      "fixture": "test/fixtures/struct_arrays.gsl",
+      "exit": 0
+    },
+    {
+      "name": "packed",
+      "fixture": "test/fixtures/packed.gsl",
+      "exit": 0
+    },
+    {
+      "name": "bindings",
+      "fixture": "test/bootstrap/examples/conventions_bindings.gsl",
+      "exit": 10
+    },
+    {
+      "name": "casts",
+      "fixture": "test/bootstrap/examples/conventions_cast.gsl",
+      "exit": 0
+    },
+    {
+      "name": "hosted_io",
+      "fixture": "test/bootstrap/acceptance/hosted_io.gsl",
+      "exit": 0,
+      "stdout_hex": "73747275637472657475726e0a410a09225cc3a900ffe298baf09f9982415357",
+      "round_trip_hex": "00ff010203040506"
+    },
+    {
+      "name": "memory",
+      "fixture": "test/bootstrap/acceptance/memory.gsl",
+      "exit": 0
+    },
+    {
+      "name": "aggregate_values",
+      "fixture": "test/bootstrap/acceptance/structs.gsl",
+      "exit": 0
+    },
+    {
+      "name": "wide_integers",
+      "fixture": "test/bootstrap/acceptance/wide_integers.gsl",
+      "exit": 0
+    },
+    {
+      "name": "scalar_types",
+      "fixture": "test/bootstrap/acceptance/scalar_types.gsl",
+      "exit": 0
+    },
+    {
+      "name": "lexer",
+      "fixture": "test/bootstrap/acceptance/lexer.gsl",
+      "exit": 0
+    },
+    {
+      "name": "lexer_source_files",
+      "fixture": "test/bootstrap/acceptance/lexer_source_files.gsl",
+      "exit": 0,
+      "arguments": "compiler_source_files"
+    },
+    {
+      "name": "semantic_scopes",
+      "fixture": "test/bootstrap/acceptance/semantic_scopes.gsl",
+      "exit": 0,
+      "arguments": [
+        [
+          "lib/compiler/cli.gsl"
+        ]
+      ]
+    },
+    {
+      "name": "entry_valid_source",
+      "source": "func main() u32 { return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_unsigned_remainder",
+      "source": "func main() u32 { return 23 % 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_typed_immutable_local",
+      "source": "func main() u32 { let answer: u32 = 11; return answer; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_typed_wider_local",
+      "source": "func main() u32 { let answer: u64 = 11; return answer as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_mutable_local",
+      "source": "func main() u32 { var answer: u32 = 11; return answer; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_mutable_assignment",
+      "source": "func main() u32 { var answer: u32 = 1; answer += 12; answer -= 2; return answer; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_mutable_direct_assignment",
+      "source": "func main() u32 { var answer: u32 = 1; answer = answer + 10; return answer; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_global_constant",
+      "source": "const ANSWER = 11\nfunc main() u32 { return ANSWER }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_parameter_shadows_constant",
+      "source": "const ANSWER: u32 = 1\nfunc identity(ANSWER: u32) u32 { return ANSWER }\nfunc main() u32 { return identity(11) }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_local_shadows_constant",
+      "source": "const ANSWER: u32 = 1\nfunc main() u32 { let ANSWER = 11; return ANSWER }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_constant",
+      "source": "const ANSWER: usize = 11\nfunc main() u32 { return ANSWER as u32 }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_small_integer_constant",
+      "source": "const ANSWER: u16 = 11\nfunc main() u32 { return ANSWER as u32 }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_direct_call",
+      "source": "func add(x: u64, y: u64) u64 { return x + y; }\nfunc main() u32 { return add(5, 6) as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_inferred_wide_variable",
+      "source": "func wide() u64 { return 11; }\nfunc main() u32 { let initial = wide(); var value = initial; value += 1; value -= 1; return value as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_inferred_wide_loop_variable",
+      "source": "func main() u32 { let initial = 11 as u64; var count = 0; while count < 1 { var value = initial + 1; value -= 1; return value as u32; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_scope_shadowing",
+      "source": "func main() u32 { var value = 11 as u64; if true { var value = 12; value += 1; } return value as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_branch_and_loop",
+      "source": "func count(value: usize) usize { var result: usize = 0; while result < value { if result == 5 { result += 2; } else { result += 1; } } return result; }\nfunc main() u32 { return count(11) as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_typed_arithmetic_keeps_source_width",
+      "source": "func main() u32 { let value = 4294967295; if (value + 1) as u64 == 0 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_literal_arithmetic_keeps_source_width",
+      "source": "func main() u32 { if (4294967295 + 1) as u64 == 0 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_annotation_for_literal_arithmetic",
+      "source": "func main() u32 { let value: u64 = 10 + 1; return value as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_wide_literal",
+      "source": "func value() u64 { return 4294967296; }\nfunc main() u32 { return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_recursive_pointer_struct_declaration",
+      "source": "struct Packet { value: u32, next: *Packet }\nfunc main() u32 { return 11 }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_copy_struct_declaration",
+      "source": "copy struct Pair { left: u32, right: u32 }\nfunc main() u32 { return 11 }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_pointer_signature",
+      "source": "func identity(value: *u8) u32 { return 11 }\nfunc main() u32 { return 11 }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_struct_field_initialization_and_read",
+      "source": "struct Box { value: u32 } func main() u32 { var box: Box; box.value = 11; return box.value; }",
+      "exit": 11
+    },
+    {
+      "name": "entry_borrow_scalar_and_dereference",
+      "source": "func main() u32 { let value: i8 = -1; let ptr = &value; unsafe { if (*ptr as i32) == -1 { return 11; } } return 12; }",
+      "exit": 11
+    },
+    {
+      "name": "entry_generated_register_names_do_not_collide_with_parameters",
+      "source": "func increment(t1: u32) u32 { return t1 + 1; } func main() u32 { return increment(10); }",
+      "exit": 11
+    },
+    {
+      "name": "entry_line_endings_and_comments",
+      "source": "// leading comment\nfunc main() u32 {\n  let answer = 11 // trailing comment\n  return answer\n}\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_comparison",
+      "source": "func main() u32 { let flag = 1 < 2; if flag { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_boolean_literal",
+      "source": "func main() u32 { if true { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_boolean_negation",
+      "source": "func main() u32 { if !false { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_logical_and",
+      "source": "func main() u32 { if true && true { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_logical_or",
+      "source": "func main() u32 { if false || true { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_nested_logical_condition",
+      "source": "func main() u32 { if (false || 2 > 1) && (true || false) { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_and_skips_trapping_right_operand",
+      "source": "func main() u32 { if false && (1 / 0 == 0) { return 12; } return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_or_skips_trapping_right_operand",
+      "source": "func main() u32 { if true || (1 / 0 == 0) { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_else_branch",
+      "source": "func main() u32 { if false { return 12; } else { return 11; } return 13; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_nested_branches",
+      "source": "func main() u32 { if 1 < 2 { if 3 != 4 { return 11; } } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_else_if_branch",
+      "source": "func main() u32 { if false { return 12; } else if 3 == 3 { return 11; } return 13; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_less_than_or_equal",
+      "source": "func main() u32 { if 3 <= 3 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_greater_than_or_equal",
+      "source": "func main() u32 { if 3 >= 3 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_unsigned_comparison",
+      "source": "func main() u32 { if 4294967295 > 0 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_branch_assignment",
+      "source": "func main() u32 { var value = 1; if true { value = 11; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_else_branch_assignment",
+      "source": "func main() u32 { var value = 1; if false { value = 12; } else { value += 10; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_branch_assignment_then_return",
+      "source": "func main() u32 { var value = 1; if true { value += 10; return value; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_skipped_branch_preserves_variable",
+      "source": "func main() u32 { var value = 11; if false { value = 12; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_branch_local",
+      "source": "func main() u32 { if true { let value = 11; return value; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_branch_local_shadows_outer",
+      "source": "func main() u32 { let value = 12; if true { let value = 11; return value; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_branch_mutable_local_shadows_outer",
+      "source": "func main() u32 { var value = 11; if true { var value = 12; value += 1; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_false",
+      "source": "func main() u32 { var value = 11; while false { value += 1; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_increments_mutable_local",
+      "source": "func main() u32 { var value = 0; while value < 11 { value += 1; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_logical_condition",
+      "source": "func main() u32 { var value = 0; while value < 11 && true { value += 1; } return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_local_immutable_binding",
+      "source": "func main() u32 { var count = 0; var result = 0; while count < 11 { let step = 1; result += step; count += 1; } return result; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_local_mutable_binding",
+      "source": "func main() u32 { var count = 0; var result = 0; while count < 11 { var step = 1; result += step; count += 1; } return result; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_while_break_and_continue",
+      "source": "func main() u32 { var count = 0; var result = 0; while count < 20 { count += 1; if count == 2 { continue; } if count == 13 { break; } result += 1; } return result; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_nested_while",
+      "source": "func main() u32 { var outer = 0; var inner = 0; var result = 5; while outer < 2 { inner = 0; while inner < 5 { inner += 1; if inner == 2 { continue; } if inner == 5 { break; } result += 1; } outer += 1; } return result; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_string_literal",
+      "source": "func main() u32 { let text = \"gsl\"; return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_address_of_immutable_local",
+      "source": "func main() u32 { let value = 1; let ptr = &value; return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_arena_declaration",
+      "source": "func main() u32 { arena temp(1024); return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_hexadecimal_output",
+      "source": "func main() u32 { let value = 0xB; return value; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_signed_output",
+      "source": "func main() i32 { return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_typed_bool_call",
+      "source": "func flag(value: bool) bool { return !value; }\nfunc main() u32 { var value: bool = false; value = flag(value); if value { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_inferred_bool_constant",
+      "source": "const ENABLED = true\nfunc main() u32 { if ENABLED { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_small_integer_loop",
+      "source": "func main() u32 { var value: u8; while value < 11 { value += 1; } return value as u32; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_signed_small_comparison",
+      "source": "func main() u32 { let low = 255 as i8; if low < 0 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_void_calls",
+      "source": "func empty() void { return; }\nfunc implicit() { empty(); }\nfunc main() u32 { implicit(); return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_void_return_expression",
+      "source": "func empty() {}\nfunc relay() void { return empty(); }\nfunc main() u32 { relay(); return 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_shift_and_addition_precedence",
+      "source": "func main() u32 { return (1 << 2 + 1) + 3; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_bitwise_precedence",
+      "source": "func main() u32 { return (1 | 2 ^ 3 & 6) + 10; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_equality_and_ordering_precedence",
+      "source": "func main() u32 { if true == 1 < 2 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_bitwise_prefix_before_cast",
+      "source": "func main() u32 { if ~0 as u8 == 255 { return 11; } return 12; }\n",
+      "exit": 11
+    },
+    {
+      "name": "entry_explicit_literal_narrowing",
+      "source": "func main() u32 { let value = 256 as u8; return value as u32 + 11; }\n",
+      "exit": 11
+    },
+    {
+      "name": "compiler_api",
+      "fixture": "test/bootstrap/acceptance/compiler_api.gsl",
+      "exit": 0,
+      "generated": {
+        "exit": 11,
+        "i32_functions": 2
+      },
+      "stdout_hex": "67736c632d73656c663a204c4c564d2049522067656e657261646f20657869746f73616d656e74650a"
+    },
+    {
+      "name": "import_diamond",
+      "fixture": "test/bootstrap/acceptance/imports/main.gsl",
+      "exit": 12,
+      "definitions": [
+        "base",
+        "left",
+        "right",
+        "main"
+      ]
+    },
+    {
+      "name": "import_cycle",
+      "fixture": "test/bootstrap/acceptance/imports/cycle_main.gsl",
+      "exit": 5,
+      "definitions": [
+        "b",
+        "a",
+        "main"
+      ]
+    },
+    {
+      "name": "compiler_storage",
+      "fixture": "test/bootstrap/acceptance/storage.gsl",
+      "exit": 0,
+      "arguments": [
+        [
+          "lib/compiler/cli.gsl"
+        ]
+      ],
+      "storage_report": true
+    },
+    {
+      "name": "parser_fixture",
+      "fixture": "test/fixtures/compiler_parser_test.gsl",
+      "exit": 0,
+      "stdout_hex": "5061727365723a2066756e63206465636c204f4b0a53656d613a20636865636b204f4b0a4869746f2037453a20506172736572207920616e616c697369732073656d616e7469636f20656e2047534c2066756e63696f6e616e20636f7272656374616d656e74650a"
+    },
+    {
+      "name": "kernel_data",
+      "fixture": "test/fixtures/kernel_data.gsl",
+      "exit": 11
+    },
+    {
+      "name": "memory_routines",
+      "fixture": "test/fixtures/memory_routines.gsl",
+      "exit": 11
+    },
+    {
+      "name": "output_writer",
+      "fixture": "test/bootstrap/acceptance/output_writer.gsl",
+      "exit": 0
+    },
+    {
+      "name": "bounded_parentheses",
+      "source": "func main() u32 {return ((((((((((((((((((((0))))))))))))))))))));}",
+      "exit": 0
+    },
+    {
+      "name": "bounded_prefix",
+      "source": "func main() u32 {return --------------------------------0;}",
+      "exit": 0
+    },
+    {
+      "name": "bounded_operator_tree",
+      "source": "func main() u32 {return 0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0+0;}",
+      "exit": 0
+    },
+    {
+      "name": "bounded_blocks",
+      "source": "func main() u32 {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {unsafe {return 0;}}}}}}}}}}}}}}}}}}}}}",
+      "exit": 0
+    },
+    {
+      "name": "parser_exhaustion",
+      "fixture": "test/bootstrap/acceptance/parser_exhaustion.gsl",
+      "exit": 0
+    }
+  ],
+  "objects": [
+    {
+      "name": "cpu_primitives",
+      "fixture": "test/fixtures/cpu_primitives.gsl",
+      "patterns": [
+        "\\bsti\\b",
+        "\\bin\\s+\\(%dx\\),%ax",
+        "\\bout\\s+%ax,\\(%dx\\)"
+      ]
+    },
+    {
+      "name": "mmio",
+      "fixture": "test/bootstrap/examples/security_mmio.gsl",
+      "patterns": []
+    },
+    {
+      "name": "external_symbols",
+      "fixture": "test/bootstrap/acceptance/symbols.gsl",
+      "patterns": [
+        "\\bnop\\b"
+      ]
+    },
+    {
+      "name": "kernel_library",
+      "fixture": "test/fixtures/kernel_primitives_test.gsl",
+      "patterns": [
+        "\\bsti\\b",
+        "\\bcli\\b",
+        "\\bnop\\b",
+        "\\bin\\s+\\(%dx\\),%ax",
+        "\\bout\\s+%ax,\\(%dx\\)"
+      ]
+    },
+    {
+      "name": "paging_objects",
+      "fixture": "test/fixtures/paging_primitives.gsl",
+      "patterns": [
+        "mov\\s+%cr2",
+        "mov\\s+%cr3",
+        "mov\\s+%r[a-z0-9]+,%cr3",
+        "invlpg"
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "pointer_unsafe",
+      "source": "func main() { var value: u32; *(&value) = 1; }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true
+    },
+    {
+      "name": "pointer_unsafe_field",
+      "source": "copy struct Pair { value: u32 } func main() { var pair: Pair; *(&pair.value) = 1; }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true
+    },
+    {
+      "name": "pointer_width",
+      "source": "func main() { var value: u8; unsafe { *(&value) = 1 as u16; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_signedness",
+      "source": "func main() { var value: u32; unsafe { *(&value) = 1 as i32; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_boolean",
+      "source": "func main() { var value: bool; unsafe { *(&value) = 1; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_non_pointer",
+      "source": "func main() { unsafe { *42 = 1; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_undefined",
+      "source": "func main() { unsafe { *missing = 1; } }",
+      "status": 2,
+      "code": "E2001",
+      "check_code": true
+    },
+    {
+      "name": "pointer_pointer_type",
+      "source": "func main() { var byte: u8; var word: u32; var target: *u8 = &byte; unsafe { *(&target) = &word; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_literal_overflow",
+      "source": "func main() { var value: u8; unsafe { *(&value) = 256; } }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_compound",
+      "source": "func main() { var value: u32; unsafe { *(&value) += 1; } }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": true
+    },
+    {
+      "name": "pointer_immutable_binding",
+      "source": "func main() { var value: u32; let pointer = &value; pointer = &value; }",
+      "status": 2,
+      "code": "E2003",
+      "check_code": true
+    },
+    {
+      "name": "array_zero_length",
+      "source": "func main() { var data: [0]u8; }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "array_too_long",
+      "source": "func main() { var data: [65536]u8; }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "array_hex_length",
+      "source": "func main() { var data: [0x10]u8; }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "array_constant_length",
+      "source": "const LENGTH: u32 = 4; func main() { var data: [LENGTH]u8; }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "array_undefined_type",
+      "source": "func main() { var data: [4]Missing; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_index_type",
+      "source": "func main() { var data: [4]u8; data[1 as u32] = 1; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_bool_index",
+      "source": "func main() { var data: [4]u8; data[true] = 1; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_element_width",
+      "source": "func main() { var data: [4]u8; data[0] = 1 as u16; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_element_sign",
+      "source": "func main() { var data: [4]u8; data[0] = 1 as i8; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_pointer_index",
+      "source": "func main(data: *u8) { unsafe { data[0] = 1; } }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_array_pointer_unsafe",
+      "source": "func main(data: *[4]u8) { data[0] = 1; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_array_pointer_read_unsafe",
+      "source": "func main(data: *[4]u8) u8 { return data[0]; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_literal_overflow",
+      "source": "func main() { var data: [4]u8; data[0] = 256; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_compound",
+      "source": "func main() { var data: [4]u8; data[0] += 1; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_by_value_parameter",
+      "source": "func main(data: [4]u8) {}",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_by_value_return",
+      "source": "func buffer() [4]u8 { var data: [4]u8; return data; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_whole_copy",
+      "source": "func main() { var first: [4]u8; var second: [4]u8; second = first; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_whole_initializer",
+      "source": "func main() { var first: [4]u8; let second = first; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_whole_expression",
+      "source": "func main() { var data: [4]u8; data; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_nested_array",
+      "source": "func main() { var data: [2][4]u8; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_recursive_struct_element",
+      "source": "struct Item { value: Item } func main() { var data: [4]Item; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_struct_wrong_field",
+      "source": "struct Item { value: u16 } func main() { var data: [4]Item; data[0].value = 1 as u8; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_struct_wrong_element",
+      "source": "struct A { value: u16 } struct B { value: u16 } func main() { var data: [4]A; var item: B; item.value = 1 as u16; data[0] = item; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_struct_pointer_unsafe",
+      "source": "struct Item { value: u8 } func main(data: *[4]Item) { data[0].value = 1; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "array_struct_field",
+      "source": "copy struct Item { data: [4]u8 } func main() { var item: Item; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_void_element",
+      "source": "func main() { var data: [4]void; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "array_float_element",
+      "source": "func main() { var data: [4]f64; }",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "packed_copy_packed",
+      "source": "copy packed struct Invalid { value: u8 } func main() {}",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "packed_packed_copy",
+      "source": "packed copy struct Invalid { value: u8 } func main() {}",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "packed_packed_function",
+      "source": "packed func main() {}",
+      "status": 1,
+      "code": "E1000",
+      "check_code": false
+    },
+    {
+      "name": "packed_unknown_field",
+      "source": "packed struct Invalid { value: Missing } func main() {}",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "packed_recursive_value",
+      "source": "packed struct Invalid { value: Invalid } func main() {}",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "packed_array_field",
+      "source": "packed struct Invalid { value: [4]u8 } func main() {}",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "packed_float_field",
+      "source": "packed struct Invalid { value: f64 } func main() {}",
+      "status": 4,
+      "code": "E4000",
+      "check_code": false
+    },
+    {
+      "name": "packed_wrong_value",
+      "source": "packed struct Item { value: u16 } func main() { var item: Item; item.value = 1 as u8; }",
+      "status": 2,
+      "code": "E2000",
+      "check_code": false
+    },
+    {
+      "name": "hardware_syscall",
+      "source": "func main() { unsafe { syscall(1, 1, 1, 1); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_syscall_write",
+      "source": "func main() { unsafe { syscall_write(1, 1, 1); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_imported_syscall",
+      "source": "import \"core/io\"\nfunc main() {}",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_inw_port_width",
+      "source": "func main() { unsafe { inw(1 as u32); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_outw_port_width",
+      "source": "func main() { unsafe { outw(1 as u8, 1 as u16); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_outw_value_width",
+      "source": "func main() { unsafe { outw(1 as u16, 1 as u8); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_outw_value_sign",
+      "source": "func main() { unsafe { outw(1 as u16, 1 as i16); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_inw_result_width",
+      "source": "func main() u8 { unsafe { return inw(1 as u16); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_inb_width",
+      "source": "func main() { unsafe { inb(1 as u32); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_outb_width",
+      "source": "func main() { unsafe { outb(1 as u16, 1 as u16); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_lgdt_width",
+      "source": "func main() { unsafe { lgdt(1 as u32); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_lidt_width",
+      "source": "func main() { unsafe { lidt(1 as u8); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_asm_variable",
+      "source": "func main() { let instruction = \"int3\"; unsafe { asm(instruction); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_symbol_variable",
+      "source": "func main() { let name = \"table\"; unsafe { symbol_address(name); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_symbol_invalid",
+      "source": "func main() { unsafe { symbol_address(\"bad-name\"); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hardware_symbol_empty",
+      "source": "func main() { unsafe { symbol_address(\"\"); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "inb_unsafe",
+      "source": "func main() { inb(1 as u16); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "inb_arity",
+      "source": "func main() { unsafe { inb(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "outb_unsafe",
+      "source": "func main() { outb(1 as u16, 0 as u8); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "outb_arity",
+      "source": "func main() { unsafe { outb(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "cli_unsafe",
+      "source": "func main() { cli(); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "cli_arity",
+      "source": "func main() { unsafe { cli(1); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "sti_unsafe",
+      "source": "func main() { sti(); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "sti_arity",
+      "source": "func main() { unsafe { sti(1); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "hlt_unsafe",
+      "source": "func main() { hlt(); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "hlt_arity",
+      "source": "func main() { unsafe { hlt(1); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "inw_unsafe",
+      "source": "func main() { inw(1 as u16); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "inw_arity",
+      "source": "func main() { unsafe { inw(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "outw_unsafe",
+      "source": "func main() { outw(1 as u16, 1 as u16); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "outw_arity",
+      "source": "func main() { unsafe { outw(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "asm_unsafe",
+      "source": "func main() { asm(\"nop\"); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "asm_arity",
+      "source": "func main() { unsafe { asm(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "symbol_address_unsafe",
+      "source": "func main() { symbol_address(\"table\"); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "symbol_address_arity",
+      "source": "func main() { unsafe { symbol_address(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "lgdt_unsafe",
+      "source": "func main() { lgdt(1 as usize); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "lgdt_arity",
+      "source": "func main() { unsafe { lgdt(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "lidt_unsafe",
+      "source": "func main() { lidt(1 as usize); }",
+      "status": 2,
+      "code": "E2004",
+      "check_code": true,
+      "target": "kernel"
+    },
+    {
+      "name": "lidt_arity",
+      "source": "func main() { unsafe { lidt(); } }",
+      "status": 2,
+      "target": "kernel"
+    },
+    {
+      "name": "syntax",
+      "source": "func main() u32 { return 1",
+      "status": 1
+    },
+    {
+      "name": "unsupported",
+      "source": "func main() { let text=\"gsl\"; let same=text==text; }",
+      "status": 4
+    },
+    {
+      "name": "diagnostic_undefined",
+      "source": "func main() u32 { let text=\"\u00e9\"; return missing; }",
+      "status": 2,
+      "record": {
+        "code": "E2001",
+        "message": "undefined identifier",
+        "span": {
+          "start": 40,
+          "end": 47
+        }
+      }
+    },
+    {
+      "name": "diagnostic_arity",
+      "source": "func value(x: u32) u32 { return x; } func main() u32 { return value( )  ; }",
+      "status": 2,
+      "record": {
+        "code": "E2002",
+        "message": "argument count mismatch",
+        "span": {
+          "start": 62,
+          "end": 70
+        }
+      }
+    },
+    {
+      "name": "diagnostic_immutable",
+      "source": "func main() u32 { let value = 1; value = 2; return value; }",
+      "status": 2,
+      "record": {
+        "code": "E2003",
+        "message": "immutable binding",
+        "span": {
+          "start": 33,
+          "end": 38
+        }
+      }
+    },
+    {
+      "name": "diagnostic_unsafe",
+      "source": "func main() u32 { syscall(1, 2, 3, 4)  ; return 0; }",
+      "status": 2,
+      "record": {
+        "code": "E2004",
+        "message": "unsafe operation",
+        "span": {
+          "start": 18,
+          "end": 37
+        }
+      }
+    },
+    {
+      "name": "array_deep_type",
+      "source": "func main() { var data: [1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]u8; }",
+      "status": 1
+    },
+    {
+      "name": "result_unimplemented",
+      "fixture": "test/bootstrap/examples/conventions_result.gsl",
+      "status": 1
+    },
+    {
+      "name": "entry_unsupported_constant_type",
+      "source": "const ANSWER: f32 = 11 as f32\nfunc main() u32 { return 11 }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_mixed_typed_widths",
+      "source": "func main() u32 { let narrow = 11; let wide = 1 as u64; return (narrow + wide) as u32; }\n",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_unsupported_constant_expression",
+      "source": "const ANSWER: u32 = 10 + 1\nfunc main() u32 { return ANSWER }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_constant_called_as_function",
+      "source": "const ANSWER: u32 = 11\nfunc main() u32 { return ANSWER() }\n",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_wrong_call_arity",
+      "source": "func identity(x: u32) u32 { return x }\nfunc main() u32 { return identity() }\n",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_recursive_value_layout_rejected_before_output",
+      "source": "struct Node { value: Node } func main() u32 { return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_unsupported_field_type_rejected_before_output",
+      "source": "struct Box { value: f64 } func main() u32 { return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_immutable_field_write_rejected_before_output",
+      "source": "copy struct Box { value: u32 } func main() u32 { var first: Box; first.value = 1; let second = first; second.value = 2; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_address_of_literal_rejected_before_output",
+      "source": "func main() u32 { let ptr = &1; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_aggregate_cast_rejected_before_output",
+      "source": "struct Box { value: u32 } func main() u32 { var value: Box; let result = value as u32; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_unknown_layout_type_rejected_before_output",
+      "source": "func main() u32 { let size = size_of(Missing); return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_typed_arena_allocation_outside_numeric_subset",
+      "source": "struct Box { value: u32 } func main() u32 { arena storage(128); let box = storage.alloc(Box); return 11; }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_arena_capacity_expression_outside_literal_subset",
+      "source": "func main() u32 { arena storage(64 + 64); return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_arena_capacity_shadowed_by_local",
+      "source": "const CAP: u32 = 128; func main() u32 { let CAP = 64; arena storage(CAP); return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_zero_arena_capacity_rejected_before_output",
+      "source": "func main() u32 { arena storage(0); return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_malformed_struct_field",
+      "source": "struct Packet { value u32 }\nfunc main() u32 { return 11 }\n",
+      "status": 1,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_branch_local_stays_in_scope",
+      "source": "func main() u32 { if true { let value = 11; } return value; }\n",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_unsupported_preserves_output",
+      "source": "func main() u32 { let text = \"gsl\"; let same = text == text; return 11; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_narrow_literal_rejected_before_output",
+      "source": "func main() u32 { var value: u8 = 256; return 11; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_void_binding_rejected_before_output",
+      "source": "func empty() {}\nfunc main() u32 { let value = empty(); return 11; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_void_cast_rejected_before_output",
+      "source": "func empty() {}\nfunc main() u32 { return empty() as u32; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_mixed_signedness_rejected",
+      "source": "func main() u32 { let value: i32 = 11; return value + 0 as u32; }\n",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_narrow_argument_rejected",
+      "source": "func identity(value: u8) u8 { return value; }\nfunc main() u32 { return identity(256) as u32; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_narrow_constant_rejected",
+      "source": "const VALUE: u16 = 65536\nfunc main() u32 { return 11; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_out_of_range_integer",
+      "source": "func main() u32 { return 4294967296; }\n",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_nul_byte",
+      "source": "func main() u32 { return 11; }\u0000",
+      "status": 8,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_18446744073709551616",
+      "source": "func main() u32 { let value = 18446744073709551616; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_0x10000000000000000",
+      "source": "func main() u32 { let value = 0x10000000000000000; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_1__2",
+      "source": "func main() u32 { let value = 1__2; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_12_",
+      "source": "func main() u32 { let value = 12_; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_0b102",
+      "source": "func main() u32 { let value = 0b102; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "entry_literal_0o89",
+      "source": "func main() u32 { let value = 0o89; return 11; }",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "import_missing",
+      "source": "import \"absent\"\nfunc main() {}",
+      "status": 5,
+      "check_missing_output": true
+    },
+    {
+      "name": "import_escape",
+      "source": "import \"../outside\"\nfunc main() {}",
+      "status": 1,
+      "check_missing_output": true
+    },
+    {
+      "name": "read_cr2_unsafe",
+      "source": "func main() { read_cr2(); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "read_cr3_unsafe",
+      "source": "func main() { read_cr3(); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "write_cr3_unsafe",
+      "source": "func main() { write_cr3(0 as usize); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "invlpg_unsafe",
+      "source": "func main() { invlpg(0 as usize); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "asm_u64_unsafe",
+      "source": "func main() { asm_u64(\"\", \"=r\"); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "asm_void_unsafe",
+      "source": "func main() { asm_void(\"\", \"\"); }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "write_cr3_bad_width",
+      "source": "func main() { unsafe { write_cr3(1 as u32); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "write_cr3_bad_arity",
+      "source": "func main() { unsafe { write_cr3(); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "invlpg_bad_width",
+      "source": "func main() { unsafe { invlpg(1 as u32); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "invlpg_bad_arity",
+      "source": "func main() { unsafe { invlpg(); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "read_cr2_bad_arity",
+      "source": "func main() { unsafe { read_cr2(1); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "read_cr3_bad_arity",
+      "source": "func main() { unsafe { read_cr3(1); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_138",
+      "source": "func main() { unsafe { asm_u64(\"\", \"r\", 1 as usize); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_139",
+      "source": "func main() { unsafe { asm_void(\"\", \"=r\"); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_140",
+      "source": "func main() { unsafe { asm_u64(\"\", \"=r,r\"); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_141",
+      "source": "func main() { unsafe { asm_void(\"\", \"r\", 1 as u32); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_142",
+      "source": "func main() { unsafe { asm_void(\"\", \"r,r\", 1 as usize); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_143",
+      "source": "func main() { unsafe { asm_void(\"\", \"r,\", 1 as usize); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_144",
+      "source": "func main() { unsafe { asm_u64(\"\", \"=r,=r\"); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_145",
+      "source": "func main() { unsafe { asm_void(\"\", \"r\", 1, 2, 3, 4, 5); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_146",
+      "source": "func main() { unsafe { asm_void(1, \"\"); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "assembly_reject_147",
+      "source": "func main() { unsafe { asm_u64(\"\", 1); } }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_read_requires_unsafe",
+      "source": "var counter: u64; func main() u64 { return counter; }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_write_requires_unsafe",
+      "source": "var counter: u64; func main() { counter=1 as u64; }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_borrow_requires_unsafe",
+      "source": "var counter: u64; func main() { let ptr=&counter; }",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_duplicate",
+      "source": "var counter:u64; var counter:u64; func main() {}",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_array_count",
+      "source": "var data:[2]u8=[1]; func main() {}",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_array_width",
+      "source": "var data:[2]u8=[1,256]; func main() {}",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_dynamic_initializer",
+      "source": "var counter:u64=read(); func read() u64 { return 1 as u64; } func main() {}",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_section_empty",
+      "source": "section(\"\") var data:u64; func main() {}",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "global_section_escape",
+      "source": "section(\".data\\\\n\") var data:u64; func main() {}",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "function_section_empty",
+      "source": "section(\"\") func main() {}",
+      "status": 4,
+      "check_missing_output": true
+    },
+    {
+      "name": "section_invalid_modifier",
+      "source": "section(\".data\") const DATA:u64=1; func main() {}",
+      "status": 1,
+      "check_missing_output": true
+    },
+    {
+      "name": "runtime_bad_signature",
+      "source": "func memcpy() {} func main() {}",
+      "target": "kernel",
+      "status": 2,
+      "check_missing_output": true
+    },
+    {
+      "name": "runtime_global_collision",
+      "source": "var memset:u64; func main() {}",
+      "target": "kernel",
+      "status": 2,
+      "check_missing_output": true
+    }
+  ],
+  "capacities": [
+    {
+      "name": "expressions",
+      "generator": "expressions",
+      "status": 1
+    },
+    {
+      "name": "statements",
+      "generator": "statements",
+      "status": 1
+    },
+    {
+      "name": "functions",
+      "generator": "functions",
+      "status": 1
+    },
+    {
+      "name": "parameters",
+      "generator": "parameters",
+      "status": 1
+    },
+    {
+      "name": "constants",
+      "generator": "constants",
+      "status": 1
+    },
+    {
+      "name": "structs",
+      "generator": "structs",
+      "status": 1
+    },
+    {
+      "name": "fields",
+      "generator": "fields",
+      "status": 1
+    },
+    {
+      "name": "symbols",
+      "generator": "symbols",
+      "status": 2
+    },
+    {
+      "name": "input_bytes",
+      "generator": "input_bytes",
+      "status": 7
+    },
+    {
+      "name": "array_types",
+      "generator": "array_types",
+      "status": 1
+    },
+    {
+      "name": "array_layout_overflow",
+      "generator": "array_layout_overflow",
+      "status": 4
+    },
+    {
+      "name": "deep_parentheses",
+      "generator": "deep_parentheses",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "deep_prefix",
+      "generator": "deep_prefix",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "deep_blocks",
+      "generator": "deep_blocks",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "deep_operator_tree",
+      "generator": "deep_operator_tree",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "deep_cast_tree",
+      "generator": "deep_cast_tree",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "section_function_capacity",
+      "generator": "section_function_capacity",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "deep_else_if",
+      "generator": "deep_else_if",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true,
+      "check_missing_output": true
+    }
+  ],
+  "traps": [
+    {
+      "name": "array_struct_read",
+      "source": "struct Item { value: u64 } func main(argc: u32, argv: *usize) u32 { var data: [1]Item; return data[argc as usize].value as u32; }"
+    },
+    {
+      "name": "array_struct_write",
+      "source": "import \"core/io\"; struct Item { value: u64 } func side_effect() u64 { print(\"unexpected\"); return 1 as u64; } func main(argc: u32, argv: *usize) u32 { var data: [1]Item; data[argc as usize].value = side_effect(); return 0; }"
+    },
+    {
+      "name": "array_struct_borrow",
+      "source": "struct Item { value: u64 } func main(argc: u32, argv: *usize) u32 { var data: [1]Item; let pointer = &data[argc as usize].value; return 0; }"
+    },
+    {
+      "name": "array_read",
+      "source": "func main(argc: u32, argv: *usize) u32 { var data: [1]u8; return data[argc as usize] as u32; }"
+    },
+    {
+      "name": "array_write",
+      "source": "import \"core/io\"; func side_effect() u8 { print(\"unexpected\"); return 1 as u8; } func main(argc: u32, argv: *usize) u32 { var data: [1]u8; data[argc as usize] = side_effect(); return 0; }"
+    },
+    {
+      "name": "array_negative",
+      "source": "func main(argc: u32, argv: *usize) u32 { var data: [1]u8; return data[(0 as usize) - (argc as usize)] as u32; }"
+    },
+    {
+      "name": "array_borrow",
+      "source": "func main(argc: u32, argv: *usize) u32 { var data: [1]u8; let pointer = &data[argc as usize]; return 0; }"
+    },
+    {
+      "name": "array_pointer",
+      "source": "func read(data: *[1]u8, index: usize) u8 { unsafe { return data[index]; } } func main(argc: u32, argv: *usize) u32 { var data: [1]u8; return read(&data, argc as usize) as u32; }"
+    },
+    {
+      "name": "arena_exhaustion",
+      "source": "func main() u32 { arena storage(8); let value=storage.alloc(9 as usize); return 0; }"
+    },
+    {
+      "name": "arena_alignment",
+      "source": "func main() u32 { arena storage(9); let first=storage.alloc(1 as usize); let second=storage.alloc(2 as usize); return 0; }"
+    },
+    {
+      "name": "arena_negative",
+      "source": "func main() u32 { arena storage(8); let value=storage.alloc(-1 as i16); return 0; }"
+    },
+    {
+      "name": "arena_wrap",
+      "source": "func main() u32 { arena storage(8); let value=storage.alloc((0 as usize)-1); return 0; }"
+    },
+    {
+      "name": "division_zero",
+      "source": "func main() u32 { let value=(1 as u64)/(0 as u64); return 0; }"
+    },
+    {
+      "name": "remainder_zero",
+      "source": "func main() u32 { let value=(1 as u64)%(0 as u64); return 0; }"
+    },
+    {
+      "name": "signed_division_overflow",
+      "source": "func main() u32 { let value=(0x8000000000000000 as i64)/(-(1 as i64)); return 0; }"
+    },
+    {
+      "name": "signed_remainder_overflow",
+      "source": "func main() u32 { let value=(0x8000000000000000 as i64)%(-(1 as i64)); return 0; }"
+    },
+    {
+      "name": "shift_width",
+      "source": "func main() u32 { let value=(1 as u64) << (64 as u64); return 0; }"
+    },
+    {
+      "name": "shift_negative",
+      "source": "func main() u32 { let value=(1 as i32) >> (-1 as i32); return 0; }"
+    },
+    {
+      "name": "division_zero_u8",
+      "source": "func main() u32 { let value: u8 = 4; let operand: u8 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_u8",
+      "source": "func main() u32 { let value: u8 = 4; let operand: u8 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_u8",
+      "source": "func main() u32 { let value: u8 = 4; let operand: u8 = 8; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_u8",
+      "source": "func main() u32 { let value: u8 = 4; let operand: u8 = 8; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_zero_u16",
+      "source": "func main() u32 { let value: u16 = 4; let operand: u16 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_u16",
+      "source": "func main() u32 { let value: u16 = 4; let operand: u16 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_u16",
+      "source": "func main() u32 { let value: u16 = 4; let operand: u16 = 16; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_u16",
+      "source": "func main() u32 { let value: u16 = 4; let operand: u16 = 16; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_zero_u32",
+      "source": "func main() u32 { let value: u32 = 4; let operand: u32 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_u32",
+      "source": "func main() u32 { let value: u32 = 4; let operand: u32 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_u32",
+      "source": "func main() u32 { let value: u32 = 4; let operand: u32 = 32; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_u32",
+      "source": "func main() u32 { let value: u32 = 4; let operand: u32 = 32; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_zero_u64",
+      "source": "func main() u32 { let value: u64 = 4; let operand: u64 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_u64",
+      "source": "func main() u32 { let value: u64 = 4; let operand: u64 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_u64",
+      "source": "func main() u32 { let value: u64 = 4; let operand: u64 = 64; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_u64",
+      "source": "func main() u32 { let value: u64 = 4; let operand: u64 = 64; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_zero_usize",
+      "source": "func main() u32 { let value: usize = 4; let operand: usize = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_usize",
+      "source": "func main() u32 { let value: usize = 4; let operand: usize = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_usize",
+      "source": "func main() u32 { let value: usize = 4; let operand: usize = 64; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_usize",
+      "source": "func main() u32 { let value: usize = 4; let operand: usize = 64; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_zero_i8",
+      "source": "func main() u32 { let value: i8 = 4; let operand: i8 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_i8",
+      "source": "func main() u32 { let value: i8 = 4; let operand: i8 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_i8",
+      "source": "func main() u32 { let value: i8 = 4; let operand: i8 = 8; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_i8",
+      "source": "func main() u32 { let value: i8 = 4; let operand: i8 = 8; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "shift_left_negative_i8",
+      "source": "func main() u32 { let value: i8 = (1 as i8); let operand: i8 = -1; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_negative_i8",
+      "source": "func main() u32 { let value: i8 = (1 as i8); let operand: i8 = -1; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_overflow_i8",
+      "source": "func main() u32 { let value: i8 = (128 as i8); let operand: i8 = -1; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_overflow_i8",
+      "source": "func main() u32 { let value: i8 = (128 as i8); let operand: i8 = -1; return (value % operand) as u32; }"
+    },
+    {
+      "name": "division_zero_i16",
+      "source": "func main() u32 { let value: i16 = 4; let operand: i16 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_i16",
+      "source": "func main() u32 { let value: i16 = 4; let operand: i16 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_i16",
+      "source": "func main() u32 { let value: i16 = 4; let operand: i16 = 16; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_i16",
+      "source": "func main() u32 { let value: i16 = 4; let operand: i16 = 16; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "shift_left_negative_i16",
+      "source": "func main() u32 { let value: i16 = (1 as i16); let operand: i16 = -1; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_negative_i16",
+      "source": "func main() u32 { let value: i16 = (1 as i16); let operand: i16 = -1; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_overflow_i16",
+      "source": "func main() u32 { let value: i16 = (32768 as i16); let operand: i16 = -1; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_overflow_i16",
+      "source": "func main() u32 { let value: i16 = (32768 as i16); let operand: i16 = -1; return (value % operand) as u32; }"
+    },
+    {
+      "name": "division_zero_i32",
+      "source": "func main() u32 { let value: i32 = 4; let operand: i32 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_i32",
+      "source": "func main() u32 { let value: i32 = 4; let operand: i32 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_i32",
+      "source": "func main() u32 { let value: i32 = 4; let operand: i32 = 32; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_i32",
+      "source": "func main() u32 { let value: i32 = 4; let operand: i32 = 32; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "shift_left_negative_i32",
+      "source": "func main() u32 { let value: i32 = (1 as i32); let operand: i32 = -1; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_negative_i32",
+      "source": "func main() u32 { let value: i32 = (1 as i32); let operand: i32 = -1; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_overflow_i32",
+      "source": "func main() u32 { let value: i32 = (2147483648 as i32); let operand: i32 = -1; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_overflow_i32",
+      "source": "func main() u32 { let value: i32 = (2147483648 as i32); let operand: i32 = -1; return (value % operand) as u32; }"
+    },
+    {
+      "name": "division_zero_i64",
+      "source": "func main() u32 { let value: i64 = 4; let operand: i64 = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_i64",
+      "source": "func main() u32 { let value: i64 = 4; let operand: i64 = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_i64",
+      "source": "func main() u32 { let value: i64 = 4; let operand: i64 = 64; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_i64",
+      "source": "func main() u32 { let value: i64 = 4; let operand: i64 = 64; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "shift_left_negative_i64",
+      "source": "func main() u32 { let value: i64 = (1 as i64); let operand: i64 = -1; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_negative_i64",
+      "source": "func main() u32 { let value: i64 = (1 as i64); let operand: i64 = -1; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_overflow_i64",
+      "source": "func main() u32 { let value: i64 = (9223372036854775808 as i64); let operand: i64 = -1; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_overflow_i64",
+      "source": "func main() u32 { let value: i64 = (9223372036854775808 as i64); let operand: i64 = -1; return (value % operand) as u32; }"
+    },
+    {
+      "name": "division_zero_isize",
+      "source": "func main() u32 { let value: isize = 4; let operand: isize = 0; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_zero_isize",
+      "source": "func main() u32 { let value: isize = 4; let operand: isize = 0; return (value % operand) as u32; }"
+    },
+    {
+      "name": "shift_left_width_isize",
+      "source": "func main() u32 { let value: isize = 4; let operand: isize = 64; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_width_isize",
+      "source": "func main() u32 { let value: isize = 4; let operand: isize = 64; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "shift_left_negative_isize",
+      "source": "func main() u32 { let value: isize = (1 as isize); let operand: isize = -1; return (value << operand) as u32; }"
+    },
+    {
+      "name": "shift_right_negative_isize",
+      "source": "func main() u32 { let value: isize = (1 as isize); let operand: isize = -1; return (value >> operand) as u32; }"
+    },
+    {
+      "name": "division_overflow_isize",
+      "source": "func main() u32 { let value: isize = (9223372036854775808 as isize); let operand: isize = -1; return (value / operand) as u32; }"
+    },
+    {
+      "name": "remainder_overflow_isize",
+      "source": "func main() u32 { let value: isize = (9223372036854775808 as isize); let operand: isize = -1; return (value % operand) as u32; }"
+    }
+  ],
+  "kernels": [
+    {
+      "name": "kernel",
+      "fixture": "test/kernel/kernel.gsl",
+      "stdout": "KOI\n",
+      "qemu_args": []
+    },
+    {
+      "name": "pointer-kernel",
+      "fixture": "test/kernel/pointer_stores.gsl",
+      "stdout": "PTR\n",
+      "qemu_args": []
+    },
+    {
+      "name": "array-kernel",
+      "fixture": "test/kernel/arrays.gsl",
+      "stdout": "ARR\n",
+      "qemu_args": []
+    },
+    {
+      "name": "array-bounds-kernel",
+      "fixture": "test/kernel/array_bounds.gsl",
+      "stdout": "BND\n",
+      "qemu_args": []
+    },
+    {
+      "name": "packed-kernel",
+      "fixture": "test/kernel/packed.gsl",
+      "stdout": "PKD\n",
+      "qemu_args": []
+    },
+    {
+      "name": "descriptor-array-kernel",
+      "fixture": "test/kernel/descriptor_arrays.gsl",
+      "stdout": "TBL\n",
+      "qemu_args": []
+    },
+    {
+      "name": "cpu-primitives-kernel",
+      "fixture": "test/kernel/cpu_primitives.gsl",
+      "stdout": "CPU\n",
+      "qemu_args": [
+        "-vga",
+        "std"
+      ]
+    },
+    {
+      "name": "paging-kernel",
+      "fixture": "test/kernel/paging.gsl",
+      "stdout": "PAG\n",
+      "qemu_args": []
+    },
+    {
+      "name": "freestanding-high-kernel",
+      "fixture": "test/kernel/freestanding.gsl",
+      "stdout": "PAG\n",
+      "qemu_args": [],
+      "boot": "test/kernel/high_boot.S",
+      "linker_script": "test/kernel/high_linker.ld",
+      "entry": "boot_entry",
+      "object_sources": [
+        "test/kernel/memory_abi.S"
+      ],
+      "sections": {
+        ".requests": "c8a6955c2d2b56f9dc6b534449387b6a00000000000000000000000000000000"
+      }
+    }
+  ]
+}

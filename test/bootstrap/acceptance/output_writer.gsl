@@ -1,0 +1,52 @@
+import "compiler/output"
+
+const PIPE_NONBLOCK: u64 = 2048
+const PIPE_SET_SIZE: u64 = 1031
+const SYS_PIPE2: u64 = 293
+const SYS_FCNTL: u64 = 72
+const PIPE_BYTES: usize = 4096
+
+func main() u32 {
+    var output: CompilerOutput
+    let full = open("/dev/full", O_WRONLY, 0 as u64)
+    if full < 0 { return 1 }
+    output.fd = full as u64
+    output.error = false
+    compiler_output_string(&output, "must fail")
+    close(output.fd)
+    if output.error == false { return 2 }
+
+    var pipes: [2]u32
+    unsafe {
+        if syscall(SYS_PIPE2, (&pipes) as u64, PIPE_NONBLOCK, 0 as u64) != 0 { return 3 }
+        let read_fd = pipes[0] as u64
+        let write_fd = pipes[1] as u64
+        if syscall(SYS_FCNTL, write_fd, PIPE_SET_SIZE, PIPE_BYTES as u64) != PIPE_BYTES as i64 { return 4 }
+        arena bytes(16384)
+        let data = bytes.alloc(8192 as usize)
+        let received = bytes.alloc(8192 as usize)
+        var index: usize = 0
+        while index < 8192 as usize {
+            volatile_write(((data as usize) + index) as *u8, (index % 251 as usize) as u8)
+            index += 1 as usize
+        }
+        output.fd = write_fd
+        output.error = false
+        compiler_output_write(&output, data, 8192 as usize)
+        if output.error == false { return 5 }
+        if read(read_fd, received, 8192 as usize) != PIPE_BYTES as i64 { return 6 }
+        index = 0 as usize
+        while index < PIPE_BYTES {
+            if volatile_read(((received as usize) + index) as *u8) != (index % 251 as usize) as u8 { return 7 }
+            index += 1 as usize
+        }
+        compiler_output_string(&output, "error must remain set")
+        if read(read_fd, received, 8192 as usize) >= 0 { return 8 }
+        close(read_fd)
+        close(write_fd)
+        output.error = false
+        compiler_output_string(&output, "closed descriptor")
+        if output.error == false { return 9 }
+    }
+    return 0
+}

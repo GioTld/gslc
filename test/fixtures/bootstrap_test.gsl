@@ -1,0 +1,16 @@
+import "compiler/driver"
+import "std/io"
+
+func main() u32 {
+    let target_src = "func main() u32 { return 42; }"
+    let out_file = "/tmp/stage2_generated.ll"
+
+    let status = compile_string(target_src, out_file)
+    if status != 0 {
+        println("ERROR: compilacion auto-alojada fallo")
+        return status
+    }
+
+    println("Hito 7F: Bootstrap Stage 1 completado exitosamente")
+    return 0
+}

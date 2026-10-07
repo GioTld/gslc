@@ -1,0 +1,18 @@
+section(".requests") var REQUEST: [4]u64 = [1, 2, 3, 4]
+var counter: u64
+struct State { value: u64 }
+var state: State
+section(".text.entry") func main() u32 {
+    unsafe {
+        if counter != 0 as u64 { return 1 }
+        counter = 11 as u64
+        state.value = counter
+        if REQUEST[2 as usize] != 3 as u64 { return 2 }
+        REQUEST[3 as usize] = state.value
+        let result = asm_u64("add $2, $0", "=r,0,r", 7 as usize, 4 as usize)
+        asm_void("", "r", result)
+        if result != 11 as usize { return 3 }
+        if symbol_address("REQUEST") != (&REQUEST as usize) { return 4 }
+        return REQUEST[3 as usize] as u32
+    }
+}

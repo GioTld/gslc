@@ -1,0 +1,8 @@
+func main() u32 {
+    let a: u32 = 50;
+    let b: u64 = a as u64; // never implicit casting
+    if b == 50 as u64 {
+        return 0;
+    }
+    return 1;
+}

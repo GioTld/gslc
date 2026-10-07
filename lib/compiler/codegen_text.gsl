@@ -1,0 +1,251 @@
+import "compiler/parser"
+import "compiler/output"
+
+const ASCII_DIGIT_ZERO: u8 = 48
+const ASCII_DIGIT_SEVEN: u8 = 55
+const ASCII_DIGIT_NINE: u8 = 57
+const ASCII_UPPER_A: u8 = 65
+const ASCII_UPPER_F: u8 = 70
+const ASCII_UPPER_U: u8 = 85
+const ASCII_LOWER_A: u8 = 97
+const ASCII_LOWER_B: u8 = 98
+const ASCII_LOWER_F: u8 = 102
+const ASCII_LOWER_I: u8 = 105
+const ASCII_LOWER_N: u8 = 110
+const ASCII_LOWER_R: u8 = 114
+const ASCII_LOWER_T: u8 = 116
+const ASCII_LOWER_U: u8 = 117
+const ASCII_LOWER_V: u8 = 118
+const ASCII_LOWER_X: u8 = 120
+const ASCII_STAR: u8 = 42
+const ASCII_BACKSLASH: u8 = 92
+const ASCII_QUOTE: u8 = 34
+const ASCII_NEWLINE: u8 = 10
+const ASCII_CARRIAGE_RETURN: u8 = 13
+
+copy struct CodegenInteger {
+    value: u64,
+    valid: bool
+}
+
+copy struct CodegenChar {
+    value: u32,
+    next: usize,
+    unicode: bool
+}
+
+func codegen_write_u32(output: *CompilerOutput, value: u32) {
+    if value >= 10 {
+        codegen_write_u32(output, value / 10)
+    }
+    var digit: u8 = (value % 10) as u8 + ASCII_DIGIT_ZERO
+    compiler_output_write(output, &digit, 1 as usize)
+}
+
+func codegen_write_reg(output: *CompilerOutput, reg: u32) {
+    compiler_output_string(output, "%t")
+    codegen_write_u32(output, reg)
+}
+
+func codegen_write_token(p: *Parser, output: *CompilerOutput, ptr: *u8, len: usize) {
+    compiler_output_write(output, ptr, len)
+}
+
+func codegen_source_byte(p: *Parser, offset: usize) u8 {
+    unsafe { return volatile_read(((p.lex.src as usize) + offset) as *u8); }
+}
+
+func codegen_hex_digit(ch: u8) u32 {
+    if ch >= ASCII_DIGIT_ZERO && ch <= ASCII_DIGIT_NINE { return (ch - ASCII_DIGIT_ZERO) as u32 }
+    if ch >= ASCII_UPPER_A && ch <= ASCII_UPPER_F { return (ch - ASCII_UPPER_A) as u32 + 10 }
+    if ch >= ASCII_LOWER_A && ch <= ASCII_LOWER_F { return (ch - ASCII_LOWER_A) as u32 + 10 }
+    return 16
+}
+
+func codegen_decode_char(p: *Parser, offset: usize, end: usize) CodegenChar {
+    var result: CodegenChar
+    result.value = 0
+    result.next = 0 as usize
+    result.unicode = false
+    let ch = codegen_source_byte(p, offset)
+    if ch != ASCII_BACKSLASH {
+        if ch == ASCII_NEWLINE || ch == ASCII_CARRIAGE_RETURN || ch == ASCII_QUOTE { return result; }
+        result.value = ch as u32
+        result.next = offset + 1 as usize
+        return result
+    }
+    if offset + 1 as usize >= end { return result; }
+    let escaped = codegen_source_byte(p, offset + 1 as usize)
+    result.next = offset + 2 as usize
+    if escaped == ASCII_LOWER_N {
+        result.value = ASCII_NEWLINE as u32
+    } else if escaped == ASCII_LOWER_R {
+        result.value = 13
+    } else if escaped == ASCII_LOWER_T {
+        result.value = 9
+    } else if escaped == ASCII_LOWER_A {
+        result.value = 7
+    } else if escaped == ASCII_LOWER_B {
+        result.value = 8
+    } else if escaped == ASCII_LOWER_F {
+        result.value = 12
+    } else if escaped == ASCII_LOWER_V {
+        result.value = 11
+    } else if escaped == ASCII_BACKSLASH || escaped == ASCII_QUOTE {
+        result.value = escaped as u32
+    } else if escaped >= ASCII_DIGIT_ZERO && escaped <= ASCII_DIGIT_SEVEN {
+        if offset + 3 as usize >= end { result.next = 0 as usize; return result; }
+        var cursor = offset + 1 as usize
+        while cursor < offset + 4 as usize {
+            let digit = codegen_source_byte(p, cursor)
+            if digit < ASCII_DIGIT_ZERO || digit > ASCII_DIGIT_SEVEN { result.next = 0 as usize; return result; }
+            result.value = result.value * 8 + ((digit - ASCII_DIGIT_ZERO) as u32)
+            cursor += 1 as usize
+        }
+        if result.value > 255 { result.next = 0 as usize; return result; }
+        result.next = cursor
+    } else if escaped == ASCII_LOWER_X || escaped == ASCII_LOWER_U || escaped == ASCII_UPPER_U {
+        var count: usize = 2 as usize
+        if escaped == ASCII_LOWER_U { count = 4 as usize; result.unicode = true; }
+        if escaped == ASCII_UPPER_U { count = 8 as usize; result.unicode = true; }
+        if result.next + count > end { result.next = 0 as usize; return result; }
+        let limit = result.next + count
+        while result.next < limit {
+            let digit = codegen_hex_digit(codegen_source_byte(p, result.next))
+            if digit == 16 { result.next = 0 as usize; return result; }
+            result.value = result.value * 16 + digit
+            result.next += 1 as usize
+        }
+        if result.unicode && (result.value > 1114111 || (result.value >= 55296 && result.value <= 57343)) { result.next = 0 as usize; }
+    } else { result.next = 0 as usize; }
+    return result
+}
+
+func codegen_char_size(value: CodegenChar) u32 {
+    if value.unicode == false || value.value <= 127 { return 1; }
+    if value.value <= 2047 { return 2; }
+    if value.value <= 65535 { return 3; }
+    return 4
+}
+
+func codegen_string_size(p: *Parser, expr_idx: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    var offset = node.string_lit.span.start + 1 as usize
+    let end = node.string_lit.span.end - 1 as usize
+    var size: u32 = 1
+    while offset < end {
+        let value = codegen_decode_char(p, offset, end)
+        if value.next == 0 as usize { return INVALID_INDEX; }
+        size += codegen_char_size(value)
+        offset = value.next
+    }
+    return size
+}
+
+func codegen_write_hex_byte(output: *CompilerOutput, value: u32) {
+    let digits = "0123456789ABCDEF"
+    compiler_output_string(output, "\\")
+    unsafe {
+        compiler_output_write(output, ((digits as usize) + ((value >> 4) as usize)) as *u8, 1 as usize)
+        compiler_output_write(output, ((digits as usize) + ((value & 15) as usize)) as *u8, 1 as usize)
+    }
+}
+
+func codegen_write_char(output: *CompilerOutput, value: CodegenChar) {
+    let size = codegen_char_size(value)
+    if size == 1 { codegen_write_hex_byte(output, value.value); return; }
+    if size == 2 { codegen_write_hex_byte(output, 192 | (value.value >> 6)); }
+    if size == 3 {
+        codegen_write_hex_byte(output, 224 | (value.value >> 12))
+        codegen_write_hex_byte(output, 128 | ((value.value >> 6) & 63))
+    }
+    if size == 4 {
+        codegen_write_hex_byte(output, 240 | (value.value >> 18))
+        codegen_write_hex_byte(output, 128 | ((value.value >> 12) & 63))
+        codegen_write_hex_byte(output, 128 | ((value.value >> 6) & 63))
+    }
+    codegen_write_hex_byte(output, 128 | (value.value & 63))
+}
+
+func codegen_emit_strings(p: *Parser, output: *CompilerOutput) {
+    var index: u32 = 0
+    while index < p.expr_count {
+        let node = parser_expr(p, index)
+        if node.kind == EXPR_STRING {
+            compiler_output_string(output, "@gsl.string.")
+            codegen_write_u32(output, index)
+            compiler_output_string(output, " = private unnamed_addr constant [")
+            codegen_write_u32(output, codegen_string_size(p, index))
+            compiler_output_string(output, " x i8] c\"")
+            var offset = node.string_lit.span.start + 1 as usize
+            let end = node.string_lit.span.end - 1 as usize
+            while offset < end {
+                let value = codegen_decode_char(p, offset, end)
+                codegen_write_char(output, value)
+                offset = value.next
+            }
+            compiler_output_string(output, "\\00\", align 1\n")
+        }
+        index += 1
+    }
+}
+
+func codegen_parse_integer(p: *Parser, expr_idx: u32) CodegenInteger {
+    let node = parser_expr(p, expr_idx)
+    var result: CodegenInteger
+    result.value = 0 as u64
+    result.valid = false
+    var offset = node.int_lit.span.start
+    let end = node.int_lit.span.end
+    var base: u64 = 10 as u64
+    if end - offset > 2 as usize && codegen_source_byte(p, offset) == ASCII_DIGIT_ZERO {
+        let prefix = codegen_source_byte(p, offset + 1 as usize)
+        if prefix == ASCII_LOWER_X || prefix == 88 as u8 { base = 16 as u64 }
+        if prefix == ASCII_LOWER_B || prefix == 66 as u8 { base = 2 as u64 }
+        if prefix == 111 as u8 || prefix == 79 as u8 { base = 8 as u64 }
+        if base != 10 as u64 { offset += 2 as usize }
+    }
+    var separated = true
+    while offset < end {
+        let ch = codegen_source_byte(p, offset)
+        if ch == 95 as u8 {
+            if separated { return result }
+            separated = true
+        } else {
+            let digit = codegen_hex_digit(ch) as u64
+            if digit >= base || result.value > (18446744073709551615 as u64 - digit) / base { return result }
+            result.value = result.value * base + digit
+            separated = false
+        }
+        offset += 1 as usize
+    }
+    result.valid = separated == false
+    return result
+}
+
+func codegen_write_u64(output: *CompilerOutput, value: u64) {
+    if value >= 10 as u64 { codegen_write_u64(output, value / 10 as u64) }
+    var digit = ((value % 10 as u64) as u8) + ASCII_DIGIT_ZERO
+    compiler_output_write(output, &digit, 1 as usize)
+}
+
+func codegen_write_integer(p: *Parser, output: *CompilerOutput, expr_idx: u32) {
+    codegen_write_u64(output, parser_expr(p, expr_idx).int_lit.val as u64)
+}
+
+func codegen_write_label(output: *CompilerOutput, name: string, label: u32) {
+    compiler_output_string(output, name)
+    codegen_write_u32(output, label)
+}
+
+func codegen_write_assembly_literal(p: *Parser, output: *CompilerOutput, index: u32) {
+    let node = parser_expr(p, index)
+    var offset = node.string_lit.span.start + 1 as usize
+    let end = node.string_lit.span.end - 1 as usize
+    while offset < end {
+        let value = codegen_decode_char(p, offset, end)
+        codegen_write_char(output, value)
+        offset = value.next
+    }
+}
+

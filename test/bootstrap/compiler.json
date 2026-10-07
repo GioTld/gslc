@@ -1,0 +1,34 @@
+{
+  "format": 1,
+  "host": "linux-x86_64",
+  "compiler_sha256": "020f771b91f9086f718cd1819ea834be9baffdb109392088e23986d969f6d649",
+  "compressed_sha256": "bf4009edc83c2d0451dcbf2cda6cfc5f6fa3f1da1de1f95ca6a4945bcf5db9c5",
+  "source_revision": "sha256:3556ef2b92f19634ad692e4389a034e95416a0a4247348d9592ec2abb654466e",
+  "source_revision_format": "canonical-source-hashes-v1",
+  "source_files": {
+    "lib/compiler/token.gsl": "c51a185a49916aff2d41db7f7a04f2a9eab1cc47ad64981829451a8077edc010",
+    "lib/core/io.gsl": "aa7dd750fffdc98f2be0245587a27a0bc90d00e263016ee704cb2c59cda26f49",
+    "lib/compiler/lexer.gsl": "dc53b9e5f3be15d7b6182c9e55f1484669a3c51c0c61161778ba7abfda16bd8b",
+    "lib/compiler/ast.gsl": "ebfd0bfa34db714b1597219b20c45128d7c8321ffa7f87ea523ab5a31a0086a0",
+    "lib/compiler/parser.gsl": "46c0841820ad593e250250da8946c9f975a08dac2debdbe9397830343a7c087e",
+    "lib/compiler/intrinsics.gsl": "d16a3be8a4eb3bb9141407d421a6f18cca49e12e1c88cad8ae77fd9225c19ec5",
+    "lib/compiler/sema.gsl": "ecef5b7bb8cd12a59ed6703ae050986f30dce12b9e3e28aa2f36a6acc403a6d3",
+    "lib/std/fs.gsl": "9fe08a40bf38e712bee7d683e9ec1d617007d541403226db24ccf900cc0633b7",
+    "lib/compiler/output.gsl": "78ff1f7910549508a172d2e02fb466f23f6857b9cfe15b549ca446a6c870b3cc",
+    "lib/compiler/codegen_text.gsl": "51aa885039c32a2ad7d06ac88bf1655464ed53eef212628f2230f1b7ca3959c6",
+    "lib/compiler/codegen_types.gsl": "ca01b3af97f8c98f28f1aeaed679969b9674e22ba11597a2367fd37b574d03c9",
+    "lib/compiler/codegen_validate.gsl": "2c6dfe6d3465ab870f45dd0222cd4738de96209c13301a0f4e5cef5d3842d301",
+    "lib/compiler/codegen_runtime.gsl": "4131d55a865dda65ea42e96f99b96a1b6966ef74fe7df7de5a6368b1c6d06eb3",
+    "lib/compiler/codegen.gsl": "d5ca0e52ec268f6ce45e2633c514eafdff12e2767007cea3ee92b3cc286b46b2",
+    "lib/compiler/imports.gsl": "e2954886712f620a0dc76f3f53214b041be391d35b94f516df7a0489c8b5ec40",
+    "lib/std/io.gsl": "64c96cbc16c023804dfc875e62b359a080fc2bfe91fcc338d2cab7b9c2687132",
+    "lib/compiler/driver.gsl": "7fc26e4d68e4952e25f60de920580c857b4001cc8f6e903c3e55178f0a5943cc",
+    "lib/compiler/cli.gsl": "6b67b1add4ca62b3dcec99759482924d6dfaa57793ba7fe5ce694fc24219428d"
+  },
+  "toolchain": "Clang/LLD 18.1.3",
+  "acceptance": {
+    "checks": 577,
+    "qemu_boots": 9,
+    "report_sha256": "1f6bceab73f4339e05a2ba63cc1f1bd51f3051da81d871688359c743853d990c"
+  }
+}

@@ -1,0 +1,41 @@
+func io_outb(port: u16, val: u8) {
+    unsafe {
+        outb(port, val)
+    }
+}
+
+func io_inb(port: u16) u8 {
+    unsafe {
+        return inb(port)
+    }
+}
+
+func io_outw(port: u16, val: u16) {
+    unsafe {
+        outw(port, val)
+    }
+}
+
+func io_inw(port: u16) u16 {
+    unsafe {
+        return inw(port)
+    }
+}
+
+func cpu_halt() {
+    unsafe {
+        hlt()
+    }
+}
+
+func interrupts_disable() {
+    unsafe {
+        cli()
+    }
+}
+
+func interrupts_enable() {
+    unsafe {
+        sti()
+    }
+}

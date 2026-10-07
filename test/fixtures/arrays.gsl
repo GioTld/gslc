@@ -1,0 +1,75 @@
+copy struct Counter { value: u32 }
+
+func select_buffer(counter: *Counter, buffer: *[4]u16) *[4]u16 {
+    counter.value += 1
+    return buffer
+}
+func select_index(counter: *Counter) usize {
+    counter.value += 10
+    return 3 as usize
+}
+func select_value(counter: *Counter) u16 {
+    counter.value += 100
+    return 65535 as u16
+}
+func read_word(buffer: * [ 4 ] u16, index: usize) u16 {
+    unsafe { return buffer[index] }
+}
+
+func main() u32 {
+    var bytes: [4]u8
+    var words: [4]u16
+    var signed_words: [2]i16
+    var signed_qwords: [2]i64
+    var dwords: [2]u32
+    var qwords: [2]u64
+    var natives: [2]usize
+    var signed_natives: [2]isize
+    var flags: [2]bool
+    var pointers: [2]*u16
+    var strings: [2]string
+    var counter: Counter
+    counter.value = 0
+    if bytes[0] != 0 as u8 || words[3] != 0 as u16 || flags[1] { return 1 }
+    bytes[0] = 255
+    words[0] = 7
+    words[3] = 65535
+    signed_words[0] = -32768 as i16
+    signed_qwords[0] = 0x8000000000000000 as i64
+    dwords[0] = 0xffffffff as u32
+    qwords[0] = 0xffffffffffffffff as u64
+    natives[0] = 0xffffffffffffffff as usize
+    signed_natives[0] = -1 as isize
+    flags[0] = true
+    pointers[0] = &words[0]
+    strings[0] = "array"
+    var index: usize = 0 as usize
+    while index < 4 as usize {
+        if index < 2 as usize { bytes[index] = index as u8 } else { bytes[index] = (index + 1 as usize) as u8 }
+        index += 1 as usize
+    }
+    unsafe {
+        *pointers[0] = 9 as u16
+        *(&bytes[1]) = 8 as u8
+        select_buffer(&counter, &words)[select_index(&counter)] = select_value(&counter)
+        if *(strings[0] as *u8) != 97 as u8 { return 2 }
+    }
+    if read_word(&words, 0 as usize) != 9 as u16 || words[3] != 65535 as u16 || counter.value != 111 { return 3 }
+    if bytes[1] != 8 as u8 || bytes[3] != 4 as u8 || signed_words[0] != -32768 as i16 { return 4 }
+    if signed_qwords[0] != 0x8000000000000000 as i64 || qwords[0] != 0xffffffffffffffff as u64 || dwords[0] != 0xffffffff as u32 { return 5 }
+    if natives[0] != 0xffffffffffffffff as usize || signed_natives[0] != -1 as isize || !flags[0] { return 6 }
+    if size_of([4]u16) != 8 as usize || align_of([4]u16) != 2 as usize { return 7 }
+    if size_of([2]*u16) != 16 as usize || align_of([2]bool) != 1 as usize { return 8 }
+    var large: [512]u64
+    if large[0] != 0 as u64 || large[511] != 0 as u64 { return 9 }
+    large[511] = 0xff as u64
+    if large[511] != 255 as u64 { return 10 }
+    var repetitions: usize = 0 as usize
+    while repetitions < 2 as usize {
+        var temporary: [1]u8
+        if temporary[0] != 0 as u8 { return 11 }
+        temporary[0] = 1
+        repetitions += 1 as usize
+    }
+    return 0
+}

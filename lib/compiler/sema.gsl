@@ -1,0 +1,923 @@
+import "compiler/intrinsics"
+import "compiler/token"
+import "compiler/ast"
+import "core/io"
+
+const SEMA_MAX_SYMBOLS: u32 = 1792
+
+const SYM_LET:  u32 = 1
+const SYM_VAR:  u32 = 2
+const SYM_FUNC: u32 = 3
+const SYM_PARAM: u32 = 4
+const SYM_CONST: u32 = 5
+const SYM_ARENA: u32 = 6
+
+const SEM_TYPE_NAMED: u32 = 0
+const SEM_TYPE_INT_LITERAL: u32 = 1
+
+copy struct SemType {
+    name_ptr: *u8,
+    name_len: usize,
+    pointer_depth: u32,
+    kind: u32
+}
+
+struct Symbol {
+    name_ptr:  *u8,
+    name_len:  usize,
+    kind:      u32,
+    scope_lvl: u32,
+    type_ptr:  *u8,
+    type_len:  usize,
+    pointer_depth: u32,
+    func_idx:  u32,
+    is_mut:    bool,
+    is_used:   bool
+}
+
+struct Sema {
+    kernel: bool,
+    syms:       *Symbol,
+    sym_count:  u32,
+    scope_lvl:  u32,
+    loop_depth: u32,
+    unsafe_depth: u32,
+    return_type_ptr: *u8,
+    return_type_len: usize,
+    error:      bool,
+    error_line: u32,
+    error_col:  u32,
+    error_code: u32,
+    error_start: usize,
+    error_end: usize
+}
+
+func sema_hardware(name: *u8, length: usize) u32 {
+    let builtin = compiler_intrinsic(name, length)
+    if builtin >= BUILTIN_INB { return builtin }
+    return BUILTIN_NONE
+}
+
+func sema_check_hardware(s: *Sema, p: *Parser, index: u32, hardware: u32) SemType {
+    let node = parser_expr(p, index)
+    if s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.call.span, 2004) }
+    var count: u32 = 1
+    if hardware == BUILTIN_OUTB || hardware == BUILTIN_OUTW { count = 2 }
+    if hardware == BUILTIN_CLI || hardware == BUILTIN_HLT || hardware == BUILTIN_STI || hardware == BUILTIN_READ_CR2 || hardware == BUILTIN_READ_CR3 { count = 0 }
+    if hardware == BUILTIN_ASM_U64 || hardware == BUILTIN_ASM_VOID { return sema_check_assembly(s, p, index, hardware == BUILTIN_ASM_U64) }
+    if node.call.arg_count != count {
+        sema_mark_error(s, node.call.span.line, node.call.span.col)
+        return sema_type_named("void")
+    }
+    var arg = node.call.arg_start
+    var position: u32 = 0
+    while position < count {
+        let value = parser_expr(p, arg)
+        if hardware == BUILTIN_ASM || hardware == BUILTIN_SYMBOL_ADDRESS {
+            if value.kind != EXPR_STRING {
+                sema_mark_error(s, node.call.span.line, node.call.span.col)
+            } else if hardware == BUILTIN_SYMBOL_ADDRESS {
+                var offset = value.string_lit.span.start + 1 as usize
+                let end = value.string_lit.span.end - 1 as usize
+                if offset == end { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                while offset < end {
+                    var ch: u8 = 0 as u8
+                    unsafe { ch = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+                    let letter = (ch >= 65 as u8 && ch <= 90 as u8) || (ch >= 97 as u8 && ch <= 122 as u8) || ch == 95 as u8
+                    let digit = ch >= 48 as u8 && ch <= 57 as u8 && offset > value.string_lit.span.start + 1 as usize
+                    if !letter && !digit { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                    offset += 1 as usize
+                }
+            }
+        } else {
+            let actual = sema_type_of(s, p, arg)
+            var expected = sema_type_named("usize")
+            if hardware == BUILTIN_INB || hardware == BUILTIN_OUTB || hardware == BUILTIN_INW || hardware == BUILTIN_OUTW {
+                expected = sema_type_named("u16")
+                if position == 1 && hardware == BUILTIN_OUTB { expected = sema_type_named("u8") }
+            }
+            if sema_type_compatible(expected, actual) == false { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+        }
+        arg = value.next_arg
+        position += 1
+    }
+    if hardware == BUILTIN_INB { return sema_type_named("u8") }
+    if hardware == BUILTIN_INW { return sema_type_named("u16") }
+    if hardware == BUILTIN_SYMBOL_ADDRESS || hardware == BUILTIN_READ_CR2 || hardware == BUILTIN_READ_CR3 { return sema_type_named("usize") }
+    return sema_type_named("void")
+}
+
+func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType {
+    let node = parser_expr(p, index)
+    var output = sema_type_named("void")
+    if result { output = sema_type_named("usize") }
+    if node.call.arg_count < 2 || node.call.arg_count > 6 {
+        sema_mark_error(s, node.call.span.line, node.call.span.col)
+        return output
+    }
+    var arg = node.call.arg_start
+    var position: u32 = 0
+    while position < node.call.arg_count {
+        let value = parser_expr(p, arg)
+        if position < 2 {
+            if value.kind != EXPR_STRING { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+        } else if sema_type_compatible(sema_type_named("usize"), sema_type_of(s, p, arg)) == false {
+            sema_mark_error(s, node.call.span.line, node.call.span.col)
+        }
+        arg = value.next_arg
+        position += 1
+    }
+    let constraints = parser_expr(p, parser_expr(p, node.call.arg_start).next_arg)
+    if constraints.kind == EXPR_STRING {
+        var offset = constraints.string_lit.span.start + 1 as usize
+        let end = constraints.string_lit.span.end - 1 as usize
+        var outputs: u32 = 0
+        var inputs: u32 = 0
+        var clobbers = false
+        while offset < end {
+            var first: u8 = 0 as u8
+            unsafe { first = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+            if first == 61 as u8 {
+                if outputs != 0 || inputs != 0 || clobbers { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                outputs += 1
+            } else if first == 126 as u8 { clobbers = true } else {
+                if clobbers || first == 44 as u8 { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                inputs += 1
+            }
+            var length: usize = 0 as usize
+            while offset < end {
+                var ch: u8 = 0 as u8
+                unsafe { ch = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+                if ch == 44 as u8 { break }
+                if (ch < 65 as u8 || ch > 90 as u8) && (ch < 97 as u8 || ch > 122 as u8) && (ch < 48 as u8 || ch > 57 as u8) && ch != 123 as u8 && ch != 125 as u8 && ch != 61 as u8 && ch != 126 as u8 && ch != 38 as u8 && ch != 95 as u8 { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                length += 1 as usize
+                offset += 1 as usize
+            }
+            if length == 0 as usize || (first == 61 as u8 && length == 1 as usize) { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+            if offset < end {
+                offset += 1 as usize
+                if offset == end { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+            }
+        }
+        var expected_outputs: u32 = 0
+        if result { expected_outputs = 1 }
+        if outputs != expected_outputs || inputs != node.call.arg_count - 2 { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+    }
+    return output
+}
+
+func sema_symbol(s: *Sema, idx: u32) *Symbol {
+    unsafe {
+        return (((s.syms as usize) + (idx as usize) * size_of(Symbol)) as *Symbol)
+    }
+}
+
+func sema_mark_error(s: *Sema, line: u32, col: u32) {
+    if s.error == false {
+        s.error_line = line
+        s.error_col = col
+    }
+    s.error = true
+}
+
+func sema_mark_diagnostic(s: *Sema, span: *NodeSpan, code: u32) {
+    if s.error == false {
+        s.error_code = code
+        s.error_start = span.start
+        s.error_end = span.end
+    }
+    sema_mark_error(s, span.line, span.col)
+}
+
+func bytes_equal(a: *u8, alen: usize, b: *u8, blen: usize) bool {
+    if alen != blen {
+        return false
+    }
+    var i: usize = 0 as usize
+    while i < alen {
+        unsafe {
+            let ca = volatile_read(((a as usize) + i) as *u8)
+            let cb = volatile_read(((b as usize) + i) as *u8)
+            if ca != cb {
+                return false
+            }
+        }
+        i += 1 as usize
+    }
+    return true
+}
+
+func sema_type_named(name: string) SemType {
+    var result: SemType
+    unsafe { result.name_ptr = (name as usize) as *u8 }
+    result.name_len = strlen(name) as usize
+    result.pointer_depth = 0
+    result.kind = SEM_TYPE_NAMED
+    return result
+}
+
+func sema_type_from_span(ptr: *u8, length: usize) SemType {
+    var result: SemType
+    var depth: u32 = 0
+    var offset: usize = 0 as usize
+    while offset < length {
+        offset = parser_type_skip(ptr, length, offset)
+        if offset >= length { break }
+        var ch: u8 = 0 as u8
+        unsafe { ch = volatile_read(((ptr as usize) + offset) as *u8) }
+        if ch != 42 as u8 { break }
+        depth += 1
+        offset += 1 as usize
+    }
+    unsafe {
+        result.name_ptr = ((ptr as usize) + offset) as *u8
+    }
+    result.name_len = length - (offset as usize)
+    result.pointer_depth = depth
+    result.kind = SEM_TYPE_NAMED
+    if length == 0 as usize {
+        return sema_type_named("void")
+    }
+    return result
+}
+
+func sema_symbol_type(symbol: *Symbol) SemType {
+    var result: SemType
+    result.name_ptr = symbol.type_ptr
+    result.name_len = symbol.type_len
+    result.pointer_depth = symbol.pointer_depth
+    result.kind = SEM_TYPE_NAMED
+    return result
+}
+
+func sema_type_integer(value: SemType) bool {
+    if value.kind == SEM_TYPE_INT_LITERAL { return true }
+    if value.pointer_depth != 0 { return false }
+    return sema_name_is(value.name_ptr, value.name_len, "u8") ||
+        sema_name_is(value.name_ptr, value.name_len, "u16") ||
+        sema_name_is(value.name_ptr, value.name_len, "u32") ||
+        sema_name_is(value.name_ptr, value.name_len, "u64") ||
+        sema_name_is(value.name_ptr, value.name_len, "usize") ||
+        sema_name_is(value.name_ptr, value.name_len, "i8") ||
+        sema_name_is(value.name_ptr, value.name_len, "i16") ||
+        sema_name_is(value.name_ptr, value.name_len, "i32") ||
+        sema_name_is(value.name_ptr, value.name_len, "i64") ||
+        sema_name_is(value.name_ptr, value.name_len, "isize")
+}
+
+func sema_type_known(p: *Parser, value: SemType) bool {
+    if value.kind == SEM_TYPE_INT_LITERAL { return true }
+    if value.pointer_depth > 0 {
+        var base = value
+        base.pointer_depth = 0
+        return sema_type_known(p, base)
+    }
+    if sema_name_is(value.name_ptr, value.name_len, "void") { return true }
+    if sema_name_is(value.name_ptr, value.name_len, "bool") { return true }
+    if sema_name_is(value.name_ptr, value.name_len, "string") { return true }
+    if sema_name_is(value.name_ptr, value.name_len, "arena") { return true }
+    if sema_type_integer(value) { return true }
+    if sema_name_is(value.name_ptr, value.name_len, "f32") { return true }
+    if sema_name_is(value.name_ptr, value.name_len, "f64") { return true }
+    var index: u32 = 0
+    while index < p.struct_count {
+        let structure = parser_struct(p, index)
+        if parser_type_equal(structure.name_ptr, structure.name_len, value.name_ptr, value.name_len) {
+            if structure.is_array { return sema_type_known(p, sema_type_from_span(structure.element_ptr, structure.element_len)) }
+            return true
+        }
+        index += 1
+    }
+    return false
+}
+
+func sema_type_equal(left: SemType, right: SemType) bool {
+    if left.kind != right.kind || left.pointer_depth != right.pointer_depth { return false }
+    if left.kind == SEM_TYPE_INT_LITERAL { return true }
+    return parser_type_equal(left.name_ptr, left.name_len, right.name_ptr, right.name_len)
+}
+
+func sema_type_compatible(expected: SemType, actual: SemType) bool {
+    if actual.kind == SEM_TYPE_INT_LITERAL && sema_type_integer(expected) { return true }
+    return sema_type_equal(expected, actual)
+}
+
+func sema_type_default(value: SemType) SemType {
+    if value.kind == SEM_TYPE_INT_LITERAL { return sema_type_named("u32") }
+    return value
+}
+
+func sema_name_is(ptr: *u8, length: usize, name: string) bool {
+    return compiler_name_is(ptr, length, name)
+}
+
+func sema_lookup(s: *Sema, name: *u8, name_len: usize) u32 {
+    var i: u32 = s.sym_count
+    while i > 0 {
+        i -= 1
+        let symbol = sema_symbol(s, i)
+        if bytes_equal(symbol.name_ptr, symbol.name_len, name, name_len) {
+            return i
+        }
+    }
+    return INVALID_INDEX
+}
+
+func sema_declare(s: *Sema, name: *u8, name_len: usize, kind: u32, line: u32, col: u32) bool {
+
+    var i: u32 = s.sym_count
+    while i > 0 {
+        i -= 1
+        let symbol = sema_symbol(s, i)
+        if symbol.scope_lvl == s.scope_lvl {
+            if bytes_equal(symbol.name_ptr, symbol.name_len, name, name_len) {
+                sema_mark_error(s, line, col)
+                return false
+            }
+        }
+    }
+
+    if s.sym_count >= SEMA_MAX_SYMBOLS {
+        sema_mark_error(s, line, col)
+        return false
+    }
+    let idx = s.sym_count
+    let symbol = sema_symbol(s, idx)
+    symbol.name_ptr = name
+    symbol.name_len = name_len
+    symbol.kind = kind
+    symbol.scope_lvl = s.scope_lvl
+    unsafe { symbol.type_ptr = 0 as *u8 }
+    symbol.type_len = 0 as usize
+    symbol.pointer_depth = 0
+    symbol.func_idx = INVALID_INDEX
+    symbol.is_mut = false
+    symbol.is_used = false
+    s.sym_count += 1
+    return true
+}
+
+func sema_declare_typed(s: *Sema, name: *u8, name_len: usize, kind: u32, value_type: SemType, func_idx: u32, is_mut: bool, line: u32, col: u32) bool {
+    if sema_declare(s, name, name_len, kind, line, col) == false { return false }
+    let symbol = sema_symbol(s, s.sym_count - 1)
+    symbol.type_ptr = value_type.name_ptr
+    symbol.type_len = value_type.name_len
+    symbol.pointer_depth = value_type.pointer_depth
+    symbol.func_idx = func_idx
+    symbol.is_mut = is_mut
+    return true
+}
+
+func sema_enter_scope(s: *Sema) {
+    s.scope_lvl += 1
+}
+
+func sema_exit_scope(s: *Sema) {
+    while s.sym_count > 0 {
+        let last = sema_symbol(s, s.sym_count - 1)
+        if last.scope_lvl == s.scope_lvl {
+            s.sym_count -= 1
+        } else {
+            break
+        }
+    }
+    s.scope_lvl -= 1
+}
+
+func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
+    if expr_idx == INVALID_INDEX {
+        return sema_type_named("void")
+    }
+
+    let node = parser_expr(p, expr_idx)
+    let kind = node.kind
+
+    if kind == EXPR_IDENT {
+        let result = sema_lookup(s, node.ident.name_ptr, node.ident.name_len)
+        if result == INVALID_INDEX {
+            sema_mark_diagnostic(s, &node.ident.span, 2001)
+            return sema_type_named("void")
+        } else if sema_symbol(s, result).kind == SYM_FUNC {
+            sema_mark_error(s, node.ident.span.line, node.ident.span.col)
+            return sema_type_named("void")
+        }
+        let symbol = sema_symbol(s, result)
+        if symbol.kind == SYM_VAR && symbol.scope_lvl == 0 && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.ident.span, 2004) }
+        return sema_symbol_type(symbol)
+    }
+
+    if kind == EXPR_INDEX {
+        let base = sema_type_of(s, p, node.binary.left_idx)
+        let index = sema_type_of(s, p, node.binary.right_idx)
+        let array_idx = parser_find_type(p, base.name_ptr, base.name_len)
+        if sema_type_compatible(sema_type_named("usize"), index) == false || base.pointer_depth > 1 || array_idx == INVALID_INDEX {
+            sema_mark_error(s, node.binary.span.line, node.binary.span.col)
+            return sema_type_named("void")
+        }
+        let array_type = parser_struct(p, array_idx)
+        if array_type.is_array == false { sema_mark_error(s, node.binary.span.line, node.binary.span.col); return sema_type_named("void"); }
+        if base.pointer_depth == 1 && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.binary.span, 2004) }
+        return sema_type_from_span(array_type.element_ptr, array_type.element_len)
+    }
+    if kind == EXPR_BINARY {
+        let left = sema_type_of(s, p, node.binary.left_idx)
+        let right = sema_type_of(s, p, node.binary.right_idx)
+        let op = node.binary.op
+        if op == TOKEN_AND || op == TOKEN_OR {
+            if sema_name_is(left.name_ptr, left.name_len, "bool") == false || left.pointer_depth != 0 || sema_name_is(right.name_ptr, right.name_len, "bool") == false || right.pointer_depth != 0 {
+                sema_mark_error(s, node.binary.span.line, node.binary.span.col)
+            }
+            return sema_type_named("bool")
+        }
+        if op == TOKEN_EQ || op == TOKEN_NE || op == TOKEN_LT || op == TOKEN_LE || op == TOKEN_GT || op == TOKEN_GE {
+            if sema_type_compatible(left, right) == false && sema_type_compatible(right, left) == false {
+                sema_mark_error(s, node.binary.span.line, node.binary.span.col)
+            }
+            return sema_type_named("bool")
+        }
+        if left.kind == SEM_TYPE_INT_LITERAL && right.kind == SEM_TYPE_INT_LITERAL {
+            return left
+        }
+        if left.kind == SEM_TYPE_INT_LITERAL && sema_type_integer(right) {
+            return right
+        }
+        if right.kind == SEM_TYPE_INT_LITERAL && sema_type_integer(left) {
+            return left
+        }
+        if sema_type_equal(left, right) == false || sema_type_integer(left) == false {
+            sema_mark_error(s, node.binary.span.line, node.binary.span.col)
+            return sema_type_named("void")
+        }
+        return left
+    }
+
+    if kind == EXPR_INT {
+        var result = sema_type_named("int")
+        result.kind = SEM_TYPE_INT_LITERAL
+        return result
+    }
+
+    if kind == EXPR_BOOL { return sema_type_named("bool") }
+    if kind == EXPR_STRING { return sema_type_named("string") }
+
+    if kind == EXPR_CALL {
+        if node.call.callee_expr_idx != INVALID_INDEX {
+            let callee = parser_expr(p, node.call.callee_expr_idx)
+            if callee.kind == EXPR_MEMBER && sema_name_is(callee.member.name_ptr, callee.member.name_len, "alloc") {
+                let receiver_type = sema_type_of(s, p, callee.member.base_idx)
+                if sema_name_is(receiver_type.name_ptr, receiver_type.name_len, "arena") == false || receiver_type.pointer_depth != 0 {
+                    sema_mark_error(s, callee.member.line, callee.member.col)
+                }
+                if node.call.arg_count != 1 { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+                var alloc_arg = node.call.arg_start
+                var alloc_count: u32 = 0
+                while alloc_count < node.call.arg_count {
+                    sema_type_of(s, p, alloc_arg)
+                    alloc_arg = parser_expr(p, alloc_arg).next_arg
+                    alloc_count += 1
+                }
+                var allocated_type = sema_type_named("u8")
+                allocated_type.pointer_depth = 1
+                return allocated_type
+            }
+            sema_type_of(s, p, node.call.callee_expr_idx)
+            var method_arg = node.call.arg_start
+            var method_count: u32 = 0
+            while method_count < node.call.arg_count {
+                sema_type_of(s, p, method_arg)
+                method_arg = parser_expr(p, method_arg).next_arg
+                method_count += 1
+            }
+            return sema_type_named("void")
+        }
+
+        if sema_name_is(node.call.callee_ptr, node.call.callee_len, "size_of") || sema_name_is(node.call.callee_ptr, node.call.callee_len, "align_of") {
+            if node.call.arg_count != 1 { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+            return sema_type_named("usize")
+        }
+        let hardware = sema_hardware(node.call.callee_ptr, node.call.callee_len)
+        if hardware != BUILTIN_NONE { return sema_check_hardware(s, p, expr_idx, hardware) }
+        let is_read = sema_name_is(node.call.callee_ptr, node.call.callee_len, "volatile_read")
+        let is_write = sema_name_is(node.call.callee_ptr, node.call.callee_len, "volatile_write")
+        let is_syscall = sema_name_is(node.call.callee_ptr, node.call.callee_len, "syscall")
+        let is_syscall_write = sema_name_is(node.call.callee_ptr, node.call.callee_len, "syscall_write")
+        if is_read || is_write || is_syscall || is_syscall_write {
+            if s.kernel && (is_syscall || is_syscall_write) { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+            if s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.call.span, 2004) }
+            var expected_count: u32 = 4
+            if is_read { expected_count = 1 }
+            if is_write { expected_count = 2 }
+            if is_syscall_write { expected_count = 3 }
+            if node.call.arg_count != expected_count { sema_mark_error(s, node.call.span.line, node.call.span.col) }
+            var builtin_arg = node.call.arg_start
+            var builtin_index: u32 = 0
+            while builtin_index < node.call.arg_count {
+                let arg_type = sema_type_of(s, p, builtin_arg)
+                if is_read || is_write {
+                    if builtin_index == 0 && (arg_type.pointer_depth != 1 || sema_name_is(arg_type.name_ptr, arg_type.name_len, "u8") == false) {
+                        sema_mark_error(s, node.call.span.line, node.call.span.col)
+                    }
+                    if is_write && builtin_index == 1 && sema_type_compatible(sema_type_named("u8"), arg_type) == false {
+                        sema_mark_error(s, node.call.span.line, node.call.span.col)
+                    }
+                }
+                builtin_arg = parser_expr(p, builtin_arg).next_arg
+                builtin_index += 1
+            }
+            if is_read { return sema_type_named("u8") }
+            if is_write { return sema_type_named("void") }
+            return sema_type_named("i64")
+        }
+
+        let result = sema_lookup(s, node.call.callee_ptr, node.call.callee_len)
+        if result == INVALID_INDEX {
+            sema_mark_error(s, node.call.span.line, node.call.span.col)
+            return sema_type_named("void")
+        } else if sema_symbol(s, result).kind != SYM_FUNC {
+            sema_mark_error(s, node.call.span.line, node.call.span.col)
+            return sema_type_named("void")
+        }
+        let function = sema_symbol(s, result)
+        let decl = parser_decl(p, function.func_idx)
+        if decl.param_count != node.call.arg_count { sema_mark_diagnostic(s, &node.call.span, 2002) }
+        var i: u32 = 0
+        var param_idx = decl.param_start
+        var arg_idx = node.call.arg_start
+        while i < node.call.arg_count {
+            let arg_type = sema_type_of(s, p, arg_idx)
+            if i < decl.param_count {
+                let param = parser_param(p, param_idx)
+                let param_type = sema_type_from_span(param.type_ptr, param.type_len)
+                if sema_type_compatible(param_type, arg_type) == false {
+                    sema_mark_error(s, node.call.span.line, node.call.span.col)
+                }
+            }
+            arg_idx = parser_expr(p, arg_idx).next_arg
+            param_idx += 1
+            i += 1
+        }
+        return sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+    }
+
+    if kind == EXPR_MEMBER {
+        var base_type = sema_type_of(s, p, node.member.base_idx)
+        if base_type.pointer_depth > 0 { base_type.pointer_depth -= 1 }
+        var struct_idx: u32 = 0
+        while struct_idx < p.struct_count {
+            let structure = parser_struct(p, struct_idx)
+            if bytes_equal(structure.name_ptr, structure.name_len, base_type.name_ptr, base_type.name_len) {
+                var field_idx = structure.field_start
+                let field_end = structure.field_start + structure.field_count
+                while field_idx < field_end {
+                    let field = parser_field(p, field_idx)
+                    if bytes_equal(field.name_ptr, field.name_len, node.member.name_ptr, node.member.name_len) {
+                        return sema_type_from_span(field.type_ptr, field.type_len)
+                    }
+                    field_idx += 1
+                }
+                sema_mark_error(s, node.member.line, node.member.col)
+                return sema_type_named("void")
+            }
+            struct_idx += 1
+        }
+        sema_mark_error(s, node.member.line, node.member.col)
+        return sema_type_named("void")
+    }
+
+    if kind == EXPR_CAST {
+        sema_type_of(s, p, node.cast.source_idx)
+        let target_type = sema_type_from_span(node.cast.type_ptr, node.cast.type_len)
+        if sema_type_known(p, target_type) == false {
+            sema_mark_error(s, node.cast.line, node.cast.col)
+        }
+        unsafe {
+            if node.cast.type_len > 0 as usize && volatile_read(node.cast.type_ptr) == 42 as u8 && s.unsafe_depth == 0 {
+                sema_mark_error(s, node.cast.line, node.cast.col)
+            }
+        }
+        return target_type
+    }
+
+    if kind == EXPR_UNARY {
+        var operand = sema_type_of(s, p, node.unary.operand_idx)
+        if node.unary.op == TOKEN_NOT {
+            if sema_name_is(operand.name_ptr, operand.name_len, "bool") == false || operand.pointer_depth != 0 {
+                sema_mark_error(s, node.unary.span.line, node.unary.span.col)
+            }
+            return sema_type_named("bool")
+        }
+        if node.unary.op == TOKEN_AMP {
+            operand.pointer_depth += 1
+            return operand
+        }
+        if node.unary.op == TOKEN_STAR && s.unsafe_depth == 0 {
+            sema_mark_error(s, node.unary.span.line, node.unary.span.col)
+        }
+        if node.unary.op == TOKEN_STAR {
+            if operand.pointer_depth == 0 {
+                sema_mark_error(s, node.unary.span.line, node.unary.span.col)
+                return sema_type_named("void")
+            }
+            operand.pointer_depth -= 1
+            return operand
+        }
+        if sema_type_integer(operand) == false { sema_mark_error(s, node.unary.span.line, node.unary.span.col) }
+        return operand
+    }
+
+    return sema_type_named("void")
+}
+
+func sema_check_expr(s: *Sema, p: *Parser, expr_idx: u32) {
+    let checked_type = sema_type_of(s, p, expr_idx)
+}
+
+func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
+    let node = parser_stmt(p, stmt_idx)
+    let kind = node.kind
+
+    if kind == STMT_LET || kind == STMT_VAR {
+        let is_mut = kind == STMT_VAR
+        var sym_kind: u32 = SYM_LET
+        if is_mut {
+            sym_kind = SYM_VAR
+        }
+        var value_type = sema_type_named("void")
+        if node.let_s.has_init {
+            value_type = sema_type_of(s, p, node.let_s.expr_idx)
+        }
+        if node.let_s.type_len > 0 as usize {
+            let declared_type = sema_type_from_span(node.let_s.type_ptr, node.let_s.type_len)
+            if sema_type_known(p, declared_type) == false {
+                sema_mark_error(s, node.let_s.span.line, node.let_s.span.col)
+            }
+            if node.let_s.has_init && sema_type_compatible(declared_type, value_type) == false {
+                sema_mark_error(s, node.let_s.span.line, node.let_s.span.col)
+            }
+            value_type = declared_type
+        } else {
+            value_type = sema_type_default(value_type)
+        }
+        sema_declare_typed(s, node.let_s.name_ptr, node.let_s.name_len, sym_kind, value_type, INVALID_INDEX, is_mut, node.let_s.span.line, node.let_s.span.col)
+        return
+    }
+
+    if kind == STMT_RETURN {
+        if node.ret_s.has_expr {
+            let actual = sema_type_of(s, p, node.ret_s.expr_idx)
+            let expected = sema_type_from_span(s.return_type_ptr, s.return_type_len)
+            if sema_type_compatible(expected, actual) == false {
+                sema_mark_error(s, node.ret_s.span.line, node.ret_s.span.col)
+            }
+        } else {
+            let expected = sema_type_from_span(s.return_type_ptr, s.return_type_len)
+            if sema_name_is(expected.name_ptr, expected.name_len, "void") == false || expected.pointer_depth != 0 {
+                sema_mark_error(s, node.ret_s.span.line, node.ret_s.span.col)
+            }
+        }
+        return
+    }
+
+    if kind == STMT_EXPR {
+        sema_check_expr(s, p, node.expr_idx)
+        return
+    }
+
+    if kind == STMT_ASSIGN {
+        let target = parser_expr(p, node.assign.target_idx)
+        var target_type = sema_type_named("void")
+        var target_line: u32 = 0
+        var target_col: u32 = 0
+        if target.kind == EXPR_IDENT {
+            target_line = target.ident.span.line
+            target_col = target.ident.span.col
+            let symbol_idx = sema_lookup(s, target.ident.name_ptr, target.ident.name_len)
+            if symbol_idx == INVALID_INDEX {
+                sema_mark_error(s, target.ident.span.line, target.ident.span.col)
+            } else if sema_symbol(s, symbol_idx).kind != SYM_VAR {
+                sema_mark_diagnostic(s, &target.ident.span, 2003)
+            } else {
+                let symbol = sema_symbol(s, symbol_idx)
+                target_type = sema_symbol_type(symbol)
+                if symbol.scope_lvl == 0 && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &target.ident.span, 2004) }
+            }
+        } else {
+            if target.kind == EXPR_UNARY && target.unary.op == TOKEN_STAR && s.unsafe_depth == 0 {
+                sema_mark_diagnostic(s, &target.unary.span, 2004)
+            }
+            target_type = sema_type_of(s, p, node.assign.target_idx)
+        }
+        let value_type = sema_type_of(s, p, node.assign.value_idx)
+        if sema_type_compatible(target_type, value_type) == false {
+            sema_mark_error(s, target_line, target_col)
+        }
+        if node.assign.op != TOKEN_ASSIGN && sema_type_integer(target_type) == false {
+            sema_mark_error(s, target_line, target_col)
+        }
+        return
+    }
+
+    if kind == STMT_IF || kind == STMT_WHILE || kind == STMT_UNSAFE {
+        if kind == STMT_UNSAFE {
+            s.unsafe_depth += 1
+        } else {
+            let condition_type = sema_type_of(s, p, node.block.condition_idx)
+            if sema_name_is(condition_type.name_ptr, condition_type.name_len, "bool") == false || condition_type.pointer_depth != 0 {
+                sema_mark_error(s, 0, 0)
+            }
+        }
+        if kind == STMT_WHILE {
+            s.loop_depth += 1
+        }
+        sema_enter_scope(s)
+        sema_check_stmt_list(s, p, node.block.body_start, node.block.body_count)
+        sema_exit_scope(s)
+        if kind == STMT_WHILE {
+            s.loop_depth -= 1
+        }
+        if kind == STMT_UNSAFE {
+            s.unsafe_depth -= 1
+        }
+        if kind == STMT_IF && node.block.else_count > 0 {
+            sema_enter_scope(s)
+            sema_check_stmt_list(s, p, node.block.else_start, node.block.else_count)
+            sema_exit_scope(s)
+        }
+        return
+    }
+
+    if kind == STMT_BREAK || kind == STMT_CONTINUE {
+        if s.loop_depth == 0 {
+            sema_mark_error(s, 0, 0)
+        }
+        return
+    }
+
+    if kind == STMT_ARENA {
+        let size_type = sema_type_of(s, p, node.arena_s.size_expr_idx)
+        if sema_type_integer(size_type) == false { sema_mark_error(s, 0, 0) }
+        let arena_type = sema_type_named("arena")
+        sema_declare_typed(s, node.arena_s.name_ptr, node.arena_s.name_len, SYM_ARENA, arena_type, INVALID_INDEX, false, 0, 0)
+        return
+    }
+}
+
+func sema_check_stmt_list(s: *Sema, p: *Parser, first: u32, count: u32) {
+    var stmt_idx = first
+    var visited: u32 = 0
+    while stmt_idx != INVALID_INDEX && visited < count && s.error == false {
+        sema_check_stmt(s, p, stmt_idx)
+        stmt_idx = parser_stmt(p, stmt_idx).next_idx
+        visited += 1
+    }
+}
+
+func sema_runtime_name(name: *u8, length: usize) u32 {
+    if sema_name_is(name, length, "memcpy") { return 1 }
+    if sema_name_is(name, length, "memset") { return 2 }
+    if sema_name_is(name, length, "memmove") { return 3 }
+    if sema_name_is(name, length, "memcmp") { return 4 }
+    return 0
+}
+
+func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
+    let decl = parser_decl(p, decl_idx)
+    sema_enter_scope(s)
+    s.loop_depth = 0
+    s.unsafe_depth = 0
+    s.return_type_ptr = decl.ret_type_ptr
+    s.return_type_len = decl.ret_type_len
+    let function_return_type = sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+    let runtime = sema_runtime_name(decl.name_ptr, decl.name_len)
+    if s.kernel && runtime != 0 {
+        if decl.param_count != 3 { sema_mark_error(s, decl.span.line, 0) }
+        if runtime == 4 {
+            if function_return_type.pointer_depth != 0 || sema_name_is(function_return_type.name_ptr, function_return_type.name_len, "i32") == false { sema_mark_error(s, decl.span.line, 0) }
+        } else if function_return_type.pointer_depth != 1 || sema_name_is(function_return_type.name_ptr, function_return_type.name_len, "u8") == false { sema_mark_error(s, decl.span.line, 0) }
+        var parameter = decl.param_start
+        while parameter < decl.param_start + decl.param_count {
+            let param = parser_param(p, parameter)
+            let actual = sema_type_from_span(param.type_ptr, param.type_len)
+            if parameter == decl.param_start + 2 {
+                if sema_type_compatible(sema_type_named("usize"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
+            } else if runtime == 2 && parameter == decl.param_start + 1 {
+                if sema_type_compatible(sema_type_named("u8"), actual) == false && sema_type_compatible(sema_type_named("i32"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
+            } else if actual.pointer_depth != 1 || sema_name_is(actual.name_ptr, actual.name_len, "u8") == false { sema_mark_error(s, decl.span.line, 0) }
+            parameter += 1
+        }
+    }
+    if sema_type_known(p, function_return_type) == false {
+        sema_mark_error(s, decl.span.line, 0)
+    }
+
+    var param_idx = decl.param_start
+    var param_end = decl.param_start + decl.param_count
+    while param_idx < param_end {
+        let param = parser_param(p, param_idx)
+        let param_type = sema_type_from_span(param.type_ptr, param.type_len)
+        if sema_type_known(p, param_type) == false { sema_mark_error(s, decl.span.line, 0) }
+        sema_declare_typed(s, param.name_ptr, param.name_len, SYM_PARAM, param_type, INVALID_INDEX, false, 0, 0)
+        param_idx += 1
+    }
+
+    sema_check_stmt_list(s, p, decl.body_start, decl.body_count)
+
+    sema_exit_scope(s)
+    s.return_type_len = 0 as usize
+}
+
+func sema_init(s: *Sema, storage: *u8) {
+    s.kernel = false
+    unsafe {
+        s.syms = storage as *Symbol
+    }
+    s.sym_count = 0
+    s.scope_lvl = 0
+    s.loop_depth = 0
+    s.unsafe_depth = 0
+    unsafe { s.return_type_ptr = 0 as *u8 }
+    s.return_type_len = 0 as usize
+    s.error = false
+    s.error_line = 0
+    s.error_col = 0
+    s.error_code = 2000
+    s.error_start = 0 as usize
+    s.error_end = 0 as usize
+}
+
+func sema_check(s: *Sema, p: *Parser) {
+    var i: u32 = 0
+    while i < p.const_count {
+        let constant = parser_const(p, i)
+        var constant_type = sema_type_named("u32")
+        if constant.has_init && parser_expr(p, constant.value_idx).kind == EXPR_BOOL { constant_type = sema_type_named("bool") }
+        if constant.type_len > 0 as usize {
+            constant_type = sema_type_from_span(constant.type_ptr, constant.type_len)
+        }
+        var kind: u32 = SYM_CONST
+        if constant.is_global {
+            kind = SYM_VAR
+            if s.kernel && sema_runtime_name(constant.name_ptr, constant.name_len) != 0 { sema_mark_error(s, constant.span.line, constant.span.col) }
+        }
+        sema_declare_typed(s, constant.name_ptr, constant.name_len, kind, constant_type, INVALID_INDEX, constant.is_global, constant.span.line, constant.span.col)
+        i += 1
+    }
+    i = 0
+    while i < p.decl_count {
+        let decl = parser_decl(p, i)
+        let return_type = sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+        sema_declare_typed(s, decl.name_ptr, decl.name_len, SYM_FUNC, return_type, i, false, decl.span.line, decl.span.col)
+        i += 1
+    }
+
+    i = 0
+    while i < p.struct_count {
+        let structure = parser_struct(p, i)
+        var field_idx = structure.field_start
+        let field_end = structure.field_start + structure.field_count
+        while field_idx < field_end {
+            let field = parser_field(p, field_idx)
+            let field_type = sema_type_from_span(field.type_ptr, field.type_len)
+            if sema_type_known(p, field_type) == false { sema_mark_error(s, 0, 0) }
+            field_idx += 1
+        }
+        i += 1
+    }
+
+    i = 0
+    while i < p.const_count {
+        let constant = parser_const(p, i)
+        let symbol_idx = sema_lookup(s, constant.name_ptr, constant.name_len)
+        if symbol_idx != INVALID_INDEX {
+            let expected = sema_symbol_type(sema_symbol(s, symbol_idx))
+            if sema_type_known(p, expected) == false { sema_mark_error(s, constant.span.line, constant.span.col) }
+            if constant.has_init {
+                let value = parser_expr(p, constant.value_idx)
+                if value.kind == EXPR_DATA {
+                    let array_idx = parser_find_type(p, expected.name_ptr, expected.name_len)
+                    if array_idx == INVALID_INDEX { sema_mark_error(s, constant.span.line, constant.span.col) } else {
+                        let array_type = parser_struct(p, array_idx)
+                        if array_type.is_array == false || value.call.arg_count != array_type.array_count { sema_mark_error(s, constant.span.line, constant.span.col) }
+                        var item = value.call.arg_start
+                        var count: u32 = 0
+                        while count < value.call.arg_count {
+                            let actual = sema_type_of(s, p, item)
+                            if sema_type_compatible(sema_type_from_span(array_type.element_ptr, array_type.element_len), actual) == false { sema_mark_error(s, constant.span.line, constant.span.col) }
+                            item = parser_expr(p, item).next_arg
+                            count += 1
+                        }
+                    }
+                } else if sema_type_compatible(expected, sema_type_of(s, p, constant.value_idx)) == false {
+                    sema_mark_error(s, constant.span.line, constant.span.col)
+                }
+            }
+        }
+        i += 1
+    }
+
+    i = 0
+    while i < p.decl_count {
+        sema_check_func(s, p, i)
+        i += 1
+    }
+}

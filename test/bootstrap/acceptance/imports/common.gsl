@@ -1,0 +1,2 @@
+const BASE: u32 = 3
+func base() u32 { return BASE; }

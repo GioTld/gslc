@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "host": "linux-x86_64",
+  "source_profile": "go-compatible-bootstrap-11h-v1",
+  "targets": ["x86_64-unknown-linux-gnu", "x86_64-unknown-none-elf"],
+  "selection": ["--seed", "GSL_SEED"],
+  "go_fallback": false,
+  "legacy_import": {
+    "compiler_sha256": "cf8b5c97669a544c8df259aaad39f45e5cb08bad2f01d624a31af32da89b90ba",
+    "source_snapshot_sha256": "277a2d6797c4f88c90eeaea3f9abcfd9a2da30dc372ae05f8f0c2882055c0eb2"
+  }
+}

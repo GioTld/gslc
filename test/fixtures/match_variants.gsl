@@ -1,0 +1,26 @@
+func pick(flag: bool) Option[u32] {
+    if flag { return Option.Some(7) }
+    return Option.None()
+}
+
+func result(flag: bool) Result[u32, u32] {
+    if flag { return Result.Ok(3) }
+    return Result.Err(9)
+}
+
+func add(flag: bool) Result[u32, u32] {
+    let value: u32 = result(flag)?
+    return Result.Ok(value + 1)
+}
+
+func main() u32 {
+    let yes: Option[u32] = pick(true)
+    let a: u32 = match yes { Option.Some(n) => n, Option.None() => 0 }
+    let no: Option[u32] = pick(false)
+    let b: u32 = match no { Option.Some(n) => n, Option.None() => 2 }
+    let okay: Result[u32, u32] = add(true)
+    let c: u32 = match okay { Result.Ok(n) => n, Result.Err(e) => e }
+    let fail: Result[u32, u32] = add(false)
+    let d: u32 = match fail { Result.Ok(n) => n, Result.Err(e) => e }
+    return a + b + c + d
+}

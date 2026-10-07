@@ -1,0 +1,21 @@
+name: GSL acceptance
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gsl-acceptance:
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild and test GSL without Go
+        shell: bash
+        run: bash scripts/ci.sh "$RUNNER_TEMP/gsl-acceptance"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gsl-acceptance-artifacts
+          path: ${{ runner.temp }}/gsl-acceptance
+          if-no-files-found: warn

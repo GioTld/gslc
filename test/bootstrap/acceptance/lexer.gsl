@@ -1,0 +1,44 @@
+import "compiler/lexer"
+import "compiler/token"
+func main() u32 {
+    var lex: Lexer
+    lexer_init(&lex, "import \"compiler/token\"\n// comment\nconst MASK: u32 = 0xFF_FF\nfunc main() u32 { if true && false || !false { MASK += 1 } }\n")
+    let first = lexer_next(&lex)
+    if first.kind != TOKEN_IMPORT || first.line != 1 || first.col != 1 { return 1 }
+    let path = lexer_next(&lex)
+    if path.kind != TOKEN_STRING || path.len != 16 { return 2 }
+    let newline = lexer_next(&lex)
+    if newline.kind != TOKEN_SEMICOLON || newline.line != 1 { return 3 }
+    let keyword = lexer_next(&lex)
+    if keyword.kind != TOKEN_CONST || keyword.line != 3 { return 4 }
+    var hex = false
+    var and_op = false
+    var or_op = false
+    var plus_assign = false
+    var count: u32 = 0
+    while count < 100 {
+        let tok = lexer_next(&lex)
+        if tok.kind == TOKEN_ILLEGAL { return 5 }
+        if tok.kind == TOKEN_INT && tok.len == 7 { hex = true }
+        if tok.kind == TOKEN_AND { and_op = true }
+        if tok.kind == TOKEN_OR { or_op = true }
+        if tok.kind == TOKEN_PLUS_ASSIGN { plus_assign = true }
+        if tok.kind == TOKEN_EOF { break }
+        count += 1
+    }
+    if count >= 100 || hex == false || and_op == false || or_op == false || plus_assign == false { return 6 }
+    lexer_init(&lex, "return 1")
+    let ret_tok = lexer_next(&lex)
+    if ret_tok.kind != TOKEN_RETURN { return 7 }
+    let int_tok = lexer_next(&lex)
+    if int_tok.kind != TOKEN_INT { return 8 }
+    let semi_tok = lexer_next(&lex)
+    if semi_tok.kind != TOKEN_SEMICOLON { return 9 }
+    let eof_tok = lexer_next(&lex)
+    if eof_tok.kind != TOKEN_EOF { return 10 }
+    lexer_init(&lex, "\"unterminated")
+    let bad_tok = lexer_next(&lex)
+    if bad_tok.kind != TOKEN_ILLEGAL { return 11 }
+    return 0
+}
+

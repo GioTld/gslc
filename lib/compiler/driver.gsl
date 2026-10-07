@@ -1,0 +1,226 @@
+import "compiler/token"
+import "compiler/lexer"
+import "compiler/ast"
+import "compiler/parser"
+import "compiler/sema"
+import "compiler/codegen"
+import "compiler/imports"
+import "std/fs"
+import "std/io"
+
+const COMPILER_OUTPUT_MODE: u64 = 420
+
+func compile_string(src: string, out_path: string) u32 {
+    return compile_string_mode(src, out_path, false)
+}
+
+func compiler_print_diagnostic(code: u32, start: usize, end: usize, message: string) {
+    var output: CompilerOutput
+    output.fd = 1
+    output.error = false
+    print("{\"code\":\"E")
+    codegen_write_u32(&output, code)
+    print("\",\"span\":{\"start\":")
+    codegen_write_u64(&output, start as u64)
+    print(",\"end\":")
+    codegen_write_u64(&output, end as u64)
+    print("},\"message\":\"")
+    print(message)
+    println("\"}")
+}
+
+func compiler_error_offset(p: *Parser, line: u32, col: u32) usize {
+    var offset: usize = 0 as usize
+    var current_line: u32 = 1
+    var current_col: u32 = 1
+    while current_line < line || current_col < col {
+        let ch = codegen_source_byte(p, offset)
+        if ch == 0 as u8 { return offset }
+        if ch == 10 as u8 { current_line += 1; current_col = 1; } else { current_col += 1; }
+        offset += 1 as usize
+    }
+    return offset
+}
+
+func compile_string_mode(src: string, out_path: string, machine: bool) u32 {
+    return compile_string_profile(src, out_path, machine, false)
+}
+
+func compile_string_profile(src: string, out_path: string, machine: bool, kernel: bool) u32 {
+    arena work(7471104)
+
+    var p: Parser
+    var s: Sema
+
+    let storage = work.alloc((PARSER_MAX_EXPRS as usize) * size_of(Expr) + (PARSER_MAX_STMTS as usize) * size_of(Stmt) + (PARSER_MAX_PARAMS as usize) * size_of(Param) + (PARSER_MAX_DECLS as usize) * size_of(FuncDecl) + (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst) + (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct) + (PARSER_MAX_FIELDS as usize) * size_of(CompilerField))
+    parser_init(&p, src, storage)
+    parser_parse(&p)
+
+    if p.error {
+        if machine {
+            let offset = compiler_error_offset(&p, p.error_line, p.error_col)
+            compiler_print_diagnostic(1000, offset, offset, "syntax error")
+            return 1
+        }
+        var output: CompilerOutput
+        output.fd = 1
+        output.error = false
+        print("gslc-self: syntax error at ")
+        codegen_write_u32(&output, p.error_line)
+        print(":")
+        codegen_write_u32(&output, p.error_col)
+        println("")
+        return 1
+    }
+
+    let symbols = work.alloc((SEMA_MAX_SYMBOLS as usize) * size_of(Symbol))
+    sema_init(&s, symbols)
+    s.kernel = kernel
+    sema_check(&s, &p)
+
+    if s.error {
+        if machine {
+            var message = "semantic error"
+            if s.error_code == 2001 { message = "undefined identifier" }
+            if s.error_code == 2002 { message = "argument count mismatch" }
+            if s.error_code == 2003 { message = "immutable binding" }
+            if s.error_code == 2004 { message = "unsafe operation" }
+            compiler_print_diagnostic(s.error_code, s.error_start, s.error_end, message)
+            return 2
+        }
+        println("gslc-self: semantic error")
+        return 2
+    }
+
+    if codegen_preflight(&p) == false {
+        if machine { compiler_print_diagnostic(4000, 0 as usize, 0 as usize, "unsupported construct"); return 4; }
+        println("gslc-self: unsupported construct")
+        return 4
+    }
+
+    let status = compiler_emit_file(&p, out_path, kernel)
+    if status == 3 {
+        if machine { compiler_print_diagnostic(3001, 0 as usize, 0 as usize, "output error"); return 3; }
+        println("gslc-self: failed to write output file")
+        return 3
+    }
+    if status == 4 {
+        if machine { compiler_print_diagnostic(4000, 0 as usize, 0 as usize, "unsupported construct"); return 4; }
+        println("gslc-self: unsupported construct")
+        return 4
+    }
+
+    if machine == false { println("gslc-self: LLVM IR generado exitosamente"); }
+    return 0
+}
+
+func compile_file(src_path: string, out_path: string) u32 {
+    return compile_file_mode(src_path, out_path, false)
+}
+
+func compile_file_mode(src_path: string, out_path: string, machine: bool) u32 {
+    return compile_file_profile(src_path, out_path, machine, false)
+}
+
+func compile_file_profile(src_path: string, out_path: string, machine: bool, kernel: bool) u32 {
+    arena input(278536)
+    var imports: ImportState
+    imports.output = input.alloc(262145 as usize)
+    imports.paths = input.alloc(16384 as usize)
+    imports.used = 0 as usize
+    imports.path_count = 0
+    let result = compiler_collect_file(src_path, &imports, 0)
+    if result != 0 {
+        if machine { compiler_print_diagnostic(3000, 0 as usize, 0 as usize, "input error"); return result; }
+        println("gslc-self: failed to load source closure")
+        return result
+    }
+    return compile_string_profile(compiler_import_as_string(imports.output), out_path, machine, kernel)
+}
+
+const OUTPUT_PATH_BYTES: usize = 4096
+const OUTPUT_SUFFIX_RESERVE: usize = 32
+const OUTPUT_O_EXCL: u64 = 128
+const OUTPUT_FILE_TYPE_MASK: u32 = 61440
+const OUTPUT_REGULAR_FILE: u32 = 32768
+const OUTPUT_PERMISSION_MASK: u32 = 511
+const OUTPUT_STAT_BYTES: usize = 144
+const OUTPUT_STAT_MODE_OFFSET: usize = 24
+const OUTPUT_ENOENT: i64 = 2
+const OUTPUT_SYS_LSTAT: u64 = 6
+const OUTPUT_SYS_GETPID: u64 = 39
+const OUTPUT_SYS_FSYNC: u64 = 74
+const OUTPUT_SYS_RENAME: u64 = 82
+const OUTPUT_SYS_UNLINK: u64 = 87
+const OUTPUT_SYS_FCHMOD: u64 = 91
+
+func compiler_emit_file(p: *Parser, path: string, kernel: bool) u32 {
+    let length = strlen(path) as usize
+    if length == 0 as usize || length >= OUTPUT_PATH_BYTES - OUTPUT_SUFFIX_RESERVE { return 3 }
+    arena paths(4240)
+    let temporary = paths.alloc(OUTPUT_PATH_BYTES)
+    let metadata = paths.alloc(OUTPUT_STAT_BYTES)
+    let path_ptr = compiler_import_string_ptr(path)
+    var mode = COMPILER_OUTPUT_MODE
+    var existed = false
+    unsafe {
+        let status = syscall(OUTPUT_SYS_LSTAT, path_ptr as u64, metadata as u64, 0 as u64)
+        if status == 0 {
+            existed = true
+            let file_mode = *(((metadata as usize) + OUTPUT_STAT_MODE_OFFSET) as *u32)
+            if (file_mode & OUTPUT_FILE_TYPE_MASK) != OUTPUT_REGULAR_FILE { return 3 }
+            mode = (file_mode & OUTPUT_PERMISSION_MASK) as u64
+        } else if status != -OUTPUT_ENOENT { return 3 }
+    }
+    var offset: usize = 0
+    while offset < length {
+        compiler_import_put(temporary, offset, compiler_import_byte(path_ptr, offset))
+        offset += 1 as usize
+    }
+    let suffix_name = ".gsl-tmp-"
+    let suffix = compiler_import_string_ptr(suffix_name)
+    var index: usize = 0
+    while index < strlen(suffix_name) as usize {
+        compiler_import_put(temporary, offset, compiler_import_byte(suffix, index))
+        offset += 1 as usize
+        index += 1 as usize
+    }
+    var pid: u64
+    unsafe { pid = syscall(OUTPUT_SYS_GETPID, 0 as u64, 0 as u64, 0 as u64) as u64 }
+    var place: u64 = 1
+    while pid / place >= 10 { place = place * 10 }
+    while place > 0 {
+        compiler_import_put(temporary, offset, (pid / place) as u8 + ASCII_DIGIT_ZERO)
+        offset += 1 as usize
+        pid = pid % place
+        place = place / 10
+    }
+    compiler_import_put(temporary, offset, 0 as u8)
+    let fd = open(compiler_import_as_string(temporary), O_WRONLY | O_CREAT | OUTPUT_O_EXCL, mode)
+    if fd < 0 { return 3 }
+    var output: CompilerOutput
+    output.fd = fd as u64
+    output.error = false
+    let valid = codegen_emit_profile(p, &output, kernel)
+    if valid && output.error == false {
+        unsafe {
+            if existed && syscall(OUTPUT_SYS_FCHMOD, output.fd, mode, 0 as u64) != 0 { output.error = true }
+            var synced = -OUTPUT_EINTR
+            while synced == -OUTPUT_EINTR { synced = syscall(OUTPUT_SYS_FSYNC, output.fd, 0 as u64, 0 as u64) }
+            if synced != 0 { output.error = true }
+        }
+    }
+    // Linux releases the descriptor even when close reports an error; do not retry it.
+    if close(output.fd) != 0 { output.error = true }
+    if valid && output.error == false {
+        unsafe {
+            if syscall(OUTPUT_SYS_RENAME, temporary as u64, path_ptr as u64, 0 as u64) == 0 { return 0 }
+        }
+        output.error = true
+    }
+    unsafe {
+        if syscall(OUTPUT_SYS_UNLINK, temporary as u64, 0 as u64, 0 as u64) != 0 { output.error = true }
+    }
+    if output.error { return 3 }
+    return 4
+}

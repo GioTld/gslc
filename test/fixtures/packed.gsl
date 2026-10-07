@@ -1,0 +1,53 @@
+packed struct Header { tag: u8, value: u64, length: u16 }
+copy struct Natural { tag: u8, value: u64 }
+packed struct Nested { tag: u8, inner: Natural, tail: u16 }
+copy struct Outer { tag: u8, inner: Header, tail: u32 }
+packed struct Link { tag: u8, next: *Link }
+
+func round_trip(value: Header) Header { return value }
+func main() u32 {
+    if size_of(Header) != 11 as usize || align_of(Header) != 1 as usize { return 1 }
+    if size_of(Natural) != 16 as usize || align_of(Natural) != 8 as usize { return 2 }
+    if size_of(Nested) != 19 as usize || align_of(Nested) != 1 as usize { return 3 }
+    if size_of(Outer) != 16 as usize || align_of(Outer) != 4 as usize { return 4 }
+    if size_of(Link) != 9 as usize || align_of(Link) != 1 as usize { return 5 }
+    var storage: [64]u8
+    unsafe {
+        let header = ((&storage[0] as usize) + 1 as usize) as *Header
+        header.tag = 0xa5 as u8
+        header.value = 0x8877665544332211 as u64
+        header.length = 0xccbb as u16
+        if (&header.value as usize) - (header as usize) != 1 as usize { return 6 }
+        if (&header.length as usize) - (header as usize) != 9 as usize { return 7 }
+        if storage[1] != 0xa5 as u8 || storage[2] != 0x11 as u8 || storage[9] != 0x88 as u8 || storage[10] != 0xbb as u8 || storage[11] != 0xcc as u8 { return 8 }
+        let borrowed = &header.value
+        *borrowed = 0xffffffffffffffff as u64
+        header.length += 1 as u16
+        let result = round_trip(*header)
+        let second = ((&storage[0] as usize) + 17 as usize) as *Header
+        *second = result
+        if second.value != 0xffffffffffffffff as u64 || second.length != 0xccbc as u16 { return 9 }
+    }
+    var nested: Nested
+    nested.tag = 3 as u8
+    nested.inner.tag = 4 as u8
+    nested.inner.value = 99 as u64
+    nested.tail = 5 as u16
+    unsafe {
+        if (&nested.inner as usize) - (&nested as usize) != 1 as usize { return 10 }
+        if (&nested.inner.value as usize) - (&nested as usize) != 9 as usize { return 11 }
+        if (&nested.tail as usize) - (&nested as usize) != 17 as usize { return 12 }
+    }
+    if nested.inner.value != 99 as u64 { return 13 }
+    var outer: Outer
+    outer.tag = 1 as u8
+    outer.inner.tag = 2 as u8
+    outer.inner.value = 3 as u64
+    outer.inner.length = 4 as u16
+    outer.tail = 5 as u32
+    unsafe {
+        if (&outer.inner as usize) - (&outer as usize) != 1 as usize { return 14 }
+        if (&outer.tail as usize) - (&outer as usize) != 12 as usize { return 15 }
+    }
+    return 0
+}

@@ -1,0 +1,138 @@
+{
+  "version": 3,
+  "entry": "lib/compiler/cli.gsl",
+  "input_max_bytes": 262144,
+  "storage": {
+    "limits": {
+      "expressions": 20480,
+      "statements": 5632,
+      "functions": 224,
+      "parameters": 512,
+      "constants": 256,
+      "structs": 128,
+      "fields": 768,
+      "symbols": 1792
+    },
+    "work_arena_bytes": 7471104
+  },
+  "source_files": [
+    "lib/compiler/token.gsl",
+    "lib/core/io.gsl",
+    "lib/compiler/lexer.gsl",
+    "lib/compiler/ast.gsl",
+    "lib/compiler/parser.gsl",
+    "lib/compiler/intrinsics.gsl",
+    "lib/compiler/sema.gsl",
+    "lib/std/fs.gsl",
+    "lib/compiler/output.gsl",
+    "lib/compiler/codegen_text.gsl",
+    "lib/compiler/codegen_types.gsl",
+    "lib/compiler/codegen_validate.gsl",
+    "lib/compiler/codegen_runtime.gsl",
+    "lib/compiler/codegen.gsl",
+    "lib/compiler/imports.gsl",
+    "lib/std/io.gsl",
+    "lib/compiler/driver.gsl",
+    "lib/compiler/cli.gsl"
+  ],
+  "excluded_modules": [
+    "lib/core/mem.gsl"
+  ],
+  "required_features": [
+    {
+      "name": "imports",
+      "source": "lib/compiler/imports.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "constants",
+      "source": "lib/compiler/parser.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "integer widths and signedness, bool, void and scalar conversions",
+      "source": "lib/compiler/codegen.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "struct declarations and fields",
+      "source": "lib/compiler/parser.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "pointer types, casts, arithmetic and volatile reads",
+      "source": "lib/compiler/lexer.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "implicit field access through pointers",
+      "source": "lib/compiler/parser.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "field assignment through pointers",
+      "source": "lib/compiler/parser.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "if, while and break",
+      "source": "lib/compiler/driver.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "mutable locals and compound assignment",
+      "source": "lib/compiler/driver.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "strings, their runtime ABI, and Linux file I/O",
+      "source": "lib/std/fs.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "arena allocation and bounded AST storage",
+      "source": "lib/compiler/driver.gsl",
+      "gsl_level": "bounded"
+    },
+    {
+      "name": "bounded file input and host argv entry point",
+      "source": "lib/compiler/cli.gsl",
+      "gsl_level": "bounded"
+    }
+  ],
+  "deferred_features": [
+    "slice indexing, nested arrays, direct array fields and whole-array values",
+    "compound pointer assignment",
+    "character literals",
+    "block comments",
+    "match and for"
+  ],
+  "doc_examples": [
+    {
+      "source": "conventions.md",
+      "fence": 1,
+      "fixture": "test/bootstrap/examples/conventions_bindings.gsl",
+      "gsl_status": 0,
+      "run_exit_code": 10
+    },
+    {
+      "source": "conventions.md",
+      "fence": 2,
+      "fixture": "test/bootstrap/examples/conventions_cast.gsl",
+      "gsl_status": 0,
+      "run_exit_code": 0
+    },
+    {
+      "source": "conventions.md",
+      "fence": 3,
+      "fixture": "test/bootstrap/examples/conventions_result.gsl",
+      "gsl_status": 1
+    },
+    {
+      "source": "security.md",
+      "fence": 1,
+      "fixture": "test/bootstrap/examples/security_mmio.gsl",
+      "gsl_status": 0
+    }
+  ]
+}

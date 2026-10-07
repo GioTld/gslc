@@ -1,0 +1,2 @@
+import "cycle_a"
+func main() u32 { return a(); }

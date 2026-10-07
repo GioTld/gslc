@@ -1,0 +1,54 @@
+import "std/fs"
+import "std/io"
+copy struct Message { tag: u8, text: string, count: u32 }
+func argument(argv: *usize, index: usize) string {
+    unsafe { return *(((argv as usize) + index * size_of(usize)) as *usize) as string; }
+}
+func returned() string { return "return\n"; }
+func identity(text: string) string { return text; }
+func string_probe() u32 {
+    let maximum: u64 = 18446744073709551615;
+    if maximum != 0xFFFF_FFFF_FFFF_FFFF as u64 { return 20; }
+    if (maximum as i64) != (-(1 as i64)) { return 21; }
+    let high: u64 = 0x8000_0000_0000_0000;
+    if (high >> (63 as u64)) != (1 as u64) { return 22; }
+    if 0b1011 != 0o13 { return 23; }
+    if 00011 != 1_1 { return 24; }
+
+    if size_of(string) != 8 as usize || align_of(string) != 8 as usize || size_of(Message) != 24 as usize { return 1; }
+    var message: Message;
+    message.tag = 7;
+    message.text = "struct";
+    message.count = 6;
+    let copied = message;
+    if strlen(copied.text) != copied.count as u64 || copied.tag != 7 { return 2; }
+    print(identity(copied.text));
+    print(returned());
+    let text = "A\n\t\"\\é\x00\xFF\u263A\U0001F642\101";
+    print_raw(text, 17 as u64);
+    var result: i64;
+    unsafe {
+        result = syscall_write(1 as u8, "SW", 2 as u16);
+        if syscall_write(-1 as i8, "", 0 as u8) >= 0 { return 3; }
+    }
+    if result != 2 { return 4; }
+    return 0;
+}
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 3 { return 64; }
+    let status = string_probe();
+    if status != 0 { return status; }
+    let input = open(argument(argv, 1 as usize), 0 as u64, 0 as u64);
+    if input < 0 { return 5; }
+    arena bytes(64);
+    let buffer = bytes.alloc(64 as usize);
+    let count = read(input as u64, buffer, 64 as usize);
+    close(input as u64);
+    if count != 8 { return 6; }
+    let output = open(argument(argv, 2 as usize), 577 as u64, 420 as u64);
+    if output < 0 { return 7; }
+    let written = write(output as u64, buffer, count as usize);
+    close(output as u64);
+    if written != count { return 8; }
+    return 0;
+}

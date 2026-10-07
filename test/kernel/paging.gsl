@@ -1,0 +1,25 @@
+import "core/serial"
+section(".requests") var REQUEST: [4]u64 = [0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 0, 0]
+var visits: usize
+func interrupt_gate() {}
+section(".text.entry") func kernel_main() {
+    serial_init()
+    unsafe {
+        cli()
+        let table = read_cr3()
+        if table == 0 as usize || (table & (4095 as usize)) != 0 as usize { outb(0xf4, 1); hlt(); }
+        write_cr3(table)
+        invlpg(symbol_address("kernel_main"))
+        let assembly_table = asm_u64("mov %cr3, $0", "=r")
+        if assembly_table != read_cr3() { outb(0xf4, 2); hlt(); }
+        visits += 1 as usize
+        if visits != 1 as usize || REQUEST[1 as usize] != 0x6a7b384944536bdc as u64 { outb(0xf4, 3); hlt(); }
+        asm_void("", "r", read_cr2())
+        serial_write_byte(80 as u8)
+        serial_write_byte(65 as u8)
+        serial_write_byte(71 as u8)
+        serial_write_byte(10 as u8)
+        outb(0xf4, 0)
+        hlt()
+    }
+}

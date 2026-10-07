@@ -1,0 +1,45 @@
+import "core/arch"
+
+packed struct IDTEntry {
+    offset_low: u16,
+    selector: u16,
+    ist: u8,
+    type_attr: u8,
+    offset_mid: u16,
+    offset_high: u32,
+    zero: u32,
+}
+
+func init_serial() {
+    unsafe {
+        // Disable COM1 interrupts
+        outb(0x3F9 as u16, 0x00 as u8);
+        // Enable DLAB
+        outb(0x3FB as u16, 0x80 as u8);
+        // Set divisor low byte to 3 (38400 baud)
+        outb(0x3F8 as u16, 0x03 as u8);
+        // Set divisor high byte to 0
+        outb(0x3F9 as u16, 0x00 as u8);
+        // 8 bits, no parity, one stop bit
+        outb(0x3FB as u16, 0x03 as u8);
+    }
+}
+
+func serial_write_byte(b: u8) {
+    unsafe {
+        outb(0x3F8 as u16, b);
+    }
+}
+
+func main() u32 {
+    interrupts_disable();
+    init_serial();
+    serial_write_byte(75 as u8); // 'K'
+    serial_write_byte(79 as u8); // 'O'
+    serial_write_byte(10 as u8); // '\n'
+
+    unsafe {
+        asm("nop");
+    }
+    return 0;
+}

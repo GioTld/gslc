@@ -1,0 +1,290 @@
+const ENABLED = true
+func bool_not(value: bool) bool { return !value; }
+func bool_logic(left: bool, right: bool) bool { var result: bool = left; result = result && !right; return result || right; }
+func bool_equal(left: bool, right: bool) bool { return left == right; }
+func bool_byte(value: bool) u8 { return value as u8; }
+func byte_bool(value: u8) bool { return value as bool; }
+func bool_default() bool { var value: bool; return value; }
+func bool_constant() bool { return ENABLED; }
+func void_empty() void { return; }
+func void_relay() void { return void_empty(); }
+func void_implicit() { void_relay(); }
+func bool_probe() u32 {
+    if bool_not(false) != true || bool_not(true) != false { return 1; }
+    if bool_logic(false, false) || !bool_logic(true, false) || !bool_logic(false, true) { return 2; }
+    if !bool_equal(false, false) || bool_equal(false, true) || !bool_equal(true, true) { return 3; }
+    if bool_byte(true) != 1 || bool_byte(false) != 0 { return 4; }
+    if !byte_bool(1) || byte_bool(2) { return 5; }
+    if bool_default() || !bool_constant() { return 6; }
+    return 0;
+}
+func add_u8(value: u8) u8 { return value + 1; }
+func sub_u8(value: u8) u8 { return value - 1; }
+func mul_u8(value: u8) u8 { return value * 2; }
+func neg_u8(value: u8) u8 { return -value; }
+func invert_u8(value: u8) u8 { return ~value; }
+func local_u8(value: u8) u8 { var result = value; result += 2; result -= 1; return result; }
+func bits_u8(value: u8, other: u8) u8 { return (value & other) ^ (value | other); }
+func div_u8(value: u8, other: u8) u8 { return value / other; }
+func rem_u8(value: u8, other: u8) u8 { return value % other; }
+func left_u8(value: u8, other: u8) u8 { return value << other; }
+func right_u8(value: u8, other: u8) u8 { return value >> other; }
+func default_u8() u8 { var value: u8; return value; }
+func context_u8() u8 { return (0 - 27) / 4; }
+func widen_u8(value: u8) u64 { return value as u64; }
+func less_u8(value: u8, other: u8) u32 { return (value < other) as u32; }
+func order_u8(left: u8, right: u8) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_u16(value: u16) u16 { return value + 1; }
+func sub_u16(value: u16) u16 { return value - 1; }
+func mul_u16(value: u16) u16 { return value * 2; }
+func neg_u16(value: u16) u16 { return -value; }
+func invert_u16(value: u16) u16 { return ~value; }
+func local_u16(value: u16) u16 { var result = value; result += 2; result -= 1; return result; }
+func bits_u16(value: u16, other: u16) u16 { return (value & other) ^ (value | other); }
+func div_u16(value: u16, other: u16) u16 { return value / other; }
+func rem_u16(value: u16, other: u16) u16 { return value % other; }
+func left_u16(value: u16, other: u16) u16 { return value << other; }
+func right_u16(value: u16, other: u16) u16 { return value >> other; }
+func default_u16() u16 { var value: u16; return value; }
+func context_u16() u16 { return (0 - 27) / 4; }
+func widen_u16(value: u16) u64 { return value as u64; }
+func less_u16(value: u16, other: u16) u32 { return (value < other) as u32; }
+func order_u16(left: u16, right: u16) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_u32(value: u32) u32 { return value + 1; }
+func sub_u32(value: u32) u32 { return value - 1; }
+func mul_u32(value: u32) u32 { return value * 2; }
+func neg_u32(value: u32) u32 { return -value; }
+func invert_u32(value: u32) u32 { return ~value; }
+func local_u32(value: u32) u32 { var result = value; result += 2; result -= 1; return result; }
+func bits_u32(value: u32, other: u32) u32 { return (value & other) ^ (value | other); }
+func div_u32(value: u32, other: u32) u32 { return value / other; }
+func rem_u32(value: u32, other: u32) u32 { return value % other; }
+func left_u32(value: u32, other: u32) u32 { return value << other; }
+func right_u32(value: u32, other: u32) u32 { return value >> other; }
+func default_u32() u32 { var value: u32; return value; }
+func context_u32() u32 { return (0 - 27) / 4; }
+func widen_u32(value: u32) u64 { return value as u64; }
+func less_u32(value: u32, other: u32) u32 { return (value < other) as u32; }
+func order_u32(left: u32, right: u32) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_u64(value: u64) u64 { return value + 1; }
+func sub_u64(value: u64) u64 { return value - 1; }
+func mul_u64(value: u64) u64 { return value * 2; }
+func neg_u64(value: u64) u64 { return -value; }
+func invert_u64(value: u64) u64 { return ~value; }
+func local_u64(value: u64) u64 { var result = value; result += 2; result -= 1; return result; }
+func bits_u64(value: u64, other: u64) u64 { return (value & other) ^ (value | other); }
+func div_u64(value: u64, other: u64) u64 { return value / other; }
+func rem_u64(value: u64, other: u64) u64 { return value % other; }
+func left_u64(value: u64, other: u64) u64 { return value << other; }
+func right_u64(value: u64, other: u64) u64 { return value >> other; }
+func default_u64() u64 { var value: u64; return value; }
+func context_u64() u64 { return (0 - 27) / 4; }
+func widen_u64(value: u64) u64 { return value as u64; }
+func less_u64(value: u64, other: u64) u32 { return (value < other) as u32; }
+func order_u64(left: u64, right: u64) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_usize(value: usize) usize { return value + 1; }
+func sub_usize(value: usize) usize { return value - 1; }
+func mul_usize(value: usize) usize { return value * 2; }
+func neg_usize(value: usize) usize { return -value; }
+func invert_usize(value: usize) usize { return ~value; }
+func local_usize(value: usize) usize { var result = value; result += 2; result -= 1; return result; }
+func bits_usize(value: usize, other: usize) usize { return (value & other) ^ (value | other); }
+func div_usize(value: usize, other: usize) usize { return value / other; }
+func rem_usize(value: usize, other: usize) usize { return value % other; }
+func left_usize(value: usize, other: usize) usize { return value << other; }
+func right_usize(value: usize, other: usize) usize { return value >> other; }
+func default_usize() usize { var value: usize; return value; }
+func context_usize() usize { return (0 - 27) / 4; }
+func widen_usize(value: usize) u64 { return value as u64; }
+func less_usize(value: usize, other: usize) u32 { return (value < other) as u32; }
+func order_usize(left: usize, right: usize) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_i8(value: i8) i8 { return value + 1; }
+func sub_i8(value: i8) i8 { return value - 1; }
+func mul_i8(value: i8) i8 { return value * 2; }
+func neg_i8(value: i8) i8 { return -value; }
+func invert_i8(value: i8) i8 { return ~value; }
+func local_i8(value: i8) i8 { var result = value; result += 2; result -= 1; return result; }
+func bits_i8(value: i8, other: i8) i8 { return (value & other) ^ (value | other); }
+func div_i8(value: i8, other: i8) i8 { return value / other; }
+func rem_i8(value: i8, other: i8) i8 { return value % other; }
+func left_i8(value: i8, other: i8) i8 { return value << other; }
+func right_i8(value: i8, other: i8) i8 { return value >> other; }
+func default_i8() i8 { var value: i8; return value; }
+func context_i8() i8 { return (0 - 27) / 4; }
+func widen_i8(value: i8) u64 { return value as u64; }
+func less_i8(value: i8, other: i8) u32 { return (value < other) as u32; }
+func order_i8(left: i8, right: i8) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_i16(value: i16) i16 { return value + 1; }
+func sub_i16(value: i16) i16 { return value - 1; }
+func mul_i16(value: i16) i16 { return value * 2; }
+func neg_i16(value: i16) i16 { return -value; }
+func invert_i16(value: i16) i16 { return ~value; }
+func local_i16(value: i16) i16 { var result = value; result += 2; result -= 1; return result; }
+func bits_i16(value: i16, other: i16) i16 { return (value & other) ^ (value | other); }
+func div_i16(value: i16, other: i16) i16 { return value / other; }
+func rem_i16(value: i16, other: i16) i16 { return value % other; }
+func left_i16(value: i16, other: i16) i16 { return value << other; }
+func right_i16(value: i16, other: i16) i16 { return value >> other; }
+func default_i16() i16 { var value: i16; return value; }
+func context_i16() i16 { return (0 - 27) / 4; }
+func widen_i16(value: i16) u64 { return value as u64; }
+func less_i16(value: i16, other: i16) u32 { return (value < other) as u32; }
+func order_i16(left: i16, right: i16) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_i32(value: i32) i32 { return value + 1; }
+func sub_i32(value: i32) i32 { return value - 1; }
+func mul_i32(value: i32) i32 { return value * 2; }
+func neg_i32(value: i32) i32 { return -value; }
+func invert_i32(value: i32) i32 { return ~value; }
+func local_i32(value: i32) i32 { var result = value; result += 2; result -= 1; return result; }
+func bits_i32(value: i32, other: i32) i32 { return (value & other) ^ (value | other); }
+func div_i32(value: i32, other: i32) i32 { return value / other; }
+func rem_i32(value: i32, other: i32) i32 { return value % other; }
+func left_i32(value: i32, other: i32) i32 { return value << other; }
+func right_i32(value: i32, other: i32) i32 { return value >> other; }
+func default_i32() i32 { var value: i32; return value; }
+func context_i32() i32 { return (0 - 27) / 4; }
+func widen_i32(value: i32) u64 { return value as u64; }
+func less_i32(value: i32, other: i32) u32 { return (value < other) as u32; }
+func order_i32(left: i32, right: i32) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_i64(value: i64) i64 { return value + 1; }
+func sub_i64(value: i64) i64 { return value - 1; }
+func mul_i64(value: i64) i64 { return value * 2; }
+func neg_i64(value: i64) i64 { return -value; }
+func invert_i64(value: i64) i64 { return ~value; }
+func local_i64(value: i64) i64 { var result = value; result += 2; result -= 1; return result; }
+func bits_i64(value: i64, other: i64) i64 { return (value & other) ^ (value | other); }
+func div_i64(value: i64, other: i64) i64 { return value / other; }
+func rem_i64(value: i64, other: i64) i64 { return value % other; }
+func left_i64(value: i64, other: i64) i64 { return value << other; }
+func right_i64(value: i64, other: i64) i64 { return value >> other; }
+func default_i64() i64 { var value: i64; return value; }
+func context_i64() i64 { return (0 - 27) / 4; }
+func widen_i64(value: i64) u64 { return value as u64; }
+func less_i64(value: i64, other: i64) u32 { return (value < other) as u32; }
+func order_i64(left: i64, right: i64) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func add_isize(value: isize) isize { return value + 1; }
+func sub_isize(value: isize) isize { return value - 1; }
+func mul_isize(value: isize) isize { return value * 2; }
+func neg_isize(value: isize) isize { return -value; }
+func invert_isize(value: isize) isize { return ~value; }
+func local_isize(value: isize) isize { var result = value; result += 2; result -= 1; return result; }
+func bits_isize(value: isize, other: isize) isize { return (value & other) ^ (value | other); }
+func div_isize(value: isize, other: isize) isize { return value / other; }
+func rem_isize(value: isize, other: isize) isize { return value % other; }
+func left_isize(value: isize, other: isize) isize { return value << other; }
+func right_isize(value: isize, other: isize) isize { return value >> other; }
+func default_isize() isize { var value: isize; return value; }
+func context_isize() isize { return (0 - 27) / 4; }
+func widen_isize(value: isize) u64 { return value as u64; }
+func less_isize(value: isize, other: isize) u32 { return (value < other) as u32; }
+func order_isize(left: isize, right: isize) u32 { var result=0; if left < right { result += 1; } if left <= right { result += 2; } if left > right { result += 4; } if left >= right { result += 8; } return result; }
+func main() u32 {
+    void_implicit();
+    if !(bool_probe() == 0) { return 1; }
+    if !(local_u8(10) == 11 && default_u8() == 0) { return 2; }
+    if !(bits_u8(3,5) == 6 && invert_u8(0) == (-((1 as u8)))) { return 3; }
+    if !(left_u8(1,7) == (128 as u8)) { return 4; }
+    if !(add_u8((255 as u8)) == 0 && sub_u8(0) == (255 as u8)) { return 5; }
+    if !(mul_u8((128 as u8)) == 0 && neg_u8(1) == (255 as u8)) { return 6; }
+    if !(div_u8((255 as u8),2) == 127 && rem_u8((255 as u8),2) == 1) { return 7; }
+    if !(context_u8() == 57) { return 8; }
+    if !(right_u8((255 as u8),7) == 1) { return 9; }
+    if !(widen_u8((255 as u8)) == (255 as u64) && less_u8((255 as u8),1) == 0) { return 10; }
+    if !(order_u8(1,(255 as u8)) == 3 && order_u8((255 as u8),1) == 12 && order_u8((255 as u8),(255 as u8)) == 10) { return 11; }
+    if !(local_u16(10) == 11 && default_u16() == 0) { return 12; }
+    if !(bits_u16(3,5) == 6 && invert_u16(0) == (-((1 as u16)))) { return 13; }
+    if !(left_u16(1,15) == (32768 as u16)) { return 14; }
+    if !(add_u16((65535 as u16)) == 0 && sub_u16(0) == (65535 as u16)) { return 15; }
+    if !(mul_u16((32768 as u16)) == 0 && neg_u16(1) == (65535 as u16)) { return 16; }
+    if !(div_u16((65535 as u16),2) == 32767 && rem_u16((65535 as u16),2) == 1) { return 17; }
+    if !(context_u16() == 16377) { return 18; }
+    if !(right_u16((65535 as u16),15) == 1) { return 19; }
+    if !(widen_u16((65535 as u16)) == (65535 as u64) && less_u16((65535 as u16),1) == 0) { return 20; }
+    if !(order_u16(1,(65535 as u16)) == 3 && order_u16((65535 as u16),1) == 12 && order_u16((65535 as u16),(65535 as u16)) == 10) { return 21; }
+    if !(local_u32(10) == 11 && default_u32() == 0) { return 22; }
+    if !(bits_u32(3,5) == 6 && invert_u32(0) == (-((1 as u32)))) { return 23; }
+    if !(left_u32(1,31) == (2147483648 as u32)) { return 24; }
+    if !(add_u32((4294967295 as u32)) == 0 && sub_u32(0) == (4294967295 as u32)) { return 25; }
+    if !(mul_u32((2147483648 as u32)) == 0 && neg_u32(1) == (4294967295 as u32)) { return 26; }
+    if !(div_u32((4294967295 as u32),2) == 2147483647 && rem_u32((4294967295 as u32),2) == 1) { return 27; }
+    if !(context_u32() == 1073741817) { return 28; }
+    if !(right_u32((4294967295 as u32),31) == 1) { return 29; }
+    if !(widen_u32((4294967295 as u32)) == (4294967295 as u64) && less_u32((4294967295 as u32),1) == 0) { return 30; }
+    if !(order_u32(1,(4294967295 as u32)) == 3 && order_u32((4294967295 as u32),1) == 12 && order_u32((4294967295 as u32),(4294967295 as u32)) == 10) { return 31; }
+    if !(local_u64(10) == 11 && default_u64() == 0) { return 32; }
+    if !(bits_u64(3,5) == 6 && invert_u64(0) == (-((1 as u64)))) { return 33; }
+    if !(left_u64(1,63) == (9223372036854775808 as u64)) { return 34; }
+    if !(add_u64((18446744073709551615 as u64)) == 0 && sub_u64(0) == (18446744073709551615 as u64)) { return 35; }
+    if !(mul_u64((9223372036854775808 as u64)) == 0 && neg_u64(1) == (18446744073709551615 as u64)) { return 36; }
+    if !(div_u64((18446744073709551615 as u64),2) == 9223372036854775807 && rem_u64((18446744073709551615 as u64),2) == 1) { return 37; }
+    if !(context_u64() == 4611686018427387897) { return 38; }
+    if !(right_u64((18446744073709551615 as u64),63) == 1) { return 39; }
+    if !(widen_u64((18446744073709551615 as u64)) == (18446744073709551615 as u64) && less_u64((18446744073709551615 as u64),1) == 0) { return 40; }
+    if !(order_u64(1,(18446744073709551615 as u64)) == 3 && order_u64((18446744073709551615 as u64),1) == 12 && order_u64((18446744073709551615 as u64),(18446744073709551615 as u64)) == 10) { return 41; }
+    if !(local_usize(10) == 11 && default_usize() == 0) { return 42; }
+    if !(bits_usize(3,5) == 6 && invert_usize(0) == (-((1 as usize)))) { return 43; }
+    if !(left_usize(1,63) == (9223372036854775808 as usize)) { return 44; }
+    if !(add_usize((18446744073709551615 as usize)) == 0 && sub_usize(0) == (18446744073709551615 as usize)) { return 45; }
+    if !(mul_usize((9223372036854775808 as usize)) == 0 && neg_usize(1) == (18446744073709551615 as usize)) { return 46; }
+    if !(div_usize((18446744073709551615 as usize),2) == 9223372036854775807 && rem_usize((18446744073709551615 as usize),2) == 1) { return 47; }
+    if !(context_usize() == 4611686018427387897) { return 48; }
+    if !(right_usize((18446744073709551615 as usize),63) == 1) { return 49; }
+    if !(widen_usize((18446744073709551615 as usize)) == (18446744073709551615 as u64) && less_usize((18446744073709551615 as usize),1) == 0) { return 50; }
+    if !(order_usize(1,(18446744073709551615 as usize)) == 3 && order_usize((18446744073709551615 as usize),1) == 12 && order_usize((18446744073709551615 as usize),(18446744073709551615 as usize)) == 10) { return 51; }
+    if !(local_i8(10) == 11 && default_i8() == 0) { return 52; }
+    if !(bits_i8(3,5) == 6 && invert_i8(0) == (-((1 as i8)))) { return 53; }
+    if !(left_i8(1,7) == (128 as i8)) { return 54; }
+    if !(add_i8((127 as i8)) == (128 as i8) && sub_i8((128 as i8)) == (127 as i8)) { return 55; }
+    if !(mul_i8((128 as i8)) == 0 && neg_i8((128 as i8)) == (128 as i8)) { return 56; }
+    if !(div_i8(-27,4) == -6 && rem_i8(-27,4) == -3) { return 57; }
+    if !(div_i8((128 as i8),1) == (128 as i8) && rem_i8((128 as i8),1) == 0) { return 58; }
+    if !(div_i8(-27,-1) == 27 && rem_i8(-27,-1) == 0 && context_i8() == -6) { return 59; }
+    if !(right_i8((128 as i8),7) == -1) { return 60; }
+    if !(widen_i8(-1) == (18446744073709551615 as u64) && less_i8(-1,1) == 1) { return 61; }
+    if !(order_i8(-1,1) == 3 && order_i8(1,-1) == 12 && order_i8(-1,-1) == 10) { return 62; }
+    if !(local_i16(10) == 11 && default_i16() == 0) { return 63; }
+    if !(bits_i16(3,5) == 6 && invert_i16(0) == (-((1 as i16)))) { return 64; }
+    if !(left_i16(1,15) == (32768 as i16)) { return 65; }
+    if !(add_i16((32767 as i16)) == (32768 as i16) && sub_i16((32768 as i16)) == (32767 as i16)) { return 66; }
+    if !(mul_i16((32768 as i16)) == 0 && neg_i16((32768 as i16)) == (32768 as i16)) { return 67; }
+    if !(div_i16(-27,4) == -6 && rem_i16(-27,4) == -3) { return 68; }
+    if !(div_i16((32768 as i16),1) == (32768 as i16) && rem_i16((32768 as i16),1) == 0) { return 69; }
+    if !(div_i16(-27,-1) == 27 && rem_i16(-27,-1) == 0 && context_i16() == -6) { return 70; }
+    if !(right_i16((32768 as i16),15) == -1) { return 71; }
+    if !(widen_i16(-1) == (18446744073709551615 as u64) && less_i16(-1,1) == 1) { return 72; }
+    if !(order_i16(-1,1) == 3 && order_i16(1,-1) == 12 && order_i16(-1,-1) == 10) { return 73; }
+    if !(local_i32(10) == 11 && default_i32() == 0) { return 74; }
+    if !(bits_i32(3,5) == 6 && invert_i32(0) == (-((1 as i32)))) { return 75; }
+    if !(left_i32(1,31) == (2147483648 as i32)) { return 76; }
+    if !(add_i32((2147483647 as i32)) == (2147483648 as i32) && sub_i32((2147483648 as i32)) == (2147483647 as i32)) { return 77; }
+    if !(mul_i32((2147483648 as i32)) == 0 && neg_i32((2147483648 as i32)) == (2147483648 as i32)) { return 78; }
+    if !(div_i32(-27,4) == -6 && rem_i32(-27,4) == -3) { return 79; }
+    if !(div_i32((2147483648 as i32),1) == (2147483648 as i32) && rem_i32((2147483648 as i32),1) == 0) { return 80; }
+    if !(div_i32(-27,-1) == 27 && rem_i32(-27,-1) == 0 && context_i32() == -6) { return 81; }
+    if !(right_i32((2147483648 as i32),31) == -1) { return 82; }
+    if !(widen_i32(-1) == (18446744073709551615 as u64) && less_i32(-1,1) == 1) { return 83; }
+    if !(order_i32(-1,1) == 3 && order_i32(1,-1) == 12 && order_i32(-1,-1) == 10) { return 84; }
+    if !(local_i64(10) == 11 && default_i64() == 0) { return 85; }
+    if !(bits_i64(3,5) == 6 && invert_i64(0) == (-((1 as i64)))) { return 86; }
+    if !(left_i64(1,63) == (9223372036854775808 as i64)) { return 87; }
+    if !(add_i64((9223372036854775807 as i64)) == (9223372036854775808 as i64) && sub_i64((9223372036854775808 as i64)) == (9223372036854775807 as i64)) { return 88; }
+    if !(mul_i64((9223372036854775808 as i64)) == 0 && neg_i64((9223372036854775808 as i64)) == (9223372036854775808 as i64)) { return 89; }
+    if !(div_i64(-27,4) == -6 && rem_i64(-27,4) == -3) { return 90; }
+    if !(div_i64((9223372036854775808 as i64),1) == (9223372036854775808 as i64) && rem_i64((9223372036854775808 as i64),1) == 0) { return 91; }
+    if !(div_i64(-27,-1) == 27 && rem_i64(-27,-1) == 0 && context_i64() == -6) { return 92; }
+    if !(right_i64((9223372036854775808 as i64),63) == -1) { return 93; }
+    if !(widen_i64(-1) == (18446744073709551615 as u64) && less_i64(-1,1) == 1) { return 94; }
+    if !(order_i64(-1,1) == 3 && order_i64(1,-1) == 12 && order_i64(-1,-1) == 10) { return 95; }
+    if !(local_isize(10) == 11 && default_isize() == 0) { return 96; }
+    if !(bits_isize(3,5) == 6 && invert_isize(0) == (-((1 as isize)))) { return 97; }
+    if !(left_isize(1,63) == (9223372036854775808 as isize)) { return 98; }
+    if !(add_isize((9223372036854775807 as isize)) == (9223372036854775808 as isize) && sub_isize((9223372036854775808 as isize)) == (9223372036854775807 as isize)) { return 99; }
+    if !(mul_isize((9223372036854775808 as isize)) == 0 && neg_isize((9223372036854775808 as isize)) == (9223372036854775808 as isize)) { return 100; }
+    if !(div_isize(-27,4) == -6 && rem_isize(-27,4) == -3) { return 101; }
+    if !(div_isize((9223372036854775808 as isize),1) == (9223372036854775808 as isize) && rem_isize((9223372036854775808 as isize),1) == 0) { return 102; }
+    if !(div_isize(-27,-1) == 27 && rem_isize(-27,-1) == 0 && context_isize() == -6) { return 103; }
+    if !(right_isize((9223372036854775808 as isize),63) == -1) { return 104; }
+    if !(widen_isize(-1) == (18446744073709551615 as u64) && less_isize(-1,1) == 1) { return 105; }
+    if !(order_isize(-1,1) == 3 && order_isize(1,-1) == 12 && order_isize(-1,-1) == 10) { return 106; }
+    return 0;
+}

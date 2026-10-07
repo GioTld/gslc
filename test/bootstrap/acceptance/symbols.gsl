@@ -1,0 +1,3 @@
+func address() usize { unsafe { return symbol_address("external_table"); } }
+func again() usize { unsafe { asm("nop\nnop"); return symbol_address("external_table"); } }
+func local() usize { unsafe { return symbol_address("address"); } }

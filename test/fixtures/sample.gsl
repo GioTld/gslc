@@ -1,0 +1,55 @@
+arena memory_pool(64 * 1024)
+
+struct Error {
+    code: u32
+}
+
+struct Event {
+    kind: u32
+    data: u64
+}
+
+struct UartPort {
+    base_address: usize
+}
+
+func uart_write_byte(port: UartPort, byte: u8) {
+    unsafe {
+        let reg = port.base_address as *u8
+        volatile_write(reg, byte)
+    }
+}
+
+func process_packet(raw_data: []u8) Result[u32, Error] {
+    var counter: u32 = 0
+    for b in raw_data {
+        if b == 0 {
+            break
+        }
+        counter += 1
+    }
+    return Result.Ok(counter)
+}
+
+func handle_data(data: u64) {
+}
+
+func cleanup() {
+}
+
+func process_event(event: Event) {
+    switch event.kind {
+    case 1:
+        handle_data(event.data)
+    case 2:
+        cleanup()
+    default:
+        log.warn("ignored event")
+    }
+}
+
+func handle_temporary_event(event: Event) {
+    arena frame_arena(4096)
+    let temp_event = frame_arena.alloc(Event)
+    process_event(event)
+}

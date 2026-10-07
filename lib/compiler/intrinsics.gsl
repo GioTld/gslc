@@ -1,0 +1,58 @@
+import "compiler/parser"
+
+const BUILTIN_NONE: u32 = 0
+const BUILTIN_SIZE_OF: u32 = 1
+const BUILTIN_ALIGN_OF: u32 = 2
+const BUILTIN_VOLATILE_READ: u32 = 3
+const BUILTIN_VOLATILE_WRITE: u32 = 4
+const BUILTIN_ARENA_ALLOC: u32 = 5
+const BUILTIN_SYSCALL: u32 = 6
+const BUILTIN_SYSCALL_WRITE: u32 = 7
+const BUILTIN_INB: u32 = 8
+const BUILTIN_OUTB: u32 = 9
+const BUILTIN_CLI: u32 = 10
+const BUILTIN_HLT: u32 = 11
+const BUILTIN_ASM: u32 = 12
+const BUILTIN_SYMBOL_ADDRESS: u32 = 13
+const BUILTIN_LGDT: u32 = 14
+const BUILTIN_LIDT: u32 = 15
+const BUILTIN_STI: u32 = 16
+const BUILTIN_INW: u32 = 17
+const BUILTIN_OUTW: u32 = 18
+const BUILTIN_READ_CR2: u32 = 19
+const BUILTIN_READ_CR3: u32 = 20
+const BUILTIN_WRITE_CR3: u32 = 21
+const BUILTIN_INVLPG: u32 = 22
+const BUILTIN_ASM_U64: u32 = 23
+const BUILTIN_ASM_VOID: u32 = 24
+
+func compiler_name_is(ptr: *u8, length: usize, name: string) bool {
+    unsafe { return parser_type_equal(ptr, length, name as *u8, strlen(name) as usize) }
+}
+
+func compiler_intrinsic(name: *u8, length: usize) u32 {
+    if compiler_name_is(name, length, "size_of") { return BUILTIN_SIZE_OF }
+    if compiler_name_is(name, length, "align_of") { return BUILTIN_ALIGN_OF }
+    if compiler_name_is(name, length, "volatile_read") { return BUILTIN_VOLATILE_READ }
+    if compiler_name_is(name, length, "volatile_write") { return BUILTIN_VOLATILE_WRITE }
+    if compiler_name_is(name, length, "syscall") { return BUILTIN_SYSCALL }
+    if compiler_name_is(name, length, "syscall_write") { return BUILTIN_SYSCALL_WRITE }
+    if compiler_name_is(name, length, "inb") { return BUILTIN_INB }
+    if compiler_name_is(name, length, "outb") { return BUILTIN_OUTB }
+    if compiler_name_is(name, length, "cli") { return BUILTIN_CLI }
+    if compiler_name_is(name, length, "hlt") { return BUILTIN_HLT }
+    if compiler_name_is(name, length, "asm") { return BUILTIN_ASM }
+    if compiler_name_is(name, length, "symbol_address") { return BUILTIN_SYMBOL_ADDRESS }
+    if compiler_name_is(name, length, "lgdt") { return BUILTIN_LGDT }
+    if compiler_name_is(name, length, "lidt") { return BUILTIN_LIDT }
+    if compiler_name_is(name, length, "sti") { return BUILTIN_STI }
+    if compiler_name_is(name, length, "inw") { return BUILTIN_INW }
+    if compiler_name_is(name, length, "outw") { return BUILTIN_OUTW }
+    if compiler_name_is(name, length, "read_cr2") { return BUILTIN_READ_CR2 }
+    if compiler_name_is(name, length, "read_cr3") { return BUILTIN_READ_CR3 }
+    if compiler_name_is(name, length, "write_cr3") { return BUILTIN_WRITE_CR3 }
+    if compiler_name_is(name, length, "invlpg") { return BUILTIN_INVLPG }
+    if compiler_name_is(name, length, "asm_u64") { return BUILTIN_ASM_U64 }
+    if compiler_name_is(name, length, "asm_void") { return BUILTIN_ASM_VOID }
+    return BUILTIN_NONE
+}

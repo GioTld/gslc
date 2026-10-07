@@ -1,0 +1,14 @@
+func compute() Result[u32, u32] {
+    return Result.Ok(1);
+}
+
+func main() Result[u32, u32] {
+    let res: Result[u32, u32] = compute();
+    let val: u32 = match res {
+        Result.Ok(v) => v,
+        Result.Err(e) => e,
+    };
+    // In a function returning Result[u32, u32], propagation can use:
+    let next: u32 = compute()?;
+    return Result.Ok(val + next);
+}

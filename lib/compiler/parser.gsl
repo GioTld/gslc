@@ -1,0 +1,1113 @@
+import "compiler/token"
+import "compiler/ast"
+import "compiler/lexer"
+import "core/io"
+
+const PARSER_MAX_EXPRS:  u32 = 20480
+const PARSER_MAX_STMTS:  u32 = 5632
+const PARSER_MAX_PARAMS: u32 = 512
+const PARSER_MAX_DECLS:  u32 = 224
+const PARSER_MAX_CONSTS: u32 = 256
+const PARSER_MAX_STRUCTS: u32 = 128
+const PARSER_MAX_FIELDS: u32 = 768
+
+const PARSER_MAX_RECURSION: u32 = 64
+const PARSER_MAX_EXPR_DEPTH: u32 = 128
+
+struct Parser {
+    lex:         Lexer,
+    cur:         Token,
+    peek_tok:    Token,
+    has_peek:    bool,
+
+    exprs:       *Expr,
+    expr_count:  u32,
+
+    stmts:       *Stmt,
+    stmt_count:  u32,
+
+    params:      *Param,
+    param_count: u32,
+
+    decls:       *FuncDecl,
+    decl_count:  u32,
+
+    consts:      *CompilerConst,
+    const_count: u32,
+
+    structs:     *CompilerStruct,
+    struct_count: u32,
+    fields:      *CompilerField,
+    field_count: u32,
+
+    type_depth: u32,
+    recursion_depth: u32,
+    block_result_start: u32,
+    block_result_count: u32,
+
+    error:       bool,
+    error_line:  u32,
+    error_col:   u32
+}
+
+func parser_advance(p: *Parser) Token {
+    if p.has_peek {
+        p.cur = p.peek_tok
+        p.has_peek = false
+    } else {
+        p.cur = lexer_next(&p.lex)
+    }
+    return p.cur
+}
+
+func parser_peek(p: *Parser) Token {
+    if p.has_peek == false {
+        p.peek_tok = lexer_next(&p.lex)
+        p.has_peek = true
+    }
+    return p.peek_tok
+}
+
+func parser_token_ptr(p: *Parser, tok: Token) *u8 {
+    unsafe {
+        return (((p.lex.src as usize) + tok.offset) as *u8)
+    }
+}
+
+func parser_expr(p: *Parser, idx: u32) *Expr {
+    unsafe {
+        return (((p.exprs as usize) + (idx as usize) * size_of(Expr)) as *Expr)
+    }
+}
+
+func parser_stmt(p: *Parser, idx: u32) *Stmt {
+    unsafe {
+        return (((p.stmts as usize) + (idx as usize) * size_of(Stmt)) as *Stmt)
+    }
+}
+
+func parser_param(p: *Parser, idx: u32) *Param {
+    unsafe {
+        return (((p.params as usize) + (idx as usize) * size_of(Param)) as *Param)
+    }
+}
+
+func parser_decl(p: *Parser, idx: u32) *FuncDecl {
+    unsafe {
+        return (((p.decls as usize) + (idx as usize) * size_of(FuncDecl)) as *FuncDecl)
+    }
+}
+
+func parser_const(p: *Parser, idx: u32) *CompilerConst {
+    unsafe {
+        return (((p.consts as usize) + (idx as usize) * size_of(CompilerConst)) as *CompilerConst)
+    }
+}
+
+func parser_struct(p: *Parser, idx: u32) *CompilerStruct {
+    unsafe { return (((p.structs as usize) + (idx as usize) * size_of(CompilerStruct)) as *CompilerStruct) }
+}
+
+func parser_field(p: *Parser, idx: u32) *CompilerField {
+    unsafe { return (((p.fields as usize) + (idx as usize) * size_of(CompilerField)) as *CompilerField) }
+}
+
+func parser_expect(p: *Parser, kind: u32) bool {
+    if p.error {
+        return false
+    }
+    if p.cur.kind == kind {
+        parser_advance(p)
+        return true
+    }
+    p.error = true
+    p.error_line = p.cur.line
+    p.error_col = p.cur.col
+    return false
+}
+
+func parser_statement_end(p: *Parser) bool {
+    if p.cur.kind == TOKEN_RBRACE { return true }
+    return parser_expect(p, TOKEN_SEMICOLON)
+}
+
+func parser_type_space(ch: u8) bool {
+    return ch == 32 as u8 || ch == 9 as u8 || ch == 10 as u8 || ch == 13 as u8
+}
+
+func parser_type_skip(ptr: *u8, length: usize, start: usize) usize {
+    var offset = start
+    unsafe {
+        while offset < length && parser_type_space(volatile_read(((ptr as usize) + offset) as *u8)) { offset += 1 as usize; }
+    }
+    return offset
+}
+
+func parser_type_equal(a: *u8, alen: usize, b: *u8, blen: usize) bool {
+    var left: usize = 0 as usize
+    var right: usize = 0 as usize
+    while true {
+        left = parser_type_skip(a, alen, left)
+        right = parser_type_skip(b, blen, right)
+        if left >= alen || right >= blen { return left == alen && right == blen }
+        unsafe {
+            if volatile_read(((a as usize) + left) as *u8) != volatile_read(((b as usize) + right) as *u8) { return false }
+        }
+        left += 1 as usize
+        right += 1 as usize
+    }
+    return false
+}
+
+func parser_find_type(p: *Parser, ptr: *u8, length: usize) u32 {
+    var index: u32 = 0
+    while index < p.struct_count {
+        let structure = parser_struct(p, index)
+        if parser_type_equal(ptr, length, structure.name_ptr, structure.name_len) { return index }
+        index += 1
+    }
+    return INVALID_INDEX
+}
+
+func parser_type_span(p: *Parser) Token {
+    let start = p.cur
+    if p.error { return start }
+    if p.type_depth >= 8 { p.error = true; return start }
+    p.type_depth += 1
+    while p.cur.kind == TOKEN_STAR { parser_advance(p) }
+    let base = p.cur
+    if p.cur.kind == TOKEN_LBRACKET {
+        parser_advance(p)
+        let number = p.cur
+        parser_expect(p, TOKEN_INT)
+        var count: u32 = 0
+        var offset: usize = 0 as usize
+        while offset < number.len && p.error == false {
+            var ch: u8 = 0 as u8
+            unsafe { ch = volatile_read(((p.lex.src as usize) + number.offset + offset) as *u8) }
+            if ch < 48 as u8 || ch > 57 as u8 || (offset == 0 as usize && ch == 48 as u8) || count > 6553 { p.error = true } else { count = count * 10 + ((ch - 48 as u8) as u32) }
+            if count > 65535 { p.error = true }
+            offset += 1 as usize
+        }
+        parser_expect(p, TOKEN_RBRACKET)
+        let element = parser_type_span(p)
+        var array_type = base
+        array_type.len = element.offset + element.len - base.offset
+        if p.error == false && parser_find_type(p, parser_token_ptr(p, array_type), array_type.len) == INVALID_INDEX {
+            if p.struct_count >= PARSER_MAX_STRUCTS { p.error = true; p.type_depth -= 1; return start }
+            let structure = parser_struct(p, p.struct_count)
+            structure.name_ptr = parser_token_ptr(p, array_type)
+            structure.name_len = array_type.len
+            structure.is_packed = false
+            structure.is_array = true
+            structure.array_count = count
+            structure.element_ptr = parser_token_ptr(p, element)
+            structure.element_len = element.len
+            structure.field_start = 0
+            structure.field_count = 0
+            structure.is_copy = true
+            p.struct_count += 1
+        }
+        var result = start
+        result.len = element.offset + element.len - start.offset
+        p.type_depth -= 1
+        return result
+    }
+    parser_expect(p, TOKEN_IDENT)
+    var result = start
+    result.len = base.offset + base.len - start.offset
+    p.type_depth -= 1
+    return result
+}
+
+func parse_index_suffix(p: *Parser, base: u32) u32 {
+    let bracket = p.cur
+    parser_advance(p)
+    let index = parse_expr(p, PREC_NONE)
+    parser_expect(p, TOKEN_RBRACKET)
+    let result = alloc_expr(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_expr(p, result)
+    node.kind = EXPR_INDEX
+    node.binary.left_idx = base
+    node.binary.right_idx = index
+    node.binary.span.start = bracket.offset
+    node.binary.span.end = p.cur.offset
+    node.binary.span.line = bracket.line
+    node.binary.span.col = bracket.col
+    return result
+}
+
+func alloc_expr(p: *Parser) u32 {
+    if p.error { return INVALID_INDEX }
+    if p.expr_count >= PARSER_MAX_EXPRS {
+        parser_fail(p)
+        return INVALID_INDEX
+    }
+    let idx = p.expr_count
+    p.expr_count += 1
+    parser_expr(p, idx).value_reg = 0
+    parser_expr(p, idx).next_arg = INVALID_INDEX
+    return idx
+}
+
+func alloc_stmt(p: *Parser) u32 {
+    if p.error { return INVALID_INDEX }
+    if p.stmt_count >= PARSER_MAX_STMTS {
+        parser_fail(p)
+        return INVALID_INDEX
+    }
+    let idx = p.stmt_count
+    p.stmt_count += 1
+    parser_stmt(p, idx).next_idx = INVALID_INDEX
+    return idx
+}
+
+const PREC_NONE:    u32 = 0
+const PREC_OR:      u32 = 1
+const PREC_AND:     u32 = 2
+const PREC_BIT_OR:  u32 = 3
+const PREC_BIT_XOR: u32 = 4
+const PREC_BIT_AND: u32 = 5
+const PREC_EQUAL:   u32 = 6
+const PREC_COMPARE: u32 = 7
+const PREC_SHIFT:   u32 = 8
+const PREC_ADD:     u32 = 9
+const PREC_MUL:     u32 = 10
+
+func token_prec(kind: u32) u32 {
+    if kind == TOKEN_OR { return PREC_OR }
+    if kind == TOKEN_AND { return PREC_AND }
+    if kind == TOKEN_BIT_OR { return PREC_BIT_OR }
+    if kind == TOKEN_BIT_XOR { return PREC_BIT_XOR }
+    if kind == TOKEN_AMP { return PREC_BIT_AND }
+    if kind == TOKEN_EQ || kind == TOKEN_NE { return PREC_EQUAL }
+    if kind == TOKEN_LT || kind == TOKEN_GT || kind == TOKEN_LE || kind == TOKEN_GE {
+        return PREC_COMPARE
+    }
+    if kind == TOKEN_SHIFT_LEFT || kind == TOKEN_SHIFT_RIGHT { return PREC_SHIFT }
+    if kind == TOKEN_PLUS || kind == TOKEN_MINUS {
+        return PREC_ADD
+    }
+    if kind == TOKEN_STAR || kind == TOKEN_SLASH || kind == TOKEN_PERCENT {
+        return PREC_MUL
+    }
+    return PREC_NONE
+}
+
+func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token, callee_expr_idx: u32) u32 {
+    parser_advance(p)
+    let idx = alloc_expr(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_expr(p, idx)
+    node.kind = EXPR_CALL
+    node.call.callee_ptr = name_ptr
+    node.call.callee_len = name_len
+    node.call.callee_expr_idx = callee_expr_idx
+    node.call.span.start = start.offset
+    node.call.span.line = start.line
+    node.call.span.col = start.col
+
+    var arg_start: u32 = INVALID_INDEX
+    var last_arg: u32 = INVALID_INDEX
+    var arg_count: u32 = 0
+    while p.cur.kind != TOKEN_RPAREN && p.cur.kind != TOKEN_EOF && p.error == false {
+        var arg_idx: u32 = 0
+        if p.cur.kind == TOKEN_LBRACKET {
+            let type_span = parser_type_span(p)
+            arg_idx = alloc_expr(p)
+            if p.error { return INVALID_INDEX }
+            let argument = parser_expr(p, arg_idx)
+            argument.kind = EXPR_IDENT
+            argument.ident.name_ptr = parser_token_ptr(p, type_span)
+            argument.ident.name_len = type_span.len
+            argument.ident.span.start = type_span.offset
+            argument.ident.span.end = type_span.offset + type_span.len
+            argument.ident.span.line = type_span.line
+            argument.ident.span.col = type_span.col
+        } else { arg_idx = parse_expr(p, PREC_NONE) }
+        if p.error { return INVALID_INDEX }
+        if arg_count == 0 { arg_start = arg_idx } else { parser_expr(p, last_arg).next_arg = arg_idx }
+        last_arg = arg_idx
+        arg_count += 1
+        if p.cur.kind == TOKEN_COMMA { parser_advance(p) }
+    }
+    let end = p.cur.offset + p.cur.len
+    parser_expect(p, TOKEN_RPAREN)
+    node.call.arg_start = arg_start
+    node.call.arg_count = arg_count
+    node.call.span.end = end
+    return idx
+}
+
+func parse_primary(p: *Parser) u32 {
+    let tok = p.cur
+
+    if tok.kind == TOKEN_INT {
+        parser_advance(p)
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_INT
+        node.int_lit.val = tok.offset as i64
+        node.int_lit.span.start = tok.offset
+        node.int_lit.span.end = tok.offset + tok.len
+        node.int_lit.span.line = tok.line
+        node.int_lit.span.col = tok.col
+        return idx
+    }
+
+    if tok.kind == TOKEN_TRUE || tok.kind == TOKEN_FALSE {
+        parser_advance(p)
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_BOOL
+        node.int_lit.val = 0
+        if tok.kind == TOKEN_TRUE { node.int_lit.val = 1 }
+        node.int_lit.span.start = tok.offset
+        node.int_lit.span.end = tok.offset + tok.len
+        node.int_lit.span.line = tok.line
+        node.int_lit.span.col = tok.col
+        return idx
+    }
+
+    if tok.kind == TOKEN_STRING {
+        parser_advance(p)
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_STRING
+        node.string_lit.span.start = tok.offset
+        node.string_lit.span.end = tok.offset + tok.len
+        node.string_lit.span.line = tok.line
+        node.string_lit.span.col = tok.col
+        return idx
+    }
+
+    if tok.kind == TOKEN_IDENT {
+        parser_advance(p)
+
+        if p.cur.kind == TOKEN_LPAREN {
+            return parse_call_suffix(p, parser_token_ptr(p, tok), tok.len, tok, INVALID_INDEX)
+        }
+
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_IDENT
+        node.ident.name_ptr = parser_token_ptr(p, tok)
+        node.ident.name_len = tok.len
+        node.ident.span.start = tok.offset
+        node.ident.span.end = tok.offset + tok.len
+        node.ident.span.line = tok.line
+        node.ident.span.col = tok.col
+        return idx
+    }
+
+    if tok.kind == TOKEN_LPAREN {
+        parser_advance(p)
+        let inner = parse_expr(p, PREC_NONE)
+        parser_expect(p, TOKEN_RPAREN)
+        return inner
+    }
+
+    p.error = true
+    p.error_line = tok.line
+    p.error_col = tok.col
+    return INVALID_INDEX
+}
+
+func parse_prefix_inner(p: *Parser) u32 {
+    if p.cur.kind == TOKEN_AMP || p.cur.kind == TOKEN_STAR || p.cur.kind == TOKEN_MINUS || p.cur.kind == TOKEN_PLUS || p.cur.kind == TOKEN_NOT || p.cur.kind == TOKEN_BIT_NOT {
+        let op_tok = p.cur
+        parser_advance(p)
+        var operand = parse_prefix(p)
+        if p.error { return INVALID_INDEX }
+        while p.cur.kind == TOKEN_DOT || p.cur.kind == TOKEN_LBRACKET {
+            if p.cur.kind == TOKEN_LBRACKET {
+                operand = parse_index_suffix(p, operand)
+            } else {
+                parser_advance(p)
+                let field = p.cur
+                parser_expect(p, TOKEN_IDENT)
+                let member_idx = alloc_expr(p)
+                if p.error { return INVALID_INDEX }
+                let member = parser_expr(p, member_idx)
+                member.kind = EXPR_MEMBER
+                member.member.base_idx = operand
+                member.member.name_ptr = parser_token_ptr(p, field)
+                member.member.name_len = field.len
+                member.member.line = field.line
+                member.member.col = field.col
+                operand = member_idx
+                if p.cur.kind == TOKEN_LPAREN {
+                    operand = parse_call_suffix(p, member.member.name_ptr, member.member.name_len, p.cur, operand)
+                }
+            }
+        }
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_UNARY
+        node.unary.op = op_tok.kind
+        node.unary.operand_idx = operand
+        node.unary.span.start = op_tok.offset
+        node.unary.span.end = p.cur.offset
+        node.unary.span.line = op_tok.line
+        node.unary.span.col = op_tok.col
+        return idx
+    }
+    return parse_primary(p)
+}
+
+func parse_expr_inner(p: *Parser, min_prec: u32) u32 {
+    var left = parse_prefix(p)
+    if p.error { return INVALID_INDEX }
+
+    while p.error == false {
+        if p.cur.kind == TOKEN_LBRACKET {
+            left = parse_index_suffix(p, left)
+        } else if p.cur.kind == TOKEN_DOT {
+            parser_advance(p)
+            let field = p.cur
+            parser_expect(p, TOKEN_IDENT)
+            let idx = alloc_expr(p)
+            if p.error { return INVALID_INDEX }
+            let node = parser_expr(p, idx)
+            node.kind = EXPR_MEMBER
+            node.member.base_idx = left
+            node.member.name_ptr = parser_token_ptr(p, field)
+            node.member.name_len = field.len
+            node.member.line = field.line
+            node.member.col = field.col
+            left = idx
+        } else if p.cur.kind == TOKEN_LPAREN && parser_expr(p, left).kind == EXPR_MEMBER {
+            let member = parser_expr(p, left)
+            left = parse_call_suffix(p, member.member.name_ptr, member.member.name_len, p.cur, left)
+        } else if p.cur.kind == TOKEN_AS {
+            let cast_tok = p.cur
+            parser_advance(p)
+            let target = parser_type_span(p)
+            let idx = alloc_expr(p)
+            if p.error { return INVALID_INDEX }
+            let node = parser_expr(p, idx)
+            node.kind = EXPR_CAST
+            node.cast.source_idx = left
+            node.cast.type_ptr = parser_token_ptr(p, target)
+            node.cast.type_len = target.len
+            node.cast.line = cast_tok.line
+            node.cast.col = cast_tok.col
+            left = idx
+        } else {
+            break
+        }
+    }
+
+    while token_prec(p.cur.kind) > min_prec && p.error == false {
+        let op_tok = p.cur
+        let prec = token_prec(op_tok.kind)
+        parser_advance(p)
+
+        let right = parse_expr(p, prec)
+
+        let idx = alloc_expr(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_expr(p, idx)
+        node.kind = EXPR_BINARY
+        node.binary.op = op_tok.kind
+        node.binary.left_idx = left
+        node.binary.right_idx = right
+        node.binary.span.start = op_tok.offset
+        node.binary.span.line = op_tok.line
+        node.binary.span.col = op_tok.col
+        left = idx
+    }
+
+    return left
+}
+
+func parse_let_stmt(p: *Parser, is_mut: bool) u32 {
+    let span_line = p.cur.line
+    let span_col = p.cur.col
+    let span_start = p.cur.offset
+
+    parser_advance(p)
+
+    let name_tok = p.cur
+    parser_expect(p, TOKEN_IDENT)
+    var type_ptr: *u8
+    unsafe { type_ptr = 0 as *u8 }
+    var type_len: usize = 0 as usize
+    if p.cur.kind == TOKEN_COLON {
+        parser_advance(p)
+        let local_type = parser_type_span(p)
+        type_ptr = parser_token_ptr(p, local_type)
+        type_len = local_type.len
+    }
+    var has_init = false
+    var expr_idx: u32 = 0
+    if p.cur.kind == TOKEN_ASSIGN {
+        has_init = true
+        parser_advance(p)
+        expr_idx = parse_expr(p, PREC_NONE)
+    } else if is_mut == false {
+        p.error = true
+        p.error_line = p.cur.line
+        p.error_col = p.cur.col
+    }
+    parser_statement_end(p)
+
+    let idx = alloc_stmt(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_stmt(p, idx)
+    node.kind = STMT_LET
+    if is_mut { node.kind = STMT_VAR }
+    node.let_s.name_ptr = parser_token_ptr(p, name_tok)
+    node.let_s.name_len = name_tok.len
+    node.let_s.type_ptr = type_ptr
+    node.let_s.type_len = type_len
+    node.let_s.is_mut = is_mut
+    node.let_s.has_init = has_init
+    node.let_s.expr_idx = expr_idx
+    node.let_s.span.start = span_start
+    node.let_s.span.end = p.cur.offset
+    node.let_s.span.line = span_line
+    node.let_s.span.col = span_col
+    return idx
+}
+
+func parse_return_stmt(p: *Parser) u32 {
+    let span_line = p.cur.line
+    let span_start = p.cur.offset
+    parser_advance(p)
+
+    let idx = alloc_stmt(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_stmt(p, idx)
+    node.kind = STMT_RETURN
+
+    if p.cur.kind == TOKEN_SEMICOLON || p.cur.kind == TOKEN_RBRACE {
+        node.ret_s.has_expr = false
+        node.ret_s.expr_idx = 0
+        if p.cur.kind == TOKEN_SEMICOLON { parser_advance(p) }
+    } else {
+        node.ret_s.has_expr = true
+        node.ret_s.expr_idx = parse_expr(p, PREC_NONE)
+        parser_statement_end(p)
+    }
+
+    node.ret_s.span.start = span_start
+    node.ret_s.span.end = p.cur.offset
+    node.ret_s.span.line = span_line
+    return idx
+}
+
+func parse_arena_stmt(p: *Parser) u32 {
+    parser_advance(p)
+    let name = p.cur
+    parser_expect(p, TOKEN_IDENT)
+    parser_expect(p, TOKEN_LPAREN)
+    let size_idx = parse_expr(p, PREC_NONE)
+    parser_expect(p, TOKEN_RPAREN)
+    parser_statement_end(p)
+    let idx = alloc_stmt(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_stmt(p, idx)
+    node.kind = STMT_ARENA
+    node.arena_s.name_ptr = parser_token_ptr(p, name)
+    node.arena_s.name_len = name.len
+    node.arena_s.size_expr_idx = size_idx
+    return idx
+}
+
+func parse_block_statements_inner(p: *Parser) {
+    parser_expect(p, TOKEN_LBRACE)
+    var first: u32 = INVALID_INDEX
+    var count: u32 = 0
+    var last: u32 = INVALID_INDEX
+    while p.cur.kind != TOKEN_RBRACE && p.cur.kind != TOKEN_EOF && p.error == false {
+        if p.cur.kind == TOKEN_SEMICOLON {
+            parser_advance(p)
+        } else {
+            let child = parse_stmt(p)
+            if p.error { return }
+            if count == 0 {
+                first = child
+            } else {
+                parser_stmt(p, last).next_idx = child
+            }
+            last = child
+            count += 1
+        }
+    }
+    parser_expect(p, TOKEN_RBRACE)
+    p.block_result_start = first
+    p.block_result_count = count
+}
+
+func parse_block_stmt_inner(p: *Parser, kind: u32) u32 {
+    let token = p.cur
+    let idx = alloc_stmt(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_stmt(p, idx)
+    node.kind = kind
+    node.block.body_start = INVALID_INDEX
+    node.block.body_count = 0
+    node.block.else_start = INVALID_INDEX
+    node.block.else_count = 0
+
+    if kind == STMT_IF || kind == STMT_WHILE {
+        parser_advance(p)
+        node.block.condition_idx = parse_expr(p, PREC_NONE)
+    } else {
+        parser_advance(p)
+    }
+    parse_block_statements(p)
+    if p.error { return INVALID_INDEX }
+    node.block.body_start = p.block_result_start
+    node.block.body_count = p.block_result_count
+    if kind == STMT_IF && p.cur.kind == TOKEN_ELSE {
+        parser_advance(p)
+        if p.cur.kind == TOKEN_IF {
+            let nested = parse_block_stmt(p, STMT_IF)
+            node.block.else_start = nested
+            node.block.else_count = 1
+        } else {
+            parse_block_statements(p)
+            node.block.else_start = p.block_result_start
+            node.block.else_count = p.block_result_count
+        }
+    }
+    return idx
+}
+
+func parse_stmt(p: *Parser) u32 {
+    if p.cur.kind == TOKEN_LET {
+        return parse_let_stmt(p, false)
+    }
+    if p.cur.kind == TOKEN_VAR {
+        return parse_let_stmt(p, true)
+    }
+    if p.cur.kind == TOKEN_RETURN {
+        return parse_return_stmt(p)
+    }
+    if p.cur.kind == TOKEN_ARENA {
+        return parse_arena_stmt(p)
+    }
+    if p.cur.kind == TOKEN_IF {
+        return parse_block_stmt(p, STMT_IF)
+    }
+    if p.cur.kind == TOKEN_WHILE {
+        return parse_block_stmt(p, STMT_WHILE)
+    }
+    if p.cur.kind == TOKEN_UNSAFE {
+        return parse_block_stmt(p, STMT_UNSAFE)
+    }
+    if p.cur.kind == TOKEN_BREAK || p.cur.kind == TOKEN_CONTINUE {
+        let kind = p.cur.kind
+        parser_advance(p)
+        let idx = alloc_stmt(p)
+        if p.error { return INVALID_INDEX }
+        if kind == TOKEN_BREAK { parser_stmt(p, idx).kind = STMT_BREAK } else { parser_stmt(p, idx).kind = STMT_CONTINUE }
+        parser_statement_end(p)
+        return idx
+    }
+
+    let expr_idx = parse_expr(p, PREC_NONE)
+    if p.cur.kind == TOKEN_ASSIGN || p.cur.kind == TOKEN_PLUS_ASSIGN || p.cur.kind == TOKEN_MINUS_ASSIGN {
+        let op = p.cur.kind
+        parser_advance(p)
+        let value_idx = parse_expr(p, PREC_NONE)
+        parser_statement_end(p)
+        let idx = alloc_stmt(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_stmt(p, idx)
+        node.kind = STMT_ASSIGN
+        node.assign.target_idx = expr_idx
+        node.assign.op = op
+        node.assign.value_idx = value_idx
+        return idx
+    }
+    parser_statement_end(p)
+    let idx = alloc_stmt(p)
+    if p.error { return INVALID_INDEX }
+    let node = parser_stmt(p, idx)
+    node.kind = STMT_EXPR
+    node.expr_idx = expr_idx
+    return idx
+}
+
+func parse_struct_decl(p: *Parser) {
+    var is_copy = false
+    var is_packed = false
+    if p.cur.kind == TOKEN_PACKED {
+        is_packed = true
+        parser_advance(p)
+    }
+    if p.cur.kind == TOKEN_COPY && is_packed == false {
+        is_copy = true
+        parser_advance(p)
+    }
+    parser_expect(p, TOKEN_STRUCT)
+    let name = p.cur
+    parser_expect(p, TOKEN_IDENT)
+    parser_expect(p, TOKEN_LBRACE)
+    let field_start = p.field_count
+    while p.cur.kind != TOKEN_RBRACE && p.cur.kind != TOKEN_EOF && p.error == false {
+        if p.cur.kind == TOKEN_COMMA || p.cur.kind == TOKEN_SEMICOLON {
+            parser_advance(p)
+        } else {
+            let field_name = p.cur
+            parser_expect(p, TOKEN_IDENT)
+            parser_expect(p, TOKEN_COLON)
+            let field_type = parser_type_span(p)
+            if p.error { return }
+            if p.field_count >= PARSER_MAX_FIELDS {
+                p.error = true
+                p.error_line = field_name.line
+                p.error_col = field_name.col
+                return
+            }
+            let field = parser_field(p, p.field_count)
+            field.name_ptr = parser_token_ptr(p, field_name)
+            field.name_len = field_name.len
+            field.type_ptr = parser_token_ptr(p, field_type)
+            field.type_len = field_type.len
+            p.field_count += 1
+            if p.cur.kind != TOKEN_COMMA && p.cur.kind != TOKEN_SEMICOLON && p.cur.kind != TOKEN_RBRACE {
+                parser_expect(p, TOKEN_COMMA)
+            }
+        }
+    }
+    parser_expect(p, TOKEN_RBRACE)
+    if p.error { return }
+    if p.struct_count >= PARSER_MAX_STRUCTS {
+        p.error = true
+        p.error_line = name.line
+        p.error_col = name.col
+        return
+    }
+    let node = parser_struct(p, p.struct_count)
+    node.name_ptr = parser_token_ptr(p, name)
+    node.name_len = name.len
+    node.field_start = field_start
+    node.field_count = p.field_count - field_start
+    node.is_packed = is_packed
+    node.is_copy = is_copy
+    node.is_array = false
+    p.struct_count += 1
+}
+
+func parse_const_decl(p: *Parser) {
+    let is_global = p.cur.kind == TOKEN_VAR
+    let span_start = p.cur.offset
+    let span_line = p.cur.line
+    let span_col = p.cur.col
+    parser_advance(p)
+    let name = p.cur
+    parser_expect(p, TOKEN_IDENT)
+    var type_ptr: *u8
+    unsafe { type_ptr = 0 as *u8 }
+    var type_len: usize = 0 as usize
+    if p.cur.kind == TOKEN_COLON {
+        parser_advance(p)
+        let type_tok = parser_type_span(p)
+        type_ptr = parser_token_ptr(p, type_tok)
+        type_len = type_tok.len
+    }
+    var value_idx: u32 = INVALID_INDEX
+    let has_init = p.cur.kind == TOKEN_ASSIGN
+    if has_init {
+        parser_advance(p)
+        if is_global && p.cur.kind == TOKEN_LBRACKET {
+            parser_advance(p)
+            value_idx = alloc_expr(p)
+            if p.error { return }
+            let values = parser_expr(p, value_idx)
+            values.kind = EXPR_DATA
+            values.call.arg_start = INVALID_INDEX
+            values.call.arg_count = 0
+            var last: u32 = INVALID_INDEX
+            while p.cur.kind != TOKEN_RBRACKET && p.cur.kind != TOKEN_EOF && p.error == false {
+                let item = parse_expr(p, PREC_NONE)
+                if p.error { return }
+                if last == INVALID_INDEX { values.call.arg_start = item } else { parser_expr(p, last).next_arg = item }
+                last = item
+                values.call.arg_count += 1
+                if p.cur.kind != TOKEN_COMMA { break }
+                parser_advance(p)
+            }
+            parser_expect(p, TOKEN_RBRACKET)
+        } else { value_idx = parse_expr(p, PREC_NONE) }
+    } else if is_global == false { p.error = true }
+    if is_global && type_len == 0 as usize { p.error = true }
+    parser_expect(p, TOKEN_SEMICOLON)
+    if p.error { return }
+    if p.const_count >= PARSER_MAX_CONSTS {
+        p.error = true
+        p.error_line = span_line
+        p.error_col = span_col
+        return
+    }
+    let node = parser_const(p, p.const_count)
+    node.is_global = is_global
+    node.has_init = has_init
+    node.section_idx = INVALID_INDEX
+    node.name_ptr = parser_token_ptr(p, name)
+    node.name_len = name.len
+    node.type_ptr = type_ptr
+    node.type_len = type_len
+    node.value_idx = value_idx
+    node.span.start = span_start
+    node.span.end = p.cur.offset
+    node.span.line = span_line
+    node.span.col = span_col
+    p.const_count += 1
+}
+
+func parse_func_decl(p: *Parser) u32 {
+    let span_line = p.cur.line
+    let span_start = p.cur.offset
+
+    parser_advance(p)
+
+    let name_tok = p.cur
+    parser_expect(p, TOKEN_IDENT)
+    parser_expect(p, TOKEN_LPAREN)
+
+    let param_start = p.param_count
+    var param_count: u32 = 0
+
+    while p.cur.kind != TOKEN_RPAREN && p.cur.kind != TOKEN_EOF && p.error == false {
+        let pname = p.cur
+        parser_expect(p, TOKEN_IDENT)
+        parser_expect(p, TOKEN_COLON)
+        let ptype = parser_type_span(p)
+        if p.error { return INVALID_INDEX }
+
+        if p.param_count >= PARSER_MAX_PARAMS {
+            p.error = true
+            return 0
+        }
+        let param = parser_param(p, p.param_count)
+        param.name_ptr = parser_token_ptr(p, pname)
+        param.type_ptr = parser_token_ptr(p, ptype)
+        param.name_len = pname.len
+        param.type_len = ptype.len
+        p.param_count += 1
+        param_count += 1
+
+        if p.cur.kind == TOKEN_COMMA {
+            parser_advance(p)
+        }
+    }
+    parser_expect(p, TOKEN_RPAREN)
+
+    var ret_ptr: *u8
+    unsafe { ret_ptr = 0 as *u8 }
+    var ret_len: usize = 0 as usize
+    if p.cur.kind == TOKEN_IDENT || p.cur.kind == TOKEN_STAR || p.cur.kind == TOKEN_LBRACKET {
+        let ret_type = parser_type_span(p)
+        ret_ptr = parser_token_ptr(p, ret_type)
+        ret_len = ret_type.len
+    }
+
+    parser_expect(p, TOKEN_LBRACE)
+    var body_start: u32 = INVALID_INDEX
+    var last_body: u32 = INVALID_INDEX
+    var body_count: u32 = 0
+
+    while p.cur.kind != TOKEN_RBRACE && p.cur.kind != TOKEN_EOF && p.error == false {
+        if p.cur.kind == TOKEN_SEMICOLON {
+            parser_advance(p)
+            continue
+        }
+        let body_stmt = parse_stmt(p)
+        if p.error { return INVALID_INDEX }
+        if body_count == 0 {
+            body_start = body_stmt
+        } else {
+            parser_stmt(p, last_body).next_idx = body_stmt
+        }
+        last_body = body_stmt
+        body_count += 1
+    }
+    parser_expect(p, TOKEN_RBRACE)
+
+    if p.decl_count >= PARSER_MAX_DECLS {
+        parser_fail(p)
+        return INVALID_INDEX
+    }
+    let idx = p.decl_count
+    let decl = parser_decl(p, idx)
+    decl.section_idx = INVALID_INDEX
+    decl.name_ptr = parser_token_ptr(p, name_tok)
+    decl.name_len = name_tok.len
+    decl.param_start = param_start
+    decl.param_count = param_count
+    decl.ret_type_ptr = ret_ptr
+    decl.ret_type_len = ret_len
+    decl.body_start = body_start
+    decl.body_count = body_count
+    decl.span.start = span_start
+    decl.span.end = p.cur.offset
+    decl.span.line = span_line
+    p.decl_count += 1
+    return idx
+}
+
+func parser_init(p: *Parser, src: string, storage: *u8) {
+    let expr_bytes = (PARSER_MAX_EXPRS as usize) * size_of(Expr)
+    let stmt_bytes = (PARSER_MAX_STMTS as usize) * size_of(Stmt)
+    let param_bytes = (PARSER_MAX_PARAMS as usize) * size_of(Param)
+    let decl_bytes = (PARSER_MAX_DECLS as usize) * size_of(FuncDecl)
+    let const_bytes = (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst)
+    let struct_bytes = (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct)
+    unsafe {
+        p.exprs = storage as *Expr
+        p.stmts = ((storage as usize) + expr_bytes) as *Stmt
+        p.params = ((storage as usize) + expr_bytes + stmt_bytes) as *Param
+        p.decls = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes) as *FuncDecl
+        p.consts = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes) as *CompilerConst
+        p.structs = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes + const_bytes) as *CompilerStruct
+        p.fields = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes + const_bytes + struct_bytes) as *CompilerField
+    }
+    lexer_init(&p.lex, src)
+    p.expr_count = 0
+    p.stmt_count = 0
+    p.param_count = 0
+    p.decl_count = 0
+    p.const_count = 0
+    p.struct_count = 0
+    p.field_count = 0
+    p.block_result_start = INVALID_INDEX
+    p.block_result_count = 0
+    p.has_peek = false
+    p.type_depth = 0
+    p.recursion_depth = 0
+    p.error = false
+    p.error_line = 0
+    p.error_col = 0
+
+    parser_advance(p)
+}
+
+func parser_parse(p: *Parser) {
+    while p.cur.kind != TOKEN_EOF && p.error == false {
+        if p.cur.kind == TOKEN_SEMICOLON {
+            parser_advance(p)
+        } else if p.cur.kind == TOKEN_FUNC {
+            parse_func_decl(p)
+        } else if p.cur.kind == TOKEN_CONST || p.cur.kind == TOKEN_VAR {
+            parse_const_decl(p)
+        } else if p.cur.kind == TOKEN_IDENT {
+            var section_name: *u8
+            unsafe { section_name = "section" as *u8 }
+            if parser_type_equal(parser_token_ptr(p, p.cur), p.cur.len, section_name, 7 as usize) == false { p.error = true; return }
+            parser_advance(p)
+            parser_expect(p, TOKEN_LPAREN)
+            if p.cur.kind != TOKEN_STRING { p.error = true; return }
+            let section = parse_expr(p, PREC_NONE)
+            parser_expect(p, TOKEN_RPAREN)
+            if p.cur.kind == TOKEN_FUNC {
+                let index = parse_func_decl(p)
+                if p.error { return }
+                parser_decl(p, index).section_idx = section
+            } else if p.cur.kind == TOKEN_VAR {
+                let index = p.const_count
+                parse_const_decl(p)
+                if p.error == false { parser_const(p, index).section_idx = section }
+            } else { p.error = true }
+
+        } else if p.cur.kind == TOKEN_STRUCT || p.cur.kind == TOKEN_COPY || p.cur.kind == TOKEN_PACKED {
+            parse_struct_decl(p)
+        } else {
+            p.error = true
+            p.error_line = p.cur.line
+            p.error_col = p.cur.col
+        }
+    }
+    var index: u32 = 0
+    while index < p.expr_count && p.error == false {
+        parser_expression_depth(p, index, PARSER_MAX_EXPR_DEPTH)
+        index += 1
+    }
+}
+func parse_expr(p: *Parser, min_prec: u32) u32 {
+    if p.error { return INVALID_INDEX }
+    if p.recursion_depth >= PARSER_MAX_RECURSION { parser_fail(p); return INVALID_INDEX; }
+    p.recursion_depth += 1
+    let result = parse_expr_inner(p, min_prec)
+    p.recursion_depth -= 1
+    return result
+}
+
+func parse_prefix(p: *Parser) u32 {
+    if p.error { return INVALID_INDEX }
+    if p.recursion_depth >= PARSER_MAX_RECURSION { parser_fail(p); return INVALID_INDEX; }
+    p.recursion_depth += 1
+    let result = parse_prefix_inner(p)
+    p.recursion_depth -= 1
+    return result
+}
+
+func parse_block_statements(p: *Parser)  {
+    if p.error { return }
+    if p.recursion_depth >= PARSER_MAX_RECURSION { parser_fail(p); return; }
+    p.recursion_depth += 1
+    parse_block_statements_inner(p)
+    p.recursion_depth -= 1
+}
+
+func parser_fail(p: *Parser) {
+    if p.error { return }
+    p.error = true
+    p.error_line = p.cur.line
+    p.error_col = p.cur.col
+}
+
+func parser_expression_depth(p: *Parser, index: u32, remaining: u32) u32 {
+    if p.error { return 0 }
+    if index >= p.expr_count || remaining == 0 { parser_fail(p); return 0; }
+    let node = parser_expr(p, index)
+    if node.value_reg != 0 { return node.value_reg }
+    var left: u32 = 0
+    var right: u32 = 0
+    if node.kind == EXPR_BINARY || node.kind == EXPR_INDEX {
+        left = parser_expression_depth(p, node.binary.left_idx, remaining - 1)
+        right = parser_expression_depth(p, node.binary.right_idx, remaining - 1)
+    } else if node.kind == EXPR_UNARY {
+        left = parser_expression_depth(p, node.unary.operand_idx, remaining - 1)
+    } else if node.kind == EXPR_CAST {
+        left = parser_expression_depth(p, node.cast.source_idx, remaining - 1)
+    } else if node.kind == EXPR_MEMBER {
+        left = parser_expression_depth(p, node.member.base_idx, remaining - 1)
+    } else if node.kind == EXPR_CALL || node.kind == EXPR_DATA {
+        if node.kind == EXPR_CALL && node.call.callee_expr_idx != INVALID_INDEX {
+            left = parser_expression_depth(p, node.call.callee_expr_idx, remaining - 1)
+        }
+        var arg = node.call.arg_start
+        var count: u32 = 0
+        while count < node.call.arg_count && p.error == false {
+            right = parser_expression_depth(p, arg, remaining - 1)
+            if p.error { return 0 }
+            if right > left { left = right }
+            arg = parser_expr(p, arg).next_arg
+            count += 1
+        }
+    }
+    if right > left { left = right }
+    node.value_reg = left + 1
+    if node.value_reg > PARSER_MAX_EXPR_DEPTH { parser_fail(p) }
+    return node.value_reg
+}
+
+func parse_block_stmt(p: *Parser, kind: u32) u32 {
+    if p.error { return INVALID_INDEX }
+    if p.recursion_depth >= PARSER_MAX_RECURSION { parser_fail(p); return INVALID_INDEX; }
+    p.recursion_depth += 1
+    let result = parse_block_stmt_inner(p, kind)
+    p.recursion_depth -= 1
+    return result
+}

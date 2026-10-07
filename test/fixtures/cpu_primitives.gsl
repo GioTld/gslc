@@ -1,0 +1,11 @@
+import "core/arch"
+
+func read_word(port: u16) u16 { unsafe { return inw(port) } }
+func write_word(port: u16, value: u16) { unsafe { outw(port, value) } }
+func enable_interrupts() { unsafe { sti() } }
+func contextual_values() { unsafe { outw(65535, 65535); let value: u16 = inw(65535); } }
+func wrapped_operations(port: u16, value: u16) u16 {
+    io_outw(port, value)
+    interrupts_enable()
+    return io_inw(port)
+}

@@ -1,0 +1,22 @@
+import "core/serial"
+
+func interrupt_gate() {}
+
+func kernel_main() {
+    serial_init()
+    var words: [512]u64
+    var index: usize = 0 as usize
+    while index < 512 as usize {
+        if words[index] != 0 as u64 { unsafe { outb(0xf4 as u16, 1 as u8); hlt(); } }
+        words[index] = index as u64
+        index += 1 as usize
+    }
+    if words[511] != 511 as u64 || size_of([512]u64) != 4096 as usize {
+        unsafe { outb(0xf4 as u16, 1 as u8); hlt(); }
+    }
+    serial_write_byte(65 as u8)
+    serial_write_byte(82 as u8)
+    serial_write_byte(82 as u8)
+    serial_write_byte(10 as u8)
+    unsafe { outb(0xf4 as u16, 0 as u8); hlt(); }
+}

@@ -1,0 +1,5 @@
+func page_fault_address() usize { unsafe { return read_cr2() } }
+func page_table_root() usize { unsafe { return read_cr3() } }
+func replace_page_table(address: usize) { unsafe { write_cr3(address) } }
+func invalidate_page(address: usize) { unsafe { invlpg(address) } }
+func register_assembly(value: usize) usize { unsafe { return asm_u64("mov $1, $0", "=r,r", value) } }

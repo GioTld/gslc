@@ -1,0 +1,66 @@
+copy struct Item { tag: u8, value: u64 }
+packed struct Packet { tag: u8, value: u64, length: u16 }
+struct Nested { packet: Packet, tail: u32 }
+copy struct Counter { value: u32 }
+
+func select_table(counter: *Counter, table: *[3]Packet) *[3]Packet {
+    counter.value += 1
+    return table
+}
+func select_slot(counter: *Counter) usize {
+    counter.value += 10
+    return 2 as usize
+}
+func select_value(counter: *Counter) u64 {
+    counter.value += 100
+    return 0x8877665544332211 as u64
+}
+func round_trip(value: Item) Item { return value }
+func read_packet(table: *[3]Packet, index: usize) u64 {
+    unsafe { return table[index].value }
+}
+func main() u32 {
+    var items: [3]Item
+    var packets: [3]Packet
+    var nested: [2]Nested
+    var later: [2]Later
+    if items[2].value != 0 as u64 || packets[2].length != 0 as u16 || nested[1].packet.value != 0 as u64 || later[1].value != 0 as u32 { return 1 }
+    if size_of([3]Item) != 48 as usize || align_of([3]Item) != 8 as usize { return 2 }
+    if size_of([3]Packet) != 33 as usize || align_of([3]Packet) != 1 as usize { return 3 }
+    items[0].tag = 7 as u8
+    items[0].value = 99 as u64
+    items[2] = round_trip(items[0])
+    items[2].value += 1 as u64
+    if items[2].value != 100 as u64 || items[2].tag != 7 as u8 || items[0].value != 99 as u64 { return 4 }
+    let element = &items[1]
+    element.tag = 8 as u8
+    element.value = 101 as u64
+    nested[1].packet.tag = 9 as u8
+    nested[1].packet.value = 102 as u64
+    nested[1].packet.length = 103 as u16
+    nested[1].tail = 104 as u32
+    var counter: Counter
+    counter.value = 0
+    unsafe {
+        select_table(&counter, &packets)[select_slot(&counter)].value = select_value(&counter)
+        let field = &packets[2].length
+        *field = 0xccbb as u16
+        packets[1] = packets[2]
+        if (&items[2] as usize) - (&items[0] as usize) != 32 as usize { return 5 }
+        if (&packets[2] as usize) - (&packets[0] as usize) != 22 as usize { return 6 }
+        if (&packets[2].value as usize) - (&packets[0] as usize) != 23 as usize { return 7 }
+        let bytes = &packets as *[33]u8
+        if bytes[23] != 0x11 as u8 || bytes[30] != 0x88 as u8 || bytes[31] != 0xbb as u8 || bytes[32] != 0xcc as u8 { return 8 }
+    }
+    if counter.value != 111 || read_packet(&packets, 2 as usize) != 0x8877665544332211 as u64 || packets[1].length != 0xccbb as u16 { return 9 }
+    if items[1].value != 101 as u64 || nested[1].packet.value != 102 as u64 || nested[1].tail != 104 as u32 { return 10 }
+    var repetitions: usize = 0 as usize
+    while repetitions < 2 as usize {
+        var temporary: [2]Packet
+        if temporary[1].value != 0 as u64 { return 11 }
+        temporary[1].value = 1 as u64
+        repetitions += 1 as usize
+    }
+    return 0
+}
+struct Later { value: u32 }

@@ -1,0 +1,88 @@
+copy struct Leaf { byte: u8, wide: u64, flag: bool, signed: i16 }
+copy struct Outer { tag: u8, inner: Leaf, tail: u32 }
+struct Link { value: u32, next: *Link }
+func make_leaf(seed: u64) Leaf {
+    var result: Leaf;
+    result.byte = 7;
+    result.wide = seed;
+    result.flag = true;
+    result.signed = -3;
+    return result;
+}
+func leaf_sum(value: Leaf) u64 { return value.wide + value.byte as u64; }
+func outer_identity(value: Outer) Outer { return value; }
+func leaf_read(value: *Leaf) u64 { return value.wide + value.byte as u64 + value.signed as u64 + value.flag as u64; }
+func leaf_write(value: *Leaf, seed: u64) {
+    value.byte = 9;
+    value.wide = seed;
+    value.signed = -7;
+    value.flag = false;
+}
+func outer_read(value: *Outer) u64 { return value.inner.wide + value.inner.byte as u64 + value.tag as u64 + value.tail as u64; }
+func outer_write(value: *Outer, seed: u64) { value.inner.wide = seed; value.inner.signed += 2; value.tail -= 1; }
+func leaf_pointer(value: *Leaf) *Leaf { return value; }
+func pointer_read(value: *i16) u64 { unsafe { let loaded = *value; return loaded as u64; } return 0; }
+func parameter_address(value: i16) u64 { let ptr = &value; return pointer_read(ptr); }
+func scalar_address() u64 {
+    let value: i16 = -9;
+    let ptr = &value;
+    let indirect = &ptr;
+    var result: u64;
+    unsafe { result = pointer_read(*indirect); }
+    return result;
+}
+func pointer_roundtrip(value: *Leaf) *Leaf { unsafe { return (value as usize) as *Leaf; } return value; }
+func raw_byte(value: *Leaf) u8 { unsafe { return *(value as *u8); } return 0; }
+func struct_probe(seed: u64) u32 {
+    var first = make_leaf(seed);
+    let pointer = leaf_pointer(&first);
+    pointer.wide += 2;
+    let second = first;
+    first.wide = 0;
+    var third: Leaf;
+    third = second;
+    if third.wide != seed + 2 || third.byte != 7 || !third.flag || third.signed as i64 != -3 { return 1; }
+    if leaf_sum(third) != seed + 9 { return 2; }
+    var outer: Outer;
+    outer.tag = 5;
+    outer.inner = third;
+    outer.tail = 12;
+    let copied = outer_identity(outer);
+    if copied.inner.wide != seed + 2 || outer_read(&outer) != seed + 26 { return 3; }
+    outer_write(&outer, seed);
+    if outer.inner.wide != seed || outer.inner.signed != -1 || outer.tail != 11 { return 4; }
+    let field_ptr = &outer.inner.signed;
+    if pointer_read(field_ptr) != (0 as u64) - 1 { return 5; }
+    var link: Link;
+    link.value = 19;
+    link.next = &link;
+    link.next.value += 1;
+    if link.value != 20 { return 6; }
+    if pointer_roundtrip(&first) != &first || raw_byte(&first) != 7 { return 7; }
+    if parameter_address(-5) != (0 as u64) - 5 || scalar_address() != (0 as u64) - 9 { return 8; }
+    var count = 0;
+    while count < 2 {
+        var first = make_leaf(count as u64);
+        first.wide += 1;
+        if first.wide != (count as u64) + 1 { return 9; }
+        count += 1;
+    }
+    if first.wide != 0 { return 10; }
+    if make_leaf(seed).wide != seed { return 11; }
+    unsafe { if (&*pointer as usize) != (pointer as usize) { return 12; } }
+    return 0;
+}
+func main() u32 {
+    if struct_probe(0 as u64) != 0 || struct_probe((18446744073709551615 as u64) - 30) != 0 { return 1; }
+    var leaf: Leaf;
+    leaf.byte = 11; leaf.wide = (1 as u64) << 63; leaf.flag = true; leaf.signed = -4;
+    if leaf_read(&leaf) != leaf.wide + 8 { return 2; }
+    leaf_write(&leaf, 18446744073709551615 as u64);
+    if leaf.byte != 9 || leaf.wide != 18446744073709551615 as u64 || leaf.flag || leaf.signed != -7 { return 3; }
+    var outer: Outer;
+    outer.tag = 3; outer.inner.byte = 5; outer.inner.wide = (1 as u64) << 63; outer.inner.flag = true; outer.inner.signed = -6; outer.tail = 13;
+    if outer_read(&outer) != outer.inner.wide + 21 { return 4; }
+    outer_write(&outer, (18446744073709551615 as u64) - 20);
+    if outer.inner.wide != (18446744073709551615 as u64) - 20 || outer.inner.signed != -4 || outer.tail != 12 { return 5; }
+    return 0;
+}

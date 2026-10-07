@@ -1,0 +1,69 @@
+const TOKEN_EOF: u32 = 0
+const TOKEN_ILLEGAL: u32 = 1
+
+const TOKEN_IDENT: u32 = 2
+const TOKEN_INT: u32 = 3
+const TOKEN_STRING: u32 = 4
+
+const TOKEN_LET: u32 = 10
+const TOKEN_VAR: u32 = 11
+const TOKEN_FUNC: u32 = 12
+const TOKEN_RETURN: u32 = 13
+const TOKEN_IF: u32 = 14
+const TOKEN_ELSE: u32 = 15
+const TOKEN_WHILE: u32 = 16
+const TOKEN_STRUCT: u32 = 17
+const TOKEN_UNSAFE: u32 = 18
+const TOKEN_ARENA: u32 = 19
+const TOKEN_COMPTIME: u32 = 20
+const TOKEN_IMPORT: u32 = 21
+const TOKEN_CONST: u32 = 22
+const TOKEN_AS: u32 = 23
+const TOKEN_BREAK: u32 = 24
+const TOKEN_TRUE: u32 = 25
+const TOKEN_FALSE: u32 = 26
+const TOKEN_COPY: u32 = 27
+const TOKEN_CONTINUE: u32 = 28
+const TOKEN_PACKED: u32 = 29
+
+const TOKEN_PLUS: u32 = 30
+const TOKEN_MINUS: u32 = 31
+const TOKEN_STAR: u32 = 32
+const TOKEN_SLASH: u32 = 33
+const TOKEN_ASSIGN: u32 = 34
+const TOKEN_EQ: u32 = 35
+const TOKEN_NE: u32 = 36
+const TOKEN_LT: u32 = 37
+const TOKEN_GT: u32 = 38
+const TOKEN_PERCENT: u32 = 39
+const TOKEN_LPAREN: u32 = 40
+const TOKEN_RPAREN: u32 = 41
+const TOKEN_LBRACE: u32 = 42
+const TOKEN_RBRACE: u32 = 43
+const TOKEN_COLON: u32 = 44
+const TOKEN_SEMICOLON: u32 = 45
+const TOKEN_COMMA: u32 = 46
+const TOKEN_DOT: u32 = 47
+const TOKEN_AMP: u32 = 48
+const TOKEN_AND: u32 = 49
+const TOKEN_OR: u32 = 50
+const TOKEN_NOT: u32 = 51
+const TOKEN_LE: u32 = 52
+const TOKEN_GE: u32 = 53
+const TOKEN_PLUS_ASSIGN: u32 = 54
+const TOKEN_MINUS_ASSIGN: u32 = 55
+const TOKEN_LBRACKET: u32 = 56
+const TOKEN_RBRACKET: u32 = 57
+const TOKEN_SHIFT_LEFT: u32 = 58
+const TOKEN_SHIFT_RIGHT: u32 = 59
+const TOKEN_BIT_OR: u32 = 60
+const TOKEN_BIT_XOR: u32 = 61
+const TOKEN_BIT_NOT: u32 = 62
+
+copy struct Token {
+    kind: u32,
+    offset: usize,
+    len: usize,
+    line: u32,
+    col: u32
+}

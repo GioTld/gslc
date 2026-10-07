@@ -1,0 +1,29 @@
+# Internal planning, design, and memory documents (Owned by Giovanny)
+philosophy.md
+architecture.md
+roadmap.md
+conventions.md
+security.md
+stack.md
+.agents/
+.specify/
+
+# Binaries and build artifacts
+bin/
+dist/
+*.exe
+*.out
+*.o
+*.s
+*.ll
+
+# Go workspace artifacts
+/vendor/
+
+# Only the public README is published
+*.[mM][dD]
+!/README.md
+
+# Python caches
+__pycache__/
+*.py[cod]

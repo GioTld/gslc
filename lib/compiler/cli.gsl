@@ -1,0 +1,35 @@
+import "compiler/driver"
+
+func compiler_argv_string(argv: *usize, index: usize) string {
+    unsafe {
+        let slot = ((argv as usize) + index * size_of(usize)) as *usize
+        return (*slot) as string
+    }
+}
+
+func main(argc: u32, argv: *usize) u32 {
+    var machine = false
+    var kernel = false
+    var index: u32 = 1
+    while index + 2 < argc {
+        let flag = compiler_argv_string(argv, index as usize)
+        unsafe {
+            if sema_name_is(flag as *u8, strlen(flag) as usize, "--diagnostics=json") {
+                machine = true
+            } else if sema_name_is(flag as *u8, strlen(flag) as usize, "--target=x86_64-unknown-none-elf") {
+                kernel = true
+            } else if sema_name_is(flag as *u8, strlen(flag) as usize, "--target=x86_64-unknown-linux-gnu") {
+                kernel = false
+            } else {
+                println("gslc-self: unknown option or target")
+                return 64
+            }
+        }
+        index += 1
+    }
+    if argc != index + 2 {
+        println("usage: gslc-self [--diagnostics=json] [--target=<triple>] <source.gsl> <output.ll>")
+        return 64
+    }
+    return compile_file_profile(compiler_argv_string(argv, index as usize), compiler_argv_string(argv, (index + 1) as usize), machine, kernel)
+}

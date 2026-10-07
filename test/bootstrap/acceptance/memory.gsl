@@ -1,0 +1,51 @@
+const CAPACITY: u32 = 128
+struct Packet { tag: u8, value: u64, next: *Packet }
+func packet_size() u32 { return size_of(Packet) as u32; }
+func packet_alignment() u32 { return align_of(Packet) as u32; }
+func packet_init(packet: *Packet, value: u64) { packet.tag = 7; packet.value = value; packet.next = packet; }
+func byte_read(ptr: *u8) u8 { unsafe { return volatile_read(ptr); } }
+func byte_write(ptr: *u8, value: u8) { unsafe { volatile_write(ptr, value); } }
+func volatile_literal(ptr: *u8) { unsafe { volatile_write(ptr, 17); } }
+func memory_probe() u32 {
+    arena storage(CAPACITY);
+    let prefix = storage.alloc(1 as usize);
+    let packet_bytes = storage.alloc(size_of(Packet));
+    var packet: *Packet;
+    unsafe { packet = packet_bytes as *Packet; }
+    packet_init(packet, (1 as u64) << 63);
+    if packet.tag != 7 || packet.value != (1 as u64) << 63 || packet.next != packet { return 1; }
+    if (packet as usize) % align_of(Packet) != 0 { return 2; }
+    if (packet as usize) - (prefix as usize) != 8 { return 3; }
+    byte_write(prefix, 91 as u8);
+    if byte_read(prefix) != 91 { return 4; }
+    let bytes = storage.alloc(5 as u16);
+    var i: usize = 0 as usize;
+    while i < 5 as usize {
+        unsafe { volatile_write(((bytes as usize) + i) as *u8, (i as u8) + 10 as u8); }
+        i += 1 as usize;
+    }
+    i = 0 as usize;
+    while i < 5 as usize {
+        unsafe { if volatile_read(((bytes as usize) + i) as *u8) != (i as u8) + 10 as u8 { return 5; } }
+        i += 1 as usize;
+    }
+    var rounds = 0;
+    while rounds < 3 {
+        arena iteration(8);
+        let whole = iteration.alloc(8 as usize);
+        byte_write(whole, rounds as u8);
+        if byte_read(whole) != rounds as u8 { return 6; }
+        rounds += 1;
+    }
+    if size_of(bool) != 1 as usize || align_of(u16) != 2 as usize || size_of(u64) != 8 as usize { return 7; }
+    return 0;
+}
+
+func main() u32 {
+    if packet_size() != 24 || packet_alignment() != 8 { return 20; }
+    var bytes: [4]u8;
+    bytes[1] = 44; bytes[2] = 55; bytes[3] = 66;
+    volatile_literal(&bytes[0]);
+    if bytes[0] != 17 as u8 || bytes[1] != 44 as u8 || bytes[2] != 55 as u8 || bytes[3] != 66 as u8 { return 21; }
+    return memory_probe();
+}

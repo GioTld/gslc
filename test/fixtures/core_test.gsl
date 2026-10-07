@@ -1,0 +1,23 @@
+import "core/mem"
+import "core/sync"
+import "core/io"
+
+func main() u32 {
+    arena buf(256)
+    let p_a = buf.alloc(u8)
+    let p_b = buf.alloc(u8)
+
+    let lock_ptr = buf.alloc(u64)
+    unsafe {
+        atomic_store(lock_ptr, 0 as u64)
+    }
+    spinlock_acquire(lock_ptr)
+    yield()
+    spinlock_release(lock_ptr)
+
+    memset(p_a, 42 as u8, 1 as usize)
+    memcpy(p_b, p_a, 1 as usize)
+
+    print_raw("Core Library OK\n", 16 as u64)
+    return 0
+}

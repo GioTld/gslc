@@ -1,0 +1,51 @@
+func memcpy(dst: *u8, src: *u8, count: usize) *u8 {
+    var i: usize = 0
+    while i < count {
+        unsafe {
+            let s_ptr = ((src as usize) + i) as *u8
+            let d_ptr = ((dst as usize) + i) as *u8
+            let b = volatile_read(s_ptr)
+            volatile_write(d_ptr, b)
+        }
+        i += 1
+    }
+    return dst
+}
+
+func memset(dst: *u8, val: u8, count: usize) *u8 {
+    var i: usize = 0
+    while i < count {
+        unsafe {
+            let d_ptr = ((dst as usize) + i) as *u8
+            volatile_write(d_ptr, val)
+        }
+        i += 1
+    }
+    return dst
+}
+
+func memmove(dst: *u8, src: *u8, count: usize) *u8 {
+    if (dst as usize) <= (src as usize) { return memcpy(dst, src, count) }
+    var i = count
+    while i > 0 as usize {
+        i -= 1 as usize
+        unsafe {
+            let value = volatile_read(((src as usize) + i) as *u8)
+            volatile_write(((dst as usize) + i) as *u8, value)
+        }
+    }
+    return dst
+}
+
+func memcmp(left: *u8, right: *u8, count: usize) i32 {
+    var i: usize = 0
+    while i < count {
+        unsafe {
+            let a = volatile_read(((left as usize) + i) as *u8)
+            let b = volatile_read(((right as usize) + i) as *u8)
+            if a != b { return (a as i32) - (b as i32) }
+        }
+        i += 1 as usize
+    }
+    return 0 as i32
+}

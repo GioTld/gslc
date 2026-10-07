@@ -1,0 +1,7 @@
+func vga_write_cell(column: usize, row: usize, value: u8, color: u8) {
+    let address = (0xb8000 as usize) + ((row * (80 as usize) + column) * (2 as usize))
+    unsafe {
+        volatile_write(address as *u8, value)
+        volatile_write((address + (1 as usize)) as *u8, color)
+    }
+}

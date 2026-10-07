@@ -1,0 +1,30 @@
+import "core/serial"
+import "core/descriptors"
+
+func interrupt_gate() {
+    serial_write_byte(66 as u8)
+    serial_write_byte(78 as u8)
+    serial_write_byte(68 as u8)
+    serial_write_byte(10 as u8)
+    unsafe { outb(0xf4 as u16, 0 as u8); hlt(); }
+}
+
+func kernel_main() {
+    serial_init()
+    gdt_init()
+    idt_init()
+    unsafe {
+        let table = symbol_address("kernel_idt")
+        let breakpoint = (table + (48 as usize)) as *[16]u8
+        let invalid_opcode = (table + (96 as usize)) as *[16]u8
+        var byte: usize = 0 as usize
+        while byte < 16 as usize {
+            invalid_opcode[byte] = breakpoint[byte]
+            byte += 1 as usize
+        }
+    }
+    var buffer: [4]u8
+    let invalid = 4 as usize
+    buffer[invalid] = 1
+    unsafe { outb(0xf4 as u16, 1 as u8); hlt(); }
+}
