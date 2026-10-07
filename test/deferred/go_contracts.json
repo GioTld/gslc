@@ -378,43 +378,85 @@
       "origin": "pkg/comptime/eval_test.go#TestEvalArithmetic",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestEvalArithmetic-33, TestEvalArithmetic-34, TestEvalArithmetic-35, TestEvalArithmetic-36, TestEvalArithmetic-37, TestEvalArithmetic-38, TestEvalArithmetic-39, TestEvalArithmetic-40, TestEvalArithmetic-41, TestEvalArithmetic-42, TestEvalArithmetic-43, TestEvalArithmetic-44, TestEvalArithmetic-45. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/comptime/eval_test.go#TestEvalDivisionByZero",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: invalid-constant-55, invalid-constant-56. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/comptime/eval_test.go#TestEvalBooleansAndLogic",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestEvalBooleansAndLogic-46, TestEvalBooleansAndLogic-47, TestEvalBooleansAndLogic-48, TestEvalBooleansAndLogic-49, TestEvalBooleansAndLogic-50, TestEvalBooleansAndLogic-51, TestEvalBooleansAndLogic-52, TestEvalBooleansAndLogic-53, TestEvalBooleansAndLogic-54. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/comptime/eval_test.go#TestEvalSizeOfAndAlignOf",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: comptime-layout-size_of(u32), comptime-layout-size_of(u64), comptime-layout-size_of(Packet), comptime-layout-align_of(Packet). No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/comptime/eval_test.go#TestEvalComptimeBlock",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: comptime-block. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/diag/diagnostic_test.go#TestSpanMerge",
       "groups": [
         "diagnostic_presentation"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred span_merge preserves both input spans and the merged start/end positions."
+        ]
+      }
     },
     {
       "origin": "pkg/diag/diagnostic_test.go#TestDiagnosticFormat",
       "groups": [
         "diagnostic_presentation"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred diagnostic-snippet preserves the source, supplied span and all four rendering substrings."
+        ]
+      }
     },
     {
       "origin": "pkg/ir/builder_test.go#TestBuildSimpleFunction",
@@ -458,51 +500,100 @@
       "origin": "pkg/lexer/lexer_test.go#TestLexerKeywordsAndIdentifiers",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "lexer_contracts checks the complete original token sequence and token text, including EOF and inserted separators. Semicolon storage is internal."
+        ]
+      }
     },
     {
       "origin": "pkg/lexer/lexer_test.go#TestAutomaticSemicolonInsertion",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "lexer_contracts checks the complete original sequence with no separator after +; frontend_contracts executes continued-line arithmetic."
+        ]
+      }
     },
     {
       "origin": "pkg/lexer/lexer_test.go#TestLexerSwitchCase",
       "groups": [
         "current_subset",
         "extended_frontend"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestLexerSwitchCase retains the switch token expectation."
+        ]
+      }
     },
     {
       "origin": "pkg/lexer/lexer_test.go#TestLexerNumberLiterals",
       "groups": [
         "current_subset",
         "extended_frontend"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts executes decimal/hex/binary/octal values; lexer and hosted_io cover separators. Full float-token recognition remains deferred in TestLexerNumberLiterals."
+        ]
+      }
     },
     {
       "origin": "pkg/lexer/lexer_test.go#TestLexerComments",
       "groups": [
-        "current_subset"
-      ]
+        "current_subset",
+        "extended_frontend"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "lexer_contracts checks line comments. Block/nested comments are absent in GSL and retained as block_comments."
+        ]
+      }
     },
     {
       "origin": "pkg/lexer/lexer_test.go#TestLexerKernelKeywords",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "lexer_contracts checks the original packed/struct/asm/string sequence; asm is an identifier recognized by the parser rather than a dedicated GSL token. packed and kernel_library exercise the parsed meaning."
+        ]
+      }
     },
     {
       "origin": "pkg/parser/parser_test.go#TestParsePrecedence",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts executes all five precedence forms; logical/evaluation_order also check grouping and effects. Go AST String formatting is internal."
+        ]
+      }
     },
     {
       "origin": "pkg/parser/parser_test.go#TestParseFuncDecl",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts executes signed add with two i32 parameters and i32 return; compiler_api checks generated function count. Go AST class identity is internal."
+        ]
+      }
     },
     {
       "origin": "pkg/parser/parser_test.go#TestParseStructAndArena",
@@ -510,7 +601,13 @@
         "current_subset",
         "extended_frontend",
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestParseStructAndArena preserves the global arena expression, two declaration count, names and field count. Recursive pointer structs remain covered by entry_recursive_pointer_struct_declaration."
+        ]
+      }
     },
     {
       "origin": "pkg/parser/parser_test.go#TestParseSampleFile",
@@ -519,19 +616,37 @@
         "extended_frontend",
         "comptime_arenas",
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestParseSampleFile preserves the exact source, no-diagnostic expectation and five declaration count."
+        ]
+      }
     },
     {
       "origin": "pkg/parser/parser_test.go#TestParsePackedStructAndAsm",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "packed/kernel_library and lexer_contracts preserve packed field layout and unsafe asm meaning; kernel fixtures use the seven-field IDT. Go AST classes and node shape are internal."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestDescriptorPrimitivesRequireUnsafeAndValidSymbols",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "lgdt_unsafe, hardware_symbol_invalid and hardware_lidt_width reject invalid unsafe/symbol/pointer uses; kernel_library and descriptor-array-kernel provide positive object/execution coverage. Stable GSL JSON codes replace Go prose."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaSampleFile",
@@ -540,180 +655,355 @@
         "extended_frontend",
         "comptime_arenas",
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestSemaSampleFile preserves the exact semantic sample and no-diagnostic expectation."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaImmutabilityEnforcement",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "semantic_scopes rejects reassignment of let; mutable positive cases execute. GSL JSON E2003 is the current immutable diagnostic contract."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaZeroImplicitCasting",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "entry_mixed_typed_widths and semantic_scopes reject mixed-width typed operands; frontend_contracts uses explicit usize constants."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaUnsafeEnforcement",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "semantic_scopes separately checks pointer casts and volatile access outside/inside unsafe; negative inventory checks stable JSON. GSL reports the first diagnostic, so simultaneous multi-error reporting is deferred."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaOptionAndResult",
       "groups": [
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Deferred TestSemaOptionAndResult preserves the exact two-variant return example."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestSemaKernelPrimitivesUnsafeEnforcement",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "Per-primitive unsafe negatives and kernel_library/cpu_primitives cover all eight operations. Descriptor kernel fixtures verify packed GDTR size 10/align 1. Go global-scope objects are internal; multi-error reporting is deferred."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/analyzer_test.go#TestStructFieldResolution",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts checks forward nested struct size 4; entry_recursive_value_layout_rejected_before_output and packed_unknown_field reject by-value cycles and unknown types."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestScopedArenaValidUsage",
       "groups": [
         "comptime_arenas",
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestScopedArenaValidUsage. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestScopedArenaReturnEscape",
       "groups": [
         "comptime_arenas",
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestScopedArenaReturnEscape. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestScopedArenaDirectReturnEscape",
       "groups": [
         "comptime_arenas",
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestScopedArenaDirectReturnEscape. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestScopedArenaOuterAssignmentEscape",
       "groups": [
         "comptime_arenas",
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestScopedArenaOuterAssignmentEscape. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestScopedArenaGlobalReturnAllowed",
       "groups": [
         "comptime_arenas",
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestScopedArenaGlobalReturnAllowed. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesRequireUnsafe",
       "groups": [
         "synchronization"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestAtomicPrimitivesRequireUnsafe. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/arena_test.go#TestAtomicPrimitivesValidInUnsafe",
       "groups": [
         "synchronization"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestAtomicPrimitivesValidInUnsafe. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/comptime_test.go#TestConstDeclarationAndUsage",
       "groups": [
-        "current_subset"
-      ]
+        "current_subset",
+        "extended_frontend"
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts executes constants with explicit usize annotations. Original mixed annotated/unannotated source remains deferred; GSL unannotated constants default to u32."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/comptime_test.go#TestComptimeArenaSizing",
       "groups": [
         "comptime_arenas"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestComptimeArenaSizing. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/comptime_test.go#TestSizeOfAndAlignOfBuiltins",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts executes u32 and Header size/alignment queries and verifies values 4,16,8."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/comptime_test.go#TestChannelTypeAndMethods",
       "groups": [
         "channels"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestChannelTypeAndMethods. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/comptime_test.go#TestChannelTypeMismatchError",
       "groups": [
         "channels"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestChannelTypeMismatchError. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/match_test.go#TestExhaustiveBoolMatch",
       "groups": [
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestExhaustiveBoolMatch-complete, TestExhaustiveBoolMatch-missing arm, TestExhaustiveBoolMatch-default, TestExhaustiveBoolMatch-duplicate. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/match_test.go#TestExhaustiveAlgebraicMatch",
       "groups": [
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestExhaustiveAlgebraicMatch-option complete, TestExhaustiveAlgebraicMatch-option missing none, TestExhaustiveAlgebraicMatch-result complete, TestExhaustiveAlgebraicMatch-result missing err, TestExhaustiveAlgebraicMatch-duplicate variant. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/move_test.go#TestMoveSemantics",
       "groups": [
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestMoveSemantics-use after move, TestMoveSemantics-branch move, TestMoveSemantics-reinitialize, TestMoveSemantics-copy value, TestMoveSemantics-borrow value, TestMoveSemantics-move in loop, TestMoveSemantics-function argument, TestMoveSemantics-return value, TestMoveSemantics-move field, TestMoveSemantics-plain struct moves, TestMoveSemantics-copy struct. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/move_test.go#TestCopyStructRejectsOwnedField",
       "groups": [
         "ownership"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "All original source/expectation cases retained as deferred: TestCopyStructRejectsOwnedField. No active GSL capability or passing test claimed."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/unsupported_lvalue_test.go#TestUnsupportedIndexAndPointerOperationsAreRejected",
       "groups": [
         "superseded_rejections"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "legacy_slice_read/write reject unsupported slice syntax; pointer_stores is the current positive contract superseding Go pointer-store rejection. No old rejection reinstated."
+        ]
+      }
     },
     {
       "origin": "pkg/sema/unsupported_lvalue_test.go#TestCharacterLiteralIsRejectedBeforeCodegen",
       "groups": [
         "superseded_rejections"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "legacy_character rejects before codegen; GSL lexer/parser rejection replaces Go semantic-phase prose."
+        ]
+      }
     },
     {
       "origin": "pkg/types/types_test.go#TestPrimitiveTypes",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts verifies u32 size/align 4, u64 size/align 8 and bool size 1."
+        ]
+      }
     },
     {
       "origin": "pkg/types/types_test.go#TestStructLayout",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts verifies Natural size 12, align 4 and offsets b=4,c=8."
+        ]
+      }
     },
     {
       "origin": "pkg/types/types_test.go#TestAlgebraicTypes",
       "groups": [
         "tagged_values"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "historical_layout_queries preserves Result[u32,u64] and Option[u32] size 16; not current GSL ABI."
+        ]
+      }
     },
     {
       "origin": "pkg/types/types_test.go#TestPackedStructLayout",
       "groups": [
         "current_subset"
-      ]
+      ],
+      "retirement": {
+        "status": "accounted_for",
+        "assertions": [
+          "frontend_contracts verifies Packed size 6, align 1 and offsets 0,1,5."
+        ]
+      }
     }
   ],
   "deferred_cases": [
@@ -1422,7 +1712,10 @@
       "source": "arena global_pool(1024 * 1024)\n\nstruct Node {\n    id: u64,\n    next: *Node,\n}\n",
       "expected": {
         "accept": true,
-        "declarations": 2
+        "declarations": 2,
+        "arena_name": "global_pool",
+        "struct_name": "Node",
+        "field_count": 2
       },
       "origin": "pkg/parser/parser_test.go#TestParseStructAndArena"
     },
@@ -1675,6 +1968,143 @@
         "rule": "Both branches return; no trailing return required."
       },
       "origin": "pkg/ir/builder_test.go#TestBuildIfElseBranches"
+    },
+    {
+      "name": "TestSemaSampleFile",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "semantic_analysis",
+      "source": "\narena memory_pool(64 * 1024)\n\nstruct UartPort {\n    base_address: usize\n}\n\nfunc uart_write_byte(port: UartPort, byte: u8) {\n    unsafe {\n        let reg = port.base_address as *u8\n        volatile_write(reg, byte)\n    }\n}\n\nfunc process_packet(raw_data: []u8) Result[u32, u32] {\n    var counter: u32 = 0\n    for b in raw_data {\n        if b == 0 {\n            break\n        }\n        counter += 1\n    }\n    return Result.Ok(counter)\n}\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/analyzer_test.go#TestSemaSampleFile"
+    },
+    {
+      "name": "TestSemaOptionAndResult",
+      "group": "tagged_values",
+      "status": "deferred",
+      "phase": "semantic_analysis",
+      "source": "\nfunc get_status(ok: bool) Result[u32, u32] {\n    if ok {\n        return Result.Ok(200)\n    }\n    return Result.Err(500)\n}\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/analyzer_test.go#TestSemaOptionAndResult"
+    },
+    {
+      "name": "TestConstDeclarationAndUsage",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "semantic_analysis",
+      "source": "\nconst BUFFER_SIZE: usize = 4096\nconst CHUNK_SIZE = 512\n\nfunc calculate_chunks() usize {\n    return BUFFER_SIZE / CHUNK_SIZE\n}\n",
+      "expected": {
+        "accept": true
+      },
+      "origin": "pkg/sema/comptime_test.go#TestConstDeclarationAndUsage"
+    },
+    {
+      "name": "block_comments",
+      "group": "extended_frontend",
+      "status": "deferred",
+      "phase": "lexing",
+      "source": "/* block */ let a = 1\n/* outer /* nested */ still outer */ let b = 2\n",
+      "expected": {
+        "tokens": [
+          "let",
+          "a",
+          "=",
+          "1",
+          "semicolon",
+          "let",
+          "b",
+          "=",
+          "2",
+          "semicolon",
+          "eof"
+        ],
+        "diagnostics": []
+      },
+      "origin": "pkg/lexer/lexer_test.go#TestLexerComments"
+    },
+    {
+      "name": "span_merge",
+      "group": "diagnostic_presentation",
+      "status": "deferred",
+      "phase": "diagnostic_presentation",
+      "source": "test.gsl",
+      "expected": {
+        "inputs": [
+          {
+            "start": [
+              1,
+              1,
+              0
+            ],
+            "end": [
+              1,
+              5,
+              4
+            ]
+          },
+          {
+            "start": [
+              1,
+              5,
+              4
+            ],
+            "end": [
+              1,
+              10,
+              9
+            ]
+          }
+        ],
+        "merged": {
+          "start": [
+            1,
+            1,
+            0
+          ],
+          "end": [
+            1,
+            10,
+            9
+          ]
+        },
+        "position_fields": [
+          "line",
+          "column",
+          "byte_offset"
+        ]
+      },
+      "origin": "pkg/diag/diagnostic_test.go#TestSpanMerge"
+    },
+    {
+      "name": "multiple_unsafe_diagnostics",
+      "group": "diagnostic_presentation",
+      "status": "deferred",
+      "phase": "semantic_analysis",
+      "source": "func safe_code() { asm(\"cli\"); outb(0x3F8 as u16, 0x41 as u8); let value = inb(0x3F8 as u16); hlt(); }",
+      "expected": {
+        "minimum_diagnostics": 4,
+        "rule": "Report each unsafe operation, rather than only the first failure."
+      },
+      "origin": "pkg/sema/analyzer_test.go#TestSemaKernelPrimitivesUnsafeEnforcement"
+    },
+    {
+      "name": "cast_and_volatile_diagnostics",
+      "group": "diagnostic_presentation",
+      "status": "deferred",
+      "phase": "semantic_analysis",
+      "source": "func test_unsafe(addr: usize) { let reg = addr as *u8; volatile_write(reg, 0) }",
+      "expected": {
+        "minimum_diagnostics": 2,
+        "rules": [
+          "raw pointer cast requires unsafe",
+          "volatile write requires unsafe"
+        ]
+      },
+      "origin": "pkg/sema/analyzer_test.go#TestSemaUnsafeEnforcement"
     }
   ],
   "limitations": [
@@ -1682,11 +2112,7 @@
     "Deferred examples retain historical phase expectations, not a promise of current GSL support.",
     "Mixed tests still need assertion-level comparison before removal; mapped evidence alone does not authorize wholesale deletion."
   ],
-  "next_removal_order": [
-    "cmd/gslc CLI and integration wrappers, after checking current CLI/import coverage and preserving match fixtures",
-    "LLVM/IR tests and implementation, after extracting deferred atomic/channel/comptime expectations and reviewing mixed cases",
-    "Frontend/sema/type/comptime packages and go.mod, after all retained contracts have a recorded disposition"
-  ],
+  "next_removal_order": [],
   "historical_layout_queries": [
     {
       "origin": "pkg/types/types_test.go#TestAlgebraicTypes",
@@ -1718,6 +2144,49 @@
       "tests": 3,
       "lines": 1878,
       "replacement": "GSL compiler and current acceptance; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/ast",
+      "tests": 0,
+      "lines": 572,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/comptime",
+      "tests": 5,
+      "lines": 502,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/diag",
+      "tests": 2,
+      "lines": 251,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/lexer",
+      "tests": 6,
+      "lines": 975,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/parser",
+      "tests": 5,
+      "lines": 1402,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/sema",
+      "tests": 26,
+      "lines": 2543,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
+    },
+    {
+      "path": "pkg/types",
+      "tests": 4,
+      "lines": 465,
+      "replacement": "GSL acceptance or explicitly deferred cases; see per-test retirement assertions"
     }
-  ]
+  ],
+  "retirement_complete": true
 }

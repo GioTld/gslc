@@ -27,8 +27,8 @@
   },
   "toolchain": "Clang/LLD 18.1.3",
   "acceptance": {
-    "checks": 884,
+    "checks": 891,
     "qemu_boots": 9,
-    "report_sha256": "bf73c27c24afe855f23fafab0934e9f8ebbf3bb02ce0e9ad1112c3878a229573"
+    "report_sha256": "e2f7ddb12390b71d3139f45b6a2b718513ad18690cd716711a5c7ca7de652538"
   }
 }

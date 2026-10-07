@@ -1,0 +1,91 @@
+import "compiler/lexer"
+import "compiler/token"
+
+func next_is(lex: *Lexer, kind: u32, text: string) bool {
+    let token = lexer_next(lex)
+    if token.kind != kind { return false }
+    if kind == TOKEN_SEMICOLON || kind == TOKEN_EOF { return true }
+    var index: usize = 0
+    unsafe {
+        let expected = text as *u8
+        while volatile_read(((expected as usize) + index) as *u8) != 0 as u8 {
+            if index >= token.len { return false }
+            let actual = volatile_read(((lex.src as usize) + token.offset + index) as *u8)
+            if actual != volatile_read(((expected as usize) + index) as *u8) { return false }
+            index += 1 as usize
+        }
+    }
+    return index == token.len
+}
+func main() u32 {
+    var lex: Lexer
+    lexer_init(&lex, "\nfunc compute_hash(val: u64) u64 {\n    let base = 100\n    var count = val + base\n    return count\n}\n")
+    if !next_is(&lex, TOKEN_FUNC, "func") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "compute_hash") { return 1 }
+    if !next_is(&lex, TOKEN_LPAREN, "(") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "val") { return 1 }
+    if !next_is(&lex, TOKEN_COLON, ":") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "u64") { return 1 }
+    if !next_is(&lex, TOKEN_RPAREN, ")") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "u64") { return 1 }
+    if !next_is(&lex, TOKEN_LBRACE, "{") { return 1 }
+    if !next_is(&lex, TOKEN_LET, "let") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "base") { return 1 }
+    if !next_is(&lex, TOKEN_ASSIGN, "=") { return 1 }
+    if !next_is(&lex, TOKEN_INT, "100") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, "\n") { return 1 }
+    if !next_is(&lex, TOKEN_VAR, "var") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "count") { return 1 }
+    if !next_is(&lex, TOKEN_ASSIGN, "=") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "val") { return 1 }
+    if !next_is(&lex, TOKEN_PLUS, "+") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "base") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, "\n") { return 1 }
+    if !next_is(&lex, TOKEN_RETURN, "return") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "count") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, "\n") { return 1 }
+    if !next_is(&lex, TOKEN_RBRACE, "}") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, "\n") { return 1 }
+    if !next_is(&lex, TOKEN_EOF, "") { return 1 }
+    lexer_init(&lex, "\nlet x = 10\nlet y = 20 +\n    30\nreturn x + y\n")
+    if lexer_next_kind(&lex) != TOKEN_LET { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_IDENT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_ASSIGN { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_INT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_SEMICOLON { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_LET { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_IDENT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_ASSIGN { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_INT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_PLUS { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_INT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_SEMICOLON { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_RETURN { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_IDENT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_PLUS { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_IDENT { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_SEMICOLON { return 2 }
+    if lexer_next_kind(&lex) != TOKEN_EOF { return 2 }
+    lexer_init(&lex, "packed struct IDT { asm(\"cli\"); }")
+    if !next_is(&lex, TOKEN_PACKED, "packed") { return 1 }
+    if !next_is(&lex, TOKEN_STRUCT, "struct") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "IDT") { return 1 }
+    if !next_is(&lex, TOKEN_LBRACE, "{") { return 1 }
+    if !next_is(&lex, TOKEN_IDENT, "asm") { return 1 }
+    if !next_is(&lex, TOKEN_LPAREN, "(") { return 1 }
+    if !next_is(&lex, TOKEN_STRING, "\"cli\"") { return 1 }
+    if !next_is(&lex, TOKEN_RPAREN, ")") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, ";") { return 1 }
+    if !next_is(&lex, TOKEN_RBRACE, "}") { return 1 }
+    if !next_is(&lex, TOKEN_SEMICOLON, "\n") { return 1 }
+    if !next_is(&lex, TOKEN_EOF, "") { return 1 }
+    lexer_init(&lex, "// line\nlet value = 3\n")
+    if !next_is(&lex, TOKEN_LET, "let") { return 3 }
+    if !next_is(&lex, TOKEN_IDENT, "value") { return 4 }
+    if !next_is(&lex, TOKEN_ASSIGN, "=") { return 5 }
+    if !next_is(&lex, TOKEN_INT, "3") { return 6 }
+    if lexer_next_kind(&lex) != TOKEN_SEMICOLON { return 7 }
+    if lexer_next_kind(&lex) != TOKEN_EOF { return 8 }
+    return 0
+}
+func lexer_next_kind(lex: *Lexer) u32 { let token = lexer_next(lex); return token.kind }

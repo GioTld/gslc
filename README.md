@@ -4,7 +4,7 @@ Compilador de un lenguaje de sistemas para Linux x86_64 y entornos freestanding 
 
 ## Empezar
 
-Requiere Linux x86_64, Python 3, Clang y LLD. La toolchain verificada es Clang/LLD 18.1.3. Go no es necesario para compilar o ejecutar las pruebas principales.
+Requiere Linux x86_64, Python 3, Clang y LLD. La toolchain verificada es Clang/LLD 18.1.3. No requiere Go.
 
 Instala el compilador inicial incluido en el repositorio:
 
@@ -74,4 +74,4 @@ El compilador GSL admite funciones, enteros de 8–64 bits, booleanos, strings t
 
 Siguen pendientes `match`, `Option`/`Result`, moves, `comptime`, concurrencia, floats y otras extensiones. Hay límites explícitos de almacenamiento y anidamiento; las capacidades están en [manifest.json](test/bootstrap/manifest.json). Los errores de compilación o escritura conservan la salida LLVM anterior. El destino debe ser un archivo regular o una ruta nueva.
 
-La implementación activa está en [lib/compiler](lib/compiler/). `pkg` conserva temporalmente módulos Go y pruebas pendientes de retirar. La antigua CLI, el backend LLVM y el IR de Go ya fueron eliminados; usa `scripts/gsl.py`. Los [contratos pospuestos](test/deferred/go_contracts.json) conservan ejemplos históricos con resultados esperados; son especificaciones inactivas, no capacidades ni pruebas aprobadas del compilador actual.
+La implementación activa está en [lib/compiler](lib/compiler/). La implementación Go fue retirada por completo; usa `scripts/gsl.py`. Los [contratos pospuestos](test/deferred/go_contracts.json) conservan ejemplos históricos con resultados esperados; son especificaciones inactivas, no capacidades ni pruebas aprobadas del compilador actual.

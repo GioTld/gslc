@@ -550,6 +550,16 @@
         "icmp ugt i32",
         "br i1"
       ]
+    },
+    {
+      "name": "lexer_contracts",
+      "fixture": "test/bootstrap/acceptance/lexer_contracts.gsl",
+      "exit": 0
+    },
+    {
+      "name": "frontend_contracts",
+      "fixture": "test/bootstrap/acceptance/frontend_contracts.gsl",
+      "exit": 0
     }
   ],
   "objects": [
@@ -1656,6 +1666,27 @@
       "target": "kernel",
       "status": 2,
       "check_missing_output": true
+    },
+    {
+      "name": "legacy_slice_read",
+      "source": "func main(items: []u8) u8 { return items[0 as usize] }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true
+    },
+    {
+      "name": "legacy_slice_write",
+      "source": "func main(items: []u8) { items[0 as usize] = 1 as u8 }",
+      "status": 1,
+      "code": "E1000",
+      "check_code": true
+    },
+    {
+      "name": "legacy_character",
+      "source": "func main() u8 { return 'A' as u8 }",
+      "status": 1,
+      "code": "E3000",
+      "check_code": true
     }
   ],
   "capacities": [

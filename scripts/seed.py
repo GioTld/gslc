@@ -132,10 +132,10 @@ def executable(name):
 
 def snapshot(root, output):
     files = []
-    extensions = {".go", ".gsl", ".json", ".yml", ".yaml", ".S", ".ld", ".py"}
-    for directory in ["cmd", "pkg", "lib", "test", ".github", "scripts"]:
+    extensions = {".gsl", ".json", ".yml", ".yaml", ".S", ".ld", ".py"}
+    for directory in ["lib", "test", ".github", "scripts"]:
         files.extend(p for p in (root / directory).rglob("*") if p.is_file() and p.suffix in extensions)
-    files.extend(root / name for name in ["go.mod", "go.sum", "README.md", "spec.md"] if (root / name).is_file())
+    files.extend(root / name for name in ["README.md"] if (root / name).is_file())
     hashes = {}
     with tarfile.open(output, "w") as archive:
         for path in sorted(set(files)):

@@ -17,9 +17,6 @@ dist/
 *.s
 *.ll
 
-# Go workspace artifacts
-/vendor/
-
 # Only the public README is published
 *.[mM][dD]
 !/README.md

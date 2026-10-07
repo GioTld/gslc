@@ -1,0 +1,42 @@
+const BUFFER_SIZE: usize = 4096
+const CHUNK_SIZE: usize = 512
+struct Natural { a: u8, b: u32, c: u8 }
+packed struct Packed { a: u8, b: u32, c: u8 }
+struct Header { magic: u32, length: u64 }
+struct Parent { child: Child }
+struct Child { value: u32 }
+func add(a: i32, b: i32) i32 { return a + b }
+func main() u32 {
+    if add(-2, 5) != 3 { return 1 }
+    if BUFFER_SIZE / CHUNK_SIZE != 8 as usize { return 2 }
+    if size_of(u32) != 4 as usize || align_of(u32) != 4 as usize { return 3 }
+    if size_of(u64) != 8 as usize || align_of(u64) != 8 as usize { return 4 }
+    if size_of(bool) != 1 as usize { return 5 }
+    if size_of(Natural) != 12 as usize || align_of(Natural) != 4 as usize { return 6 }
+    if size_of(Packed) != 6 as usize || align_of(Packed) != 1 as usize { return 7 }
+    if size_of(Header) != 16 as usize || align_of(Header) != 8 as usize { return 8 }
+    if size_of(Parent) != 4 as usize { return 9 }
+    var natural: Natural
+    var compact: Packed
+    unsafe {
+        if (&natural.b as usize) - (&natural as usize) != 4 as usize { return 10 }
+        if (&natural.c as usize) - (&natural as usize) != 8 as usize { return 11 }
+        if (&compact.a as usize) - (&compact as usize) != 0 as usize { return 12 }
+        if (&compact.b as usize) - (&compact as usize) != 1 as usize { return 13 }
+        if (&compact.c as usize) - (&compact as usize) != 5 as usize { return 14 }
+    }
+    if 1 + 2 * 3 != 7 { return 15 }
+    let a = false
+    let b = true
+    let c = true
+    if !(a && b || c) { return 16 }
+    if !(a == false && 3 < 4) { return 17 }
+    let value: i32 = 3
+    if -value * 2 != -6 { return 18 }
+    if !b && true { return 19 }
+    let continued = 20 +
+        30
+    if continued != 50 { return 20 }
+    if 0xFF_A0 != 65440 || 0b1011_0001 != 177 || 0o755 != 493 { return 21 }
+    return 0
+}
