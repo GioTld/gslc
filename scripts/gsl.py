@@ -11,9 +11,6 @@ import struct
 import subprocess
 import sys
 import seed
-from output_checks import check_output
-from mutation_checks import check_mutations
-from semantic_checks import check_semantics
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {"hosted": "x86_64-unknown-linux-gnu", "kernel": "x86_64-unknown-none-elf"}
@@ -180,6 +177,10 @@ class Runner:
         self.passed("compiler-fixed-point")
 
     def accept(self, args):
+        from output_checks import check_output
+        from mutation_checks import check_mutations
+        from semantic_checks import check_semantics
+
         self.rebuild()
         inventory = seed.read_json(self.root / "test/bootstrap/acceptance.json")
         require(inventory.get("format") == 1, "unsupported acceptance inventory")
@@ -417,14 +418,17 @@ def capacity_source(name, manifest):
     raise seed.SeedError(f"unknown capacity generator: {name}")
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["bootstrap", "build", "test"])
+def main(argv=None, installed=False):
+    parser = argparse.ArgumentParser(description="Build GSL source with the installed compiler." if installed else __doc__)
+    parser.add_argument("command", choices=["build"] if installed else ["bootstrap", "build", "test"])
     parser.add_argument("source", nargs="?", type=Path)
-    selection = parser.add_mutually_exclusive_group()
-    selection.add_argument("--seed", type=Path)
-    selection.add_argument("--compiler", type=Path)
-    parser.add_argument("--root", type=Path, default=ROOT)
+    if installed:
+        parser.set_defaults(seed=None, compiler=ROOT / "compiler", root=ROOT)
+    else:
+        selection = parser.add_mutually_exclusive_group()
+        selection.add_argument("--seed", type=Path)
+        selection.add_argument("--compiler", type=Path)
+        parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--target", choices=TARGETS, default="hosted")
     parser.add_argument("--clang", default="clang")

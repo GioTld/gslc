@@ -160,6 +160,10 @@ func sema_store_references(s: *Sema, p: *Parser, index: u32, value: SemType) {
         return
     }
     let symbol = sema_symbol(s, root)
+    if target.kind != EXPR_IDENT && symbol.pointer_depth == 0 && symbol.is_moved {
+        sema_reference_error(s, p, statement.assign.target_idx, 2005)
+        return
+    }
     if target.kind != EXPR_IDENT && symbol.pointer_depth > 0 {
         if (sema_reference_type(p, value, 0) || value.ref_scope > 0) && s.unsafe_depth == 0 { sema_reference_error(s, p, statement.assign.target_idx, 2011); }
         return

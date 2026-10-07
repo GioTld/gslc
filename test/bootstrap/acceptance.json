@@ -609,6 +609,66 @@
       "name": "reference_scopes",
       "fixture": "test/bootstrap/acceptance/reference_scopes.gsl",
       "exit": 0
+    },
+    {
+      "name": "ownership_arguments_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { let a = make(2); let b = make(3); if both(a,b) != 5 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_arguments_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { let a = make(2); let b = make(3); if mixed(&a,b) != 5 || peek(&a) != 2 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_assignment_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { var a = make(1); a.value = peek(&a) + 1; if a.value != 2 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_assignment_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { var a = make(1); a = make(take(a)+1); if take(a) != 2 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_reinitialize_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { var a = make(1); take(a); a = make(2); if take(a) != 2 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_reinitialize_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func reset(flag: bool) u32 { var a=make(1); take(a); if flag { a=make(2) } else { a=make(3) }; return take(a) } func main() u32 { if reset(true)!=2 || reset(false)!=3 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_branches_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func pick(flag: bool, a: Owned) u32 { if flag { return peek(&a) }; return take(a) } func main() u32 { if pick(true,make(3))!=3 || pick(false,make(4))!=4 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_branches_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func pick(flag: bool, a: Owned) u32 { if flag { take(a); return 1 } else { return peek(&a) } } func main() u32 { if pick(true,make(3))!=1 || pick(false,make(4))!=4 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_loops_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { let a=make(3); while false { var x: u32=1; }; if take(a)!=3 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_loops_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { var n:u32=0; var sum:u32=0; while n<4 { let a=make(n); n+=1; if n==2 { sum+=take(a); continue }; if n==4 { sum+=take(a); break }; sum+=take(a) }; if sum!=6 { return 1 }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_references_valid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() u32 { arena local(8); let a=local.alloc(1); let b=identity(a); var v:View; v.data=b; unsafe { volatile_write(v.data,7); if volatile_read(a)!=7 as u8 { return 1 } }; return 0 }",
+      "exit": 0
+    },
+    {
+      "name": "ownership_references_valid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func wrap(p:*u8) View { var v:View; v.data=identity(p); return v } func main() u32 { var x:u8=9 as u8; let v=wrap(&x); unsafe { if *v.data!=9 as u8 { return 1 } }; return 0 }",
+      "exit": 0
     }
   ],
   "objects": [
@@ -2161,6 +2221,102 @@
       "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func same(value: *View) *View { return value } func store(output: *View, value: *u8) { same(output).data = value; } func main() {}",
       "status": 2,
       "code": "E2011",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_arguments_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { let a = make(1); both(a,a); }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_arguments_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { let a = make(1); mixed(&a,a); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_assignment_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { var a = make(1); a.value = take(a); }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_assignment_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } struct Holder { item: Owned } func from_view(x: *Holder) Holder { var h: Holder; h.item = make(x.item.value); return h } func main() { var h: Holder; h.item = make(1); h.item = from_view(&h).item; take(h.item); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_reinitialize_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { var a=make(1); take(a); a.value=2; }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_reinitialize_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func bad(flag: bool) { var a=make(1); take(a); if flag { a=make(2) }; take(a); } func main() {}",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_branches_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func bad(flag: bool) { let a=make(1); if flag { take(a) } else { peek(&a) }; peek(&a); } func main() {}",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_branches_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func bad(flag: bool) { let a=make(1); if flag { peek(&a) }; take(a); } func main() {}",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_loops_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { let a=make(1); while true { take(a); break; } }",
+      "status": 2,
+      "code": "E2007",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_loops_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { let a=make(1); while true { peek(&a); continue; }; take(a); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_references_invalid_1",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func wrap(p:*u8) View { var v:View; v.data=identity(p); return v } func leak() View { arena local(8); return wrap(local.alloc(1)); } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "ownership_references_invalid_2",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } func make(n: u32) Owned { var x: Owned; x.value = n; return x } func take(x: Owned) u32 { return x.value } func peek(x: *Owned) u32 { return x.value } func both(a: Owned, b: Owned) u32 { return a.value + b.value } func mixed(a: *Owned, b: Owned) u32 { return a.value + b.value } func identity(p: *u8) *u8 { return p } func main() { var v:View; if true { arena local(8); let a=identity(local.alloc(1)); v.data=a; } }",
+      "status": 2,
+      "code": "E2010",
       "check_code": true,
       "check_missing_output": true
     }

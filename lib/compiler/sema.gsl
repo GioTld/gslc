@@ -749,8 +749,8 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         if node.assign.op != TOKEN_ASSIGN && sema_type_integer(target_type) == false {
             sema_mark_error(s, target_line, target_col)
         }
-        sema_store_references(s, p, stmt_idx, value_type)
         sema_consume(s, p, node.assign.value_idx, value_type)
+        sema_store_references(s, p, stmt_idx, value_type)
         if target.kind == EXPR_IDENT && s.error == false {
             let symbol_idx = sema_lookup(s, target.ident.name_ptr, target.ident.name_len)
             if symbol_idx != INVALID_INDEX { sema_symbol(s, symbol_idx).is_moved = false }

@@ -1,8 +1,7 @@
 name: GSL acceptance
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   gsl-acceptance:

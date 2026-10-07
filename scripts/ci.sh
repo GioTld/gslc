@@ -21,3 +21,5 @@ python3 scripts/gsl.py bootstrap --output "$1/initial"
 python3 scripts/gsl.py test --compiler "$1/initial/compiler" \
     --clang clang-18 --linker ld.lld-18 --llvm-version 18.1.3 \
     --output "$1/acceptance"
+
+python3 scripts/distribution_checks.py --output "$1/distribution"
