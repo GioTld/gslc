@@ -2,7 +2,7 @@ import "compiler/token"
 
 const INVALID_INDEX: u32 = 4294967295
 
-struct NodeSpan {
+copy struct NodeSpan {
     start: usize,
     end: usize,
     line: u32,

@@ -7,11 +7,11 @@
       "expressions": 20480,
       "statements": 5632,
       "functions": 224,
-      "parameters": 512,
+      "parameters": 576,
       "constants": 256,
       "structs": 128,
       "fields": 768,
-      "symbols": 1792
+      "symbols": 1920
     },
     "work_arena_bytes": 7471104
   },
@@ -22,6 +22,7 @@
     "lib/compiler/ast.gsl",
     "lib/compiler/parser.gsl",
     "lib/compiler/intrinsics.gsl",
+    "lib/compiler/ownership.gsl",
     "lib/compiler/sema.gsl",
     "lib/std/fs.gsl",
     "lib/compiler/output.gsl",

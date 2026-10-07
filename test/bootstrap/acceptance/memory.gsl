@@ -2,7 +2,7 @@ const CAPACITY: u32 = 128
 struct Packet { tag: u8, value: u64, next: *Packet }
 func packet_size() u32 { return size_of(Packet) as u32; }
 func packet_alignment() u32 { return align_of(Packet) as u32; }
-func packet_init(packet: *Packet, value: u64) { packet.tag = 7; packet.value = value; packet.next = packet; }
+func packet_init(packet: *Packet, value: u64) { packet.tag = 7; packet.value = value; unsafe { packet.next = packet; } }
 func byte_read(ptr: *u8) u8 { unsafe { return volatile_read(ptr); } }
 func byte_write(ptr: *u8, value: u8) { unsafe { volatile_write(ptr, value); } }
 func volatile_literal(ptr: *u8) { unsafe { volatile_write(ptr, 17); } }

@@ -23,9 +23,15 @@
       "activation": "A concrete compiler/consumer error-handling use; define representation and positive/negative/executable gates."
     },
     "ownership": {
-      "disposition": "deferred",
-      "reason": "Move and escape guarantees remain intended language behavior, but are absent from the current GSL subset.",
-      "activation": "An agreed ownership contract with branch/loop/field and reinitialization tests; current pointers must not be advertised as escape-safe."
+      "disposition": "partially_implemented",
+      "reason": "M15A/B implement struct moves, recursive copy validation, conservative borrow protection and scoped-reference escapes in GSL. Raw unsafe pointer effects remain trusted; historical Channel and typed-arena cases are still inactive.",
+      "activation": "Activate original Channel/typed-arena cases only when their syntax and runtime contracts exist. Current numeric-arena and struct contracts have direct GSL coverage.",
+      "evidence": [
+        "test/bootstrap/acceptance/move_semantics.gsl",
+        "test/bootstrap/acceptance.json: move_* and copy_* negative cases",
+        "test/bootstrap/acceptance/reference_scopes.gsl",
+        "test/bootstrap/acceptance.json: borrow_*, escape_* and reference_* negative cases"
+      ]
     },
     "comptime_arenas": {
       "disposition": "deferred",
@@ -922,7 +928,8 @@
         "status": "accounted_for",
         "assertions": [
           "All original source/expectation cases retained as deferred: TestMoveSemantics-use after move, TestMoveSemantics-branch move, TestMoveSemantics-reinitialize, TestMoveSemantics-copy value, TestMoveSemantics-borrow value, TestMoveSemantics-move in loop, TestMoveSemantics-function argument, TestMoveSemantics-return value, TestMoveSemantics-move field, TestMoveSemantics-plain struct moves, TestMoveSemantics-copy struct. No active GSL capability or passing test claimed."
-        ]
+        ],
+        "follow_up": "M15A adds executable struct-based equivalents in move_semantics.gsl and move_*/copy_* acceptance cases. Original source cases remain inactive here; Channel syntax and typed arenas are not implemented."
       }
     },
     {
@@ -934,7 +941,8 @@
         "status": "accounted_for",
         "assertions": [
           "All original source/expectation cases retained as deferred: TestCopyStructRejectsOwnedField. No active GSL capability or passing test claimed."
-        ]
+        ],
+        "follow_up": "M15A adds executable struct-based equivalents in move_semantics.gsl and move_*/copy_* acceptance cases. Original source cases remain inactive here; Channel syntax and typed arenas are not implemented."
       }
     },
     {

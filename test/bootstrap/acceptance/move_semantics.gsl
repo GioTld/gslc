@@ -1,0 +1,49 @@
+struct Owned { value: u32 }
+copy struct Small { value: u32 }
+copy struct Pair { first: Small, second: u32 }
+func make(value: u32) Owned { var result: Owned; result.value = value; return result }
+func take(value: Owned) u32 { return value.value }
+func forward(value: Owned) Owned { return value }
+func choose(flag: bool, value: Owned) u32 {
+    if flag { return take(value) } else { return take(value) }
+}
+func surviving(flag: bool, value: Owned) u32 {
+    if flag { take(value); return 1 }
+    return value.value
+}
+func reinitialize(flag: bool) u32 {
+    var value = make(0)
+    take(value)
+    if flag { value = make(20) } else { value = make(30) }
+    return take(value)
+}
+func main() u32 {
+    let first = make(7)
+    let second = first
+    if take(forward(second)) != 7 { return 1 }
+    var value = make(10)
+    let previous = value
+    value = make(20)
+    if take(previous) != 10 || take(value) != 20 { return 2 }
+    if choose(true, make(5)) != 5 || choose(false, make(6)) != 6 { return 3 }
+    if surviving(true, make(8)) != 1 || surviving(false, make(8)) != 8 { return 4 }
+    if reinitialize(true) != 20 || reinitialize(false) != 30 { return 5 }
+    var original: Pair
+    original.first.value = 11
+    original.second = 12
+    let copied = original
+    let again = original
+    if copied.first.value != 11 || again.second != 12 || original.first.value != 11 { return 6 }
+    var count: u32 = 0
+    var total: u32 = 0
+    while count < 3 {
+        let local = make(count)
+        total += take(local)
+        count += 1
+    }
+    if total != 3 { return 7 }
+    let borrowed = make(9)
+    let view = &borrowed
+    if view.value != 9 || borrowed.value != 9 { return 8 }
+    return 0
+}

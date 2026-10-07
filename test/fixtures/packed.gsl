@@ -1,7 +1,7 @@
 packed struct Header { tag: u8, value: u64, length: u16 }
 copy struct Natural { tag: u8, value: u64 }
 packed struct Nested { tag: u8, inner: Natural, tail: u16 }
-copy struct Outer { tag: u8, inner: Header, tail: u32 }
+struct Outer { tag: u8, inner: Header, tail: u32 }
 packed struct Link { tag: u8, next: *Link }
 
 func round_trip(value: Header) Header { return value }

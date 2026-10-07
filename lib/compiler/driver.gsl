@@ -85,6 +85,13 @@ func compile_string_profile(src: string, out_path: string, machine: bool, kernel
             if s.error_code == 2002 { message = "argument count mismatch" }
             if s.error_code == 2003 { message = "immutable binding" }
             if s.error_code == 2004 { message = "unsafe operation" }
+            if s.error_code == 2005 { message = "use of moved value" }
+            if s.error_code == 2006 { message = "copy struct contains non-copy field" }
+            if s.error_code == 2007 { message = "move from outer scope inside loop" }
+            if s.error_code == 2008 { message = "non-copy value from borrowed storage requires unsafe" }
+            if s.error_code == 2009 { message = "move of borrowed value" }
+            if s.error_code == 2010 { message = "reference escapes its storage scope" }
+            if s.error_code == 2011 { message = "reference store through pointer requires unsafe" }
             compiler_print_diagnostic(s.error_code, s.error_start, s.error_end, message)
             return 2
         }

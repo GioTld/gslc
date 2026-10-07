@@ -599,6 +599,16 @@
       "ir_contains": [
         "lshr i32"
       ]
+    },
+    {
+      "name": "move_semantics",
+      "fixture": "test/bootstrap/acceptance/move_semantics.gsl",
+      "exit": 0
+    },
+    {
+      "name": "reference_scopes",
+      "fixture": "test/bootstrap/acceptance/reference_scopes.gsl",
+      "exit": 0
     }
   ],
   "objects": [
@@ -893,7 +903,7 @@
     },
     {
       "name": "array_struct_field",
-      "source": "copy struct Item { data: [4]u8 } func main() { var item: Item; }",
+      "source": "struct Item { data: [4]u8 } func main() { var item: Item; }",
       "status": 4,
       "code": "E4000",
       "check_code": false
@@ -1789,6 +1799,370 @@
       "status": 2,
       "code": "E2004",
       "check_code": true
+    },
+    {
+      "name": "move_binding",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); let second = first; take(first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_argument",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); take(first); take(first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_duplicate_arguments",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func two(a: Owned, b: Owned) {} func main() { let first = make(); two(first, first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_assignment",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { var first = make(); var second = make(); second = first; take(first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_borrow_after_transfer",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); let second = first; let view = &first }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_field_root",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } struct Holder { item: Owned, other: u32 } func main(holder: Holder) u32 { let item = holder.item; return holder.other }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_branch_join",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main(flag: bool) u32 { let first = make(); if flag { take(first) } return first.value }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_partial_reinitialize",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main(flag: bool) u32 { var first = make(); take(first); if flag { first = make() } return first.value }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_loop_outer",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); while true { take(first) } }",
+      "status": 2,
+      "code": "E2007",
+      "check_code": true
+    },
+    {
+      "name": "move_loop_condition",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func condition(value: Owned) bool { return true } func main() { let first = make(); while condition(first) { break } }",
+      "status": 2,
+      "code": "E2007",
+      "check_code": true
+    },
+    {
+      "name": "move_loop_zero_iterations",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main(flag: bool) u32 { var first = make(); take(first); while flag { first = make(); break } return first.value }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "copy_owned_field",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } copy struct Bad { item: Owned } func main() {}",
+      "status": 2,
+      "code": "E2006",
+      "check_code": true
+    },
+    {
+      "name": "copy_nested_owned_field",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } struct Holder { item: Owned } copy struct Bad { item: Holder } func main() {}",
+      "status": 2,
+      "code": "E2006",
+      "check_code": true
+    },
+    {
+      "name": "copy_recursive_field",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } copy struct Bad { item: Bad } func main() {}",
+      "status": 2,
+      "code": "E2006",
+      "check_code": true
+    },
+    {
+      "name": "move_borrowed_field",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } struct Holder { item: Owned } func extract(value: *Holder) Owned { return value.item }",
+      "status": 2,
+      "code": "E2008",
+      "check_code": true
+    },
+    {
+      "name": "move_borrowed_call",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } struct Holder { item: Owned } func view(value: *Holder) *Holder { return value } func extract(value: *Holder) Owned { return view(value).item }",
+      "status": 2,
+      "code": "E2008",
+      "check_code": true
+    },
+    {
+      "name": "move_borrowed_temporary",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } struct Holder { item: Owned } func extract(value: Holder) Owned { return (&value).item }",
+      "status": 2,
+      "code": "E2008",
+      "check_code": true
+    },
+    {
+      "name": "move_array_element",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { var items: [1]Owned; let value = items[0] }",
+      "status": 2,
+      "code": "E2008",
+      "check_code": true
+    },
+    {
+      "name": "move_discarded_value",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); first; take(first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "move_short_circuit",
+      "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func condition(value: Owned) bool { return true } func main(flag: bool) { let first = make(); let result = flag && condition(first); take(first) }",
+      "status": 2,
+      "code": "E2005",
+      "check_code": true
+    },
+    {
+      "name": "borrow_then_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var value: Owned; value.value = 1; let alias = &value; take(value); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "borrow_alias_then_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var value: Owned; value.value = 1; let first = &value; let second = first; take(value); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "borrow_field_then_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var value: Owned; value.value = 1; let alias = &value.value; take(value); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "borrow_branch_then_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func consume(flag: bool) { var value: Owned; value.value = 1; if flag { let alias = &value; }; take(value); } func main() {}",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "borrow_reinitialize_then_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var value: Owned; value.value = 1; let alias = &value; var replacement: Owned; replacement.value = 2; value = replacement; take(value); }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "borrow_unsafe_move",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var value: Owned; value.value = 1; let alias = &value; unsafe { take(value); } }",
+      "status": 2,
+      "code": "E2009",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_arena_return",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u8 { arena local(8); return local.alloc(1); } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_arena_alias",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u8 { arena local(8); let value = local.alloc(1); let alias = value; return alias; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_local_return",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u32 { var local: u32 = 1; return &local; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_parameter_address",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak(local: u32) *u32 { return &local; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_local_field",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u32 { var local: Owned; local.value = 1; return &local.value; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_local_array",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u8 { var local: [4]u8; return &local[0]; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_arena_field",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() View { arena local(8); var result: View; result.data = local.alloc(1); return result; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_nested_field",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() Nest { arena local(8); var result: Nest; result.view.data = local.alloc(1); return result; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_call_result",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u8 { arena local(8); return identity(local.alloc(1)); } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_call_aggregate",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() View { arena local(8); return view_of(local.alloc(1)); } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_outer_alias",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var outer: *u8; if true { arena inner(8); let alias = inner.alloc(1); outer = alias; } }",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_outer_field",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var outer: Nest; if true { arena inner(8); outer.view.data = inner.alloc(1); } }",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_outer_element",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var outer: [2]View; if true { arena inner(8); outer[0].data = inner.alloc(1); } }",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_loop",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func main() { var outer: *u8; while true { arena inner(8); outer = inner.alloc(1); break; } }",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_branch_join",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak(flag: bool, initial: *u8) *u8 { arena local(8); var value = initial; if flag { value = local.alloc(1); }; return value; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_loop_join",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak(initial: *u8) *u8 { arena local(8); var value = local.alloc(1); while false { value = initial; }; return value; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_typed_alias",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u8 { arena local(8); let typed: *u8 = local.alloc(1); return typed; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_cast",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() *u32 { arena local(8); var value: *u32; unsafe { value = local.alloc(4) as *u32; }; return value; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "escape_integer_cast",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func leak() usize { arena local(8); let value = local.alloc(1) as usize; return value + 1 as usize; } func main() {}",
+      "status": 2,
+      "code": "E2010",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "reference_indirect_store",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func store(output: *View, value: *u8) { output.data = value; } func main() {}",
+      "status": 2,
+      "code": "E2011",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "reference_indirect_aggregate",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func store(output: *Nest, value: View) { output.view = value; } func main() {}",
+      "status": 2,
+      "code": "E2011",
+      "check_code": true,
+      "check_missing_output": true
+    },
+    {
+      "name": "reference_call_store",
+      "source": "struct Owned { value: u32 } copy struct View { data: *u8 } copy struct Nest { view: View } func take(value: Owned) u32 { return value.value } func identity(value: *u8) *u8 { return value } func view_of(value: *u8) View { var view: View; view.data = value; return view } func same(value: *View) *View { return value } func store(output: *View, value: *u8) { same(output).data = value; } func main() {}",
+      "status": 2,
+      "code": "E2011",
+      "check_code": true,
+      "check_missing_output": true
     }
   ],
   "capacities": [

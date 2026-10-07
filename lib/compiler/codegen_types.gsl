@@ -1,7 +1,7 @@
 import "compiler/codegen_text"
 import "compiler/intrinsics"
 
-const CODEGEN_MAX_LOCALS: u32 = 1792
+const CODEGEN_MAX_LOCALS: u32 = 1920
 // Scalar IDs encode bit widths; aggregates and pointer depth use disjoint ranges.
 const CODEGEN_STRUCT_BASE: u32 = 256
 const CODEGEN_POINTER_STEP: u32 = 65536
@@ -46,7 +46,7 @@ func codegen_bind(ctx: *Codegen, name_ptr: *u8, name_len: usize, value_reg: u32,
         return
     }
     let local = codegen_local(ctx, ctx.local_count)
-    local.name_ptr = name_ptr
+    unsafe { local.name_ptr = name_ptr }
     local.name_len = name_len
     local.value_reg = value_reg
     local.type_id = type_id

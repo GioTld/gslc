@@ -160,6 +160,9 @@ class RunnerTests(unittest.TestCase):
         capacity = re.findall(r"const CODEGEN_LOCAL_ARENA_BYTES: u32 = (\d+)", emitter)
         self.assertTrue(local)
         self.assertEqual(set(capacity), set(re.findall(r'metric\("local_arena_bytes",(\d+) as u64', probe)))
+        sema = (ROOT / "lib/compiler/sema.gsl").read_text()
+        move_buffers = re.findall(r"var (?:before|after): \[(\d+)\]u16", sema)
+        self.assertEqual(move_buffers, [str(manifest["storage"]["limits"]["symbols"])] * 2)
 
     def test_storage_report_rejects_capacity_drift_and_overflow(self):
         manifest = gsl.seed.read_json(ROOT / "test/bootstrap/manifest.json")

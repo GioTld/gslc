@@ -5,7 +5,7 @@ import "core/io"
 
 const PARSER_MAX_EXPRS:  u32 = 20480
 const PARSER_MAX_STMTS:  u32 = 5632
-const PARSER_MAX_PARAMS: u32 = 512
+const PARSER_MAX_PARAMS: u32 = 576
 const PARSER_MAX_DECLS:  u32 = 224
 const PARSER_MAX_CONSTS: u32 = 256
 const PARSER_MAX_STRUCTS: u32 = 128
@@ -196,12 +196,12 @@ func parser_type_span(p: *Parser) Token {
         if p.error == false && parser_find_type(p, parser_token_ptr(p, array_type), array_type.len) == INVALID_INDEX {
             if p.struct_count >= PARSER_MAX_STRUCTS { p.error = true; p.type_depth -= 1; return start }
             let structure = parser_struct(p, p.struct_count)
-            structure.name_ptr = parser_token_ptr(p, array_type)
+            unsafe { structure.name_ptr = parser_token_ptr(p, array_type) }
             structure.name_len = array_type.len
             structure.is_packed = false
             structure.is_array = true
             structure.array_count = count
-            structure.element_ptr = parser_token_ptr(p, element)
+            unsafe { structure.element_ptr = parser_token_ptr(p, element) }
             structure.element_len = element.len
             structure.field_start = 0
             structure.field_count = 0
@@ -301,7 +301,7 @@ func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token,
     if p.error { return INVALID_INDEX }
     let node = parser_expr(p, idx)
     node.kind = EXPR_CALL
-    node.call.callee_ptr = name_ptr
+    unsafe { node.call.callee_ptr = name_ptr }
     node.call.callee_len = name_len
     node.call.callee_expr_idx = callee_expr_idx
     node.call.span.start = start.offset
@@ -319,7 +319,7 @@ func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token,
             if p.error { return INVALID_INDEX }
             let argument = parser_expr(p, arg_idx)
             argument.kind = EXPR_IDENT
-            argument.ident.name_ptr = parser_token_ptr(p, type_span)
+            unsafe { argument.ident.name_ptr = parser_token_ptr(p, type_span) }
             argument.ident.name_len = type_span.len
             argument.ident.span.start = type_span.offset
             argument.ident.span.end = type_span.offset + type_span.len
@@ -396,7 +396,7 @@ func parse_primary(p: *Parser) u32 {
         if p.error { return INVALID_INDEX }
         let node = parser_expr(p, idx)
         node.kind = EXPR_IDENT
-        node.ident.name_ptr = parser_token_ptr(p, tok)
+        unsafe { node.ident.name_ptr = parser_token_ptr(p, tok) }
         node.ident.name_len = tok.len
         node.ident.span.start = tok.offset
         node.ident.span.end = tok.offset + tok.len
@@ -436,7 +436,7 @@ func parse_prefix_inner(p: *Parser) u32 {
                 let member = parser_expr(p, member_idx)
                 member.kind = EXPR_MEMBER
                 member.member.base_idx = operand
-                member.member.name_ptr = parser_token_ptr(p, field)
+                unsafe { member.member.name_ptr = parser_token_ptr(p, field) }
                 member.member.name_len = field.len
                 member.member.line = field.line
                 member.member.col = field.col
@@ -477,7 +477,7 @@ func parse_expr_inner(p: *Parser, min_prec: u32) u32 {
             let node = parser_expr(p, idx)
             node.kind = EXPR_MEMBER
             node.member.base_idx = left
-            node.member.name_ptr = parser_token_ptr(p, field)
+            unsafe { node.member.name_ptr = parser_token_ptr(p, field) }
             node.member.name_len = field.len
             node.member.line = field.line
             node.member.col = field.col
@@ -494,7 +494,7 @@ func parse_expr_inner(p: *Parser, min_prec: u32) u32 {
             let node = parser_expr(p, idx)
             node.kind = EXPR_CAST
             node.cast.source_idx = left
-            node.cast.type_ptr = parser_token_ptr(p, target)
+            unsafe { node.cast.type_ptr = parser_token_ptr(p, target) }
             node.cast.type_len = target.len
             node.cast.line = cast_tok.line
             node.cast.col = cast_tok.col
@@ -563,9 +563,9 @@ func parse_let_stmt(p: *Parser, is_mut: bool) u32 {
     let node = parser_stmt(p, idx)
     node.kind = STMT_LET
     if is_mut { node.kind = STMT_VAR }
-    node.let_s.name_ptr = parser_token_ptr(p, name_tok)
+    unsafe { node.let_s.name_ptr = parser_token_ptr(p, name_tok) }
     node.let_s.name_len = name_tok.len
-    node.let_s.type_ptr = type_ptr
+    unsafe { node.let_s.type_ptr = type_ptr }
     node.let_s.type_len = type_len
     node.let_s.is_mut = is_mut
     node.let_s.has_init = has_init
@@ -615,7 +615,7 @@ func parse_arena_stmt(p: *Parser) u32 {
     if p.error { return INVALID_INDEX }
     let node = parser_stmt(p, idx)
     node.kind = STMT_ARENA
-    node.arena_s.name_ptr = parser_token_ptr(p, name)
+    unsafe { node.arena_s.name_ptr = parser_token_ptr(p, name) }
     node.arena_s.name_len = name.len
     node.arena_s.size_expr_idx = size_idx
     return idx
@@ -770,9 +770,9 @@ func parse_struct_decl(p: *Parser) {
                 return
             }
             let field = parser_field(p, p.field_count)
-            field.name_ptr = parser_token_ptr(p, field_name)
+            unsafe { field.name_ptr = parser_token_ptr(p, field_name) }
             field.name_len = field_name.len
-            field.type_ptr = parser_token_ptr(p, field_type)
+            unsafe { field.type_ptr = parser_token_ptr(p, field_type) }
             field.type_len = field_type.len
             p.field_count += 1
             if p.cur.kind != TOKEN_COMMA && p.cur.kind != TOKEN_SEMICOLON && p.cur.kind != TOKEN_RBRACE {
@@ -789,7 +789,7 @@ func parse_struct_decl(p: *Parser) {
         return
     }
     let node = parser_struct(p, p.struct_count)
-    node.name_ptr = parser_token_ptr(p, name)
+    unsafe { node.name_ptr = parser_token_ptr(p, name) }
     node.name_len = name.len
     node.field_start = field_start
     node.field_count = p.field_count - field_start
@@ -854,9 +854,9 @@ func parse_const_decl(p: *Parser) {
     node.is_global = is_global
     node.has_init = has_init
     node.section_idx = INVALID_INDEX
-    node.name_ptr = parser_token_ptr(p, name)
+    unsafe { node.name_ptr = parser_token_ptr(p, name) }
     node.name_len = name.len
-    node.type_ptr = type_ptr
+    unsafe { node.type_ptr = type_ptr }
     node.type_len = type_len
     node.value_idx = value_idx
     node.span.start = span_start
@@ -891,8 +891,8 @@ func parse_func_decl(p: *Parser) u32 {
             return 0
         }
         let param = parser_param(p, p.param_count)
-        param.name_ptr = parser_token_ptr(p, pname)
-        param.type_ptr = parser_token_ptr(p, ptype)
+        unsafe { param.name_ptr = parser_token_ptr(p, pname) }
+        unsafe { param.type_ptr = parser_token_ptr(p, ptype) }
         param.name_len = pname.len
         param.type_len = ptype.len
         p.param_count += 1
@@ -942,11 +942,11 @@ func parse_func_decl(p: *Parser) u32 {
     let idx = p.decl_count
     let decl = parser_decl(p, idx)
     decl.section_idx = INVALID_INDEX
-    decl.name_ptr = parser_token_ptr(p, name_tok)
+    unsafe { decl.name_ptr = parser_token_ptr(p, name_tok) }
     decl.name_len = name_tok.len
     decl.param_start = param_start
     decl.param_count = param_count
-    decl.ret_type_ptr = ret_ptr
+    unsafe { decl.ret_type_ptr = ret_ptr }
     decl.ret_type_len = ret_len
     decl.body_start = body_start
     decl.body_count = body_count

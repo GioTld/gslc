@@ -1,0 +1,180 @@
+import "compiler/ast"
+
+const MOVE_SAVE: u32 = 0
+const MOVE_RESTORE: u32 = 1
+const MOVE_MERGE: u32 = 2
+const MOVE_FLAG: u32 = 1
+const BORROW_FLAG: u32 = 2
+const REFERENCE_SCOPE_SHIFT: u32 = 2
+
+func sema_copy_type(p: *Parser, value: SemType, depth: u32) bool {
+    if value.pointer_depth != 0 || value.kind == SEM_TYPE_INT_LITERAL { return true }
+    let index = parser_find_type(p, value.name_ptr, value.name_len)
+    if index == INVALID_INDEX { return true }
+    let structure = parser_struct(p, index)
+    if structure.is_array || structure.is_copy == false || depth >= PARSER_MAX_EXPR_DEPTH { return false }
+    var field_index = structure.field_start
+    while field_index < structure.field_start + structure.field_count {
+        let field = parser_field(p, field_index)
+        if sema_copy_type(p, sema_type_from_span(field.type_ptr, field.type_len), depth + 1) == false { return false }
+        field_index += 1
+    }
+    return true
+}
+
+func sema_consume(s: *Sema, p: *Parser, index: u32, value: SemType) {
+    if s.error || sema_copy_type(p, value, 0) { return }
+    var root = index
+    var indirect = false
+    while root != INVALID_INDEX {
+        let node = parser_expr(p, root)
+        if node.kind == EXPR_MEMBER { root = node.member.base_idx } else if node.kind == EXPR_INDEX { indirect = true; root = node.binary.left_idx } else if node.kind == EXPR_UNARY && (node.unary.op == TOKEN_STAR || node.unary.op == TOKEN_AMP) { indirect = true; root = node.unary.operand_idx } else { break }
+    }
+    if root == INVALID_INDEX { return }
+    let node = parser_expr(p, root)
+    if node.kind == EXPR_CALL {
+        let function_index = sema_lookup(s, node.call.callee_ptr, node.call.callee_len)
+        if function_index != INVALID_INDEX && sema_symbol(s, function_index).kind == SYM_FUNC {
+            let function = parser_decl(p, sema_symbol(s, function_index).func_idx)
+            let returned = sema_type_from_span(function.ret_type_ptr, function.ret_type_len)
+            if returned.pointer_depth != 0 { indirect = true }
+        }
+        if indirect && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.call.span, 2008) }
+        return
+    }
+    if node.kind != EXPR_IDENT { return }
+    let symbol_index = sema_lookup(s, node.ident.name_ptr, node.ident.name_len)
+    if symbol_index == INVALID_INDEX { return }
+    let symbol = sema_symbol(s, symbol_index)
+    if indirect || symbol.pointer_depth != 0 {
+        if s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.ident.span, 2008) }
+        return
+    }
+    if s.loop_depth > 0 && symbol.scope_lvl < s.loop_scope {
+        sema_mark_diagnostic(s, &node.ident.span, 2007)
+        return
+    }
+    if symbol.is_borrowed {
+        sema_mark_diagnostic(s, &node.ident.span, 2009)
+        return
+    }
+    symbol.is_moved = true
+}
+
+func sema_move_state(s: *Sema, storage: *u16, count: u32, mode: u32) {
+    // Scope depth is bounded by parser recursion; two low bits hold the flags.
+    var index: u32 = 0
+    while index < count {
+        let symbol = sema_symbol(s, index)
+        unsafe {
+            let slot = ((storage as usize) + (index as usize) * size_of(u16)) as *u16
+            if mode == MOVE_SAVE {
+                *slot = ((symbol.ref_scope << REFERENCE_SCOPE_SHIFT) | (symbol.is_borrowed as u32 * BORROW_FLAG) | (symbol.is_moved as u32 * MOVE_FLAG)) as u16
+            } else {
+                let saved = *slot as u32
+                let scope = saved >> REFERENCE_SCOPE_SHIFT
+                let moved = (saved & MOVE_FLAG) != 0
+                let borrowed = (saved & BORROW_FLAG) != 0
+                if mode == MOVE_RESTORE {
+                    symbol.ref_scope = scope
+                    symbol.is_moved = moved
+                    symbol.is_borrowed = borrowed
+                } else {
+                    if scope > symbol.ref_scope { symbol.ref_scope = scope }
+                    symbol.is_moved = symbol.is_moved || moved
+                    symbol.is_borrowed = symbol.is_borrowed || borrowed
+                }
+            }
+        }
+        index += 1
+    }
+}
+
+func sema_block_terminates(p: *Parser, start: u32, count: u32) bool {
+    var index = start
+    var seen: u32 = 0
+    while index != INVALID_INDEX && seen < count {
+        let stmt = parser_stmt(p, index)
+        if stmt.kind == STMT_RETURN || stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE { return true }
+        if stmt.kind == STMT_UNSAFE && sema_block_terminates(p, stmt.block.body_start, stmt.block.body_count) { return true }
+        if stmt.kind == STMT_IF && sema_block_terminates(p, stmt.block.body_start, stmt.block.body_count) && sema_block_terminates(p, stmt.block.else_start, stmt.block.else_count) { return true }
+        index = stmt.next_idx
+        seen += 1
+    }
+    return false
+}
+
+func sema_reference_type(p: *Parser, value: SemType, depth: u32) bool {
+    if value.pointer_depth > 0 || sema_name_is(value.name_ptr, value.name_len, "string") { return true }
+    let index = parser_find_type(p, value.name_ptr, value.name_len)
+    if index == INVALID_INDEX { return false }
+    if depth >= PARSER_MAX_EXPR_DEPTH { return true }
+    let structure = parser_struct(p, index)
+    if structure.is_array { return sema_reference_type(p, sema_type_from_span(structure.element_ptr, structure.element_len), depth + 1) }
+    var field_index = structure.field_start
+    while field_index < structure.field_start + structure.field_count {
+        let field = parser_field(p, field_index)
+        if sema_reference_type(p, sema_type_from_span(field.type_ptr, field.type_len), depth + 1) { return true }
+        field_index += 1
+    }
+    return false
+}
+
+func sema_reference_root(s: *Sema, p: *Parser, index: u32) u32 {
+    var current = index
+    while current != INVALID_INDEX {
+        let node = parser_expr(p, current)
+        if node.kind == EXPR_IDENT { return sema_lookup(s, node.ident.name_ptr, node.ident.name_len) }
+        if node.kind == EXPR_MEMBER {
+            current = node.member.base_idx
+        } else if node.kind == EXPR_INDEX {
+            current = node.binary.left_idx
+        } else if node.kind == EXPR_UNARY {
+            current = node.unary.operand_idx
+        } else {
+            return INVALID_INDEX
+        }
+    }
+    return INVALID_INDEX
+}
+
+func sema_borrow_scope(s: *Sema, p: *Parser, index: u32) u32 {
+    let root = sema_reference_root(s, p, index)
+    if root == INVALID_INDEX { return s.scope_lvl }
+    let symbol = sema_symbol(s, root)
+    if parser_expr(p, index).kind != EXPR_IDENT && symbol.pointer_depth > 0 { return symbol.ref_scope }
+    // A loan conservatively lasts until its owner leaves scope.
+    symbol.is_borrowed = true
+    var scope = symbol.scope_lvl
+    if symbol.ref_scope > scope { scope = symbol.ref_scope }
+    return scope
+}
+
+func sema_store_references(s: *Sema, p: *Parser, index: u32, value: SemType) {
+    if s.error { return }
+    let statement = parser_stmt(p, index)
+    let target = parser_expr(p, statement.assign.target_idx)
+    let root = sema_reference_root(s, p, statement.assign.target_idx)
+    if root == INVALID_INDEX {
+        if (sema_reference_type(p, value, 0) || value.ref_scope > 0) && s.unsafe_depth == 0 { sema_reference_error(s, p, statement.assign.target_idx, 2011); }
+        return
+    }
+    let symbol = sema_symbol(s, root)
+    if target.kind != EXPR_IDENT && symbol.pointer_depth > 0 {
+        if (sema_reference_type(p, value, 0) || value.ref_scope > 0) && s.unsafe_depth == 0 { sema_reference_error(s, p, statement.assign.target_idx, 2011); }
+        return
+    }
+    if value.ref_scope > symbol.scope_lvl && s.unsafe_depth == 0 { sema_reference_error(s, p, statement.assign.target_idx, 2010); }
+    if target.kind == EXPR_IDENT { symbol.ref_scope = value.ref_scope } else if value.ref_scope > symbol.ref_scope { symbol.ref_scope = value.ref_scope }
+}
+
+func sema_reference_error(s: *Sema, p: *Parser, index: u32, code: u32) {
+    var current = index
+    while current != INVALID_INDEX {
+        let node = parser_expr(p, current)
+        if node.kind == EXPR_IDENT { sema_mark_diagnostic(s, &node.ident.span, code); return; }
+        if node.kind == EXPR_CALL { sema_mark_diagnostic(s, &node.call.span, code); return; }
+        if node.kind == EXPR_MEMBER { current = node.member.base_idx } else if node.kind == EXPR_INDEX { current = node.binary.left_idx } else if node.kind == EXPR_UNARY { current = node.unary.operand_idx } else if node.kind == EXPR_CAST { current = node.cast.source_idx } else { break }
+    }
+    if s.error == false { sema_mark_error(s, 0, 0); s.error_code = code; }
+}
