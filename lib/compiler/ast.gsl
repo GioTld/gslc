@@ -38,19 +38,16 @@ const DECL_FUNC: u32 = 1
 struct IdentNode {
     name_ptr: *u8,
     name_len: usize,
-    span: NodeSpan
 }
 
 struct IntLitNode {
     val: i64,
-    span: NodeSpan
 }
 
 struct BinaryNode {
     op: u32,
     left_idx: u32,
     right_idx: u32,
-    span: NodeSpan
 }
 
 struct CallNode {
@@ -59,7 +56,6 @@ struct CallNode {
     callee_expr_idx: u32,
     arg_start: u32,
     arg_count: u32,
-    span: NodeSpan
 }
 
 struct CastNode {
@@ -78,14 +74,9 @@ struct MemberNode {
     col: u32
 }
 
-struct StringLitNode {
-    span: NodeSpan
-}
-
 struct UnaryNode {
     op: u32,
     operand_idx: u32,
-    span: NodeSpan
 }
 
 // Flat tagged slots keep AST storage bounded without heap allocation.
@@ -93,13 +84,13 @@ struct Expr {
     kind: u32,
     next_arg: u32,
     value_reg: u32,
+    span: NodeSpan,
     ident: IdentNode,
     int_lit: IntLitNode,
     binary: BinaryNode,
     call: CallNode,
     cast: CastNode,
     member: MemberNode,
-    string_lit: StringLitNode,
     unary: UnaryNode
 }
 

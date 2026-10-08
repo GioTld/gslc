@@ -1052,7 +1052,7 @@
     },
     {
       "name": "hardware_imported_syscall",
-      "source": "import \"core/io\"\nfunc main() {}",
+      "source": "import \"platform/linux_x86_64/io\"\nfunc main() {}",
       "status": 2,
       "target": "kernel"
     },
@@ -1140,7 +1140,17 @@
       "status": 2,
       "code": "E2004",
       "check_code": true,
-      "target": "kernel"
+      "target": "kernel",
+      "record": {
+        "code": "E2004",
+        "span": {
+          "start": 14,
+          "end": 27
+        },
+        "message": "unsafe operation"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2004: unsafe operation at 1:15\n"
     },
     {
       "name": "inb_arity",
@@ -1296,7 +1306,17 @@
     {
       "name": "unsupported",
       "source": "func main() { let text=\"gsl\"; let same=text==text; }",
-      "status": 4
+      "status": 4,
+      "record": {
+        "code": "E4000",
+        "span": {
+          "start": 0,
+          "end": 0
+        },
+        "message": "unsupported construct"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: unsupported construct\n"
     },
     {
       "name": "diagnostic_undefined",
@@ -1304,12 +1324,14 @@
       "status": 2,
       "record": {
         "code": "E2001",
-        "message": "undefined identifier",
         "span": {
           "start": 40,
           "end": 47
-        }
-      }
+        },
+        "message": "undefined identifier"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2001: undefined identifier at 1:41\n"
     },
     {
       "name": "diagnostic_arity",
@@ -1317,12 +1339,14 @@
       "status": 2,
       "record": {
         "code": "E2002",
-        "message": "argument count mismatch",
         "span": {
           "start": 62,
           "end": 70
-        }
-      }
+        },
+        "message": "argument count mismatch"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2002: argument count mismatch at 1:63\n"
     },
     {
       "name": "diagnostic_immutable",
@@ -1330,12 +1354,14 @@
       "status": 2,
       "record": {
         "code": "E2003",
-        "message": "immutable binding",
         "span": {
           "start": 33,
           "end": 38
-        }
-      }
+        },
+        "message": "immutable binding"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2003: immutable binding at 1:34\n"
     },
     {
       "name": "diagnostic_unsafe",
@@ -1343,12 +1369,14 @@
       "status": 2,
       "record": {
         "code": "E2004",
-        "message": "unsafe operation",
         "span": {
           "start": 18,
           "end": 37
-        }
-      }
+        },
+        "message": "unsafe operation"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2004: unsafe operation at 1:19\n"
     },
     {
       "name": "array_deep_type",
@@ -1865,7 +1893,17 @@
       "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } func main() { let first = make(); let second = first; take(first) }",
       "status": 2,
       "code": "E2005",
-      "check_code": true
+      "check_code": true,
+      "record": {
+        "code": "E2005",
+        "span": {
+          "start": 211,
+          "end": 216
+        },
+        "message": "use of moved value"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2005: use of moved value at 1:212\n"
     },
     {
       "name": "move_argument",
@@ -1942,7 +1980,17 @@
       "source": "struct Owned { value: u32 } func make() Owned { var result: Owned; result.value = 7; return result } func take(value: Owned) u32 { return value.value } copy struct Bad { item: Owned } func main() {}",
       "status": 2,
       "code": "E2006",
-      "check_code": true
+      "check_code": true,
+      "record": {
+        "code": "E2006",
+        "span": {
+          "start": 0,
+          "end": 0
+        },
+        "message": "copy struct contains non-copy field"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2006: copy struct contains non-copy field\n"
     },
     {
       "name": "copy_nested_owned_field",
@@ -2206,7 +2254,16 @@
       "status": 2,
       "code": "E2011",
       "check_code": true,
-      "check_missing_output": true
+      "check_missing_output": true,
+      "record": {
+        "code": "E2011",
+        "span": {
+          "start": 310,
+          "end": 316
+        },
+        "message": "reference store through pointer requires unsafe"
+      },
+      "human": "gslc-self: E2011: reference store through pointer requires unsafe at 1:311\n"
     },
     {
       "name": "reference_indirect_aggregate",
@@ -2238,7 +2295,16 @@
       "status": 2,
       "code": "E2009",
       "check_code": true,
-      "check_missing_output": true
+      "check_missing_output": true,
+      "record": {
+        "code": "E2009",
+        "span": {
+          "start": 417,
+          "end": 418
+        },
+        "message": "move of borrowed value"
+      },
+      "human": "gslc-self: E2009: move of borrowed value at 1:418\n"
     },
     {
       "name": "ownership_assignment_invalid_1",
@@ -2310,7 +2376,16 @@
       "status": 2,
       "code": "E2010",
       "check_code": true,
-      "check_missing_output": true
+      "check_missing_output": true,
+      "record": {
+        "code": "E2010",
+        "span": {
+          "start": 479,
+          "end": 508
+        },
+        "message": "reference escapes its storage scope"
+      },
+      "human": "gslc-self: E2010: reference escapes its storage scope at 1:480\n"
     },
     {
       "name": "ownership_references_invalid_2",
@@ -2319,6 +2394,36 @@
       "code": "E2010",
       "check_code": true,
       "check_missing_output": true
+    },
+    {
+      "name": "diagnostic_multiline",
+      "source": "func main() u32 {\n    let text = \"\u00e9\";\n    return missing;\n}\n",
+      "status": 2,
+      "record": {
+        "code": "E2001",
+        "span": {
+          "start": 50,
+          "end": 57
+        },
+        "message": "undefined identifier"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2001: undefined identifier at 3:12\n"
+    },
+    {
+      "name": "diagnostic_combined_source",
+      "source": "import \"core/string\"\nfunc main() u32 {\n    return missing;\n}\n",
+      "status": 2,
+      "record": {
+        "code": "E2001",
+        "span": {
+          "start": 270,
+          "end": 277
+        },
+        "message": "undefined identifier"
+      },
+      "check_missing_output": true,
+      "human": "gslc-self: E2001: undefined identifier at combined source 15:12\n"
     }
   ],
   "capacities": [
@@ -2441,7 +2546,7 @@
     },
     {
       "name": "array_struct_write",
-      "source": "import \"core/io\"; struct Item { value: u64 } func side_effect() u64 { print(\"unexpected\"); return 1 as u64; } func main(argc: u32, argv: *usize) u32 { var data: [1]Item; data[argc as usize].value = side_effect(); return 0; }"
+      "source": "import \"std/io\"; struct Item { value: u64 } func side_effect() u64 { io_print(\"unexpected\"); return 1 as u64; } func main(argc: u32, argv: *usize) u32 { var data: [1]Item; data[argc as usize].value = side_effect(); return 0; }"
     },
     {
       "name": "array_struct_borrow",
@@ -2453,7 +2558,7 @@
     },
     {
       "name": "array_write",
-      "source": "import \"core/io\"; func side_effect() u8 { print(\"unexpected\"); return 1 as u8; } func main(argc: u32, argv: *usize) u32 { var data: [1]u8; data[argc as usize] = side_effect(); return 0; }"
+      "source": "import \"std/io\"; func side_effect() u8 { io_print(\"unexpected\"); return 1 as u8; } func main(argc: u32, argv: *usize) u32 { var data: [1]u8; data[argc as usize] = side_effect(); return 0; }"
     },
     {
       "name": "array_negative",
@@ -2823,5 +2928,12 @@
         ".requests": "c8a6955c2d2b56f9dc6b534449387b6a00000000000000000000000000000000"
       }
     }
-  ]
+  ],
+  "stdlib": {
+    "contracts": "test/bootstrap/acceptance/std/contracts.gsl",
+    "linux": "test/bootstrap/acceptance/std/linux.gsl",
+    "copy": "test/bootstrap/acceptance/std/copy.gsl",
+    "pipe": "test/bootstrap/acceptance/std/pipe.gsl",
+    "backend": "test/bootstrap/platform"
+  }
 }

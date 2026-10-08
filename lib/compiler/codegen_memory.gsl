@@ -1,0 +1,109 @@
+import "compiler/codegen_types"
+
+// Packed fields and raw pointers provide no stronger alignment guarantee.
+func codegen_emit_load(p: *Parser, output: *CompilerOutput, ctx: *Codegen, type_id: u32, address: u32) u32 {
+    let reg = codegen_begin_result(output, ctx)
+    compiler_output_string(output, " = load ")
+    codegen_write_type(p, output, type_id)
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, address)
+    compiler_output_string(output, ", align 1\n")
+    return reg
+}
+
+func codegen_emit_index_address(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen) u32 {
+    let node = parser_expr(p, expr_idx)
+    let array_id = codegen_index_array(p, expr_idx, ctx)
+    let array_type = parser_struct(p, array_id - CODEGEN_STRUCT_BASE)
+    var base: u32 = 0
+    let base_type = codegen_expr_type(p, node.binary.left_idx, ctx, 0)
+    if base_type >= CODEGEN_POINTER_STEP { base = codegen_emit_expr(p, node.binary.left_idx, output, ctx, base_type, false) } else { base = codegen_emit_address(p, node.binary.left_idx, output, ctx) }
+    let index = codegen_emit_expr(p, node.binary.right_idx, output, ctx, 64, false)
+    let valid = codegen_begin_result(output, ctx)
+    compiler_output_string(output, " = icmp ult i64 ")
+    codegen_write_reg(output, index)
+    compiler_output_string(output, ", ")
+    codegen_write_u32(output, array_type.array_count)
+    compiler_output_string(output, "\n  br i1 ")
+    codegen_write_reg(output, valid)
+    compiler_output_string(output, ", label %array_ok_")
+    codegen_write_u32(output, valid)
+    compiler_output_string(output, ", label %array_trap_")
+    codegen_write_u32(output, valid)
+    compiler_output_string(output, "\narray_trap_")
+    codegen_write_u32(output, valid)
+    compiler_output_string(output, ":\n  call void @llvm.trap()\n  unreachable\narray_ok_")
+    codegen_write_u32(output, valid)
+    compiler_output_string(output, ":\n")
+    let address = codegen_begin_result(output, ctx)
+    compiler_output_string(output, " = getelementptr ")
+    codegen_write_type(p, output, array_id)
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, base)
+    compiler_output_string(output, ", i64 0, i64 ")
+    codegen_write_reg(output, index)
+    compiler_output_string(output, "\n")
+    return address
+}
+
+func codegen_emit_address(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen) u32 {
+    let node = parser_expr(p, expr_idx)
+    if node.kind == EXPR_INDEX { return codegen_emit_index_address(p, expr_idx, output, ctx) }
+    if node.kind == EXPR_IDENT {
+        let index = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
+        if index != INVALID_INDEX { return codegen_local(ctx, index).value_reg }
+        let address = codegen_begin_result(output, ctx)
+        compiler_output_string(output, " = getelementptr i8, ptr @")
+        codegen_write_token(p, output, node.ident.name_ptr, node.ident.name_len)
+        compiler_output_string(output, ", i64 0\n")
+        return address
+    }
+    if node.kind == EXPR_UNARY { return codegen_emit_expr(p, node.unary.operand_idx, output, ctx, 0, false) }
+    let field_idx = codegen_member_field(p, expr_idx, ctx)
+    var base_type = codegen_expr_type(p, node.member.base_idx, ctx, 0)
+    var address: u32 = 0
+    if base_type >= CODEGEN_POINTER_STEP {
+        address = codegen_emit_expr(p, node.member.base_idx, output, ctx, base_type, false)
+        base_type = codegen_deref_type(base_type)
+    } else { address = codegen_emit_address(p, node.member.base_idx, output, ctx) }
+    let structure = parser_struct(p, base_type - CODEGEN_STRUCT_BASE)
+    let reg = codegen_begin_result(output, ctx)
+    compiler_output_string(output, " = getelementptr ")
+    codegen_write_type(p, output, base_type)
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, address)
+    compiler_output_string(output, ", i32 0, i32 ")
+    codegen_write_u32(output, field_idx - structure.field_start)
+    compiler_output_string(output, "\n")
+    return reg
+}
+
+func codegen_emit_store(p: *Parser, output: *CompilerOutput, type_id: u32, address: u32, value: u32, initialized: bool) {
+    compiler_output_string(output, "  store ")
+    codegen_write_type(p, output, type_id)
+    compiler_output_string(output, " ")
+    if initialized { codegen_write_reg(output, value) } else { compiler_output_string(output, "zeroinitializer") }
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, address)
+    compiler_output_string(output, ", align 1\n")
+}
+
+func codegen_emit_volatile(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen, builtin: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    let address = codegen_emit_expr(p, node.call.arg_start, output, ctx, CODEGEN_POINTER_STEP + 8, false)
+    if builtin == BUILTIN_VOLATILE_WRITE {
+        let arg_idx = parser_expr(p, node.call.arg_start).next_arg
+        let value = codegen_emit_expr(p, arg_idx, output, ctx, 8, false)
+        compiler_output_string(output, "  store volatile i8 ")
+        codegen_write_reg(output, value)
+        compiler_output_string(output, ", ptr ")
+        codegen_write_reg(output, address)
+        compiler_output_string(output, ", align 1\n")
+        return 0
+    }
+    let reg = codegen_begin_result(output, ctx)
+    compiler_output_string(output, " = load volatile i8, ptr ")
+    codegen_write_reg(output, address)
+    compiler_output_string(output, ", align 1\n")
+    return reg
+}

@@ -1,0 +1,38 @@
+const IO_OK: u32 = 0
+const IO_INVALID: u32 = 1
+const IO_CLOSED: u32 = 2
+const IO_NOT_FOUND: u32 = 3
+const IO_PERMISSION: u32 = 4
+const IO_EXISTS: u32 = 5
+const IO_DIRECTORY: u32 = 6
+const IO_NO_SPACE: u32 = 7
+const IO_INTERRUPTED: u32 = 8
+const IO_WOULD_BLOCK: u32 = 9
+const IO_UNSUPPORTED: u32 = 10
+const IO_BUFFER_SMALL: u32 = 11
+const IO_ERROR: u32 = 12
+
+// Only std and platform implementations interpret the handle.
+struct File {
+    handle: u64,
+    is_open: bool
+}
+
+struct OpenResult {
+    file: File,
+    error: u32
+}
+
+copy struct IoResult {
+    count: usize,
+    error: u32,
+    eof: bool
+}
+
+func io_result(count: usize, error: u32, eof: bool) IoResult {
+    var result: IoResult
+    result.count = count
+    result.error = error
+    result.eof = eof
+    return result
+}

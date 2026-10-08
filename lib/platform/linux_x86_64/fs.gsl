@@ -1,0 +1,31 @@
+import "platform/linux_x86_64/native"
+import "platform/linux_x86_64/errors"
+
+const LINUX_CREATE_MODE: u64 = 438
+
+func linux_open_result(status: i64) OpenResult {
+    var result: OpenResult
+    result.file.handle = 0
+    result.file.is_open = status >= 0
+    result.error = linux_io_error(status)
+    if status >= 0 { result.file.handle = status as u64 }
+    return result
+}
+
+func platform_open_read(path: string) OpenResult {
+    var status = -LINUX_EINTR
+    while status == -LINUX_EINTR { status = linux_open(path, LINUX_O_RDONLY, 0 as u64) }
+    return linux_open_result(status)
+}
+
+func platform_create_new(path: string) OpenResult {
+    var status = -LINUX_EINTR
+    // The process umask applies to the default read/write permissions.
+    while status == -LINUX_EINTR { status = linux_open(path, LINUX_O_WRONLY | LINUX_O_CREAT | LINUX_O_EXCL, LINUX_CREATE_MODE) }
+    return linux_open_result(status)
+}
+
+func platform_close(handle: u64) u32 {
+    // Linux releases the descriptor even on a close error; never retry it.
+    return linux_io_error(linux_close(handle))
+}

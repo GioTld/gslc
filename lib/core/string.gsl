@@ -9,15 +9,3 @@ func strlen(s: string) u64 {
     return len
 }
 
-func print_raw(msg: string, len: u64) {
-    unsafe {
-        syscall_write(1 as u64, msg, len)
-    }
-}
-
-func print(msg: string) {
-    let len = strlen(msg)
-    unsafe {
-        syscall_write(1 as u64, msg, len)
-    }
-}

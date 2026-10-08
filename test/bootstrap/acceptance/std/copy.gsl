@@ -1,0 +1,39 @@
+import "std/fs"
+
+func copy_file(source: string, destination: string) u32 {
+    var input = fs_open_read(source)
+    if input.error != IO_OK { return input.error }
+    var output = fs_create_new(destination)
+    if output.error != IO_OK { fs_close(&input.file); return output.error }
+    var bytes: [4096]u8
+    var error = IO_OK
+    while error == IO_OK {
+        let part = io_read(&input.file, &bytes[0], 4096 as usize)
+        if part.error != IO_INTERRUPTED {
+            error = part.error
+            if error != IO_OK || part.eof { break }
+            if part.count == 0 as usize { error = IO_ERROR; break }
+            let written = io_write_all(&output.file, &bytes[0], part.count)
+            error = written.error
+        }
+    }
+    let input_closed = fs_close(&input.file)
+    let output_closed = fs_close(&output.file)
+    if error == IO_OK { error = input_closed }
+    if error == IO_OK { error = output_closed }
+    return error
+}
+
+// Linux entry adapter; copy_file itself only uses the portable API.
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 3 { return 64 }
+    var source: string
+    var destination: string
+    unsafe {
+        source = *(((argv as usize) + size_of(usize)) as *usize) as string
+        destination = *(((argv as usize) + (2 as usize) * size_of(usize)) as *usize) as string
+    }
+    let status = copy_file(source, destination)
+    if status != IO_OK { io_eprintln("copy failed") }
+    return status
+}

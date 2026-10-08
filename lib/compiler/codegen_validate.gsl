@@ -47,7 +47,7 @@ func codegen_preflight(p: *Parser) bool {
     let states = struct_states.alloc(PARSER_MAX_STRUCTS as usize)
     var struct_idx: u32 = 0
     while struct_idx < p.struct_count {
-        unsafe { volatile_write(((states as usize) + (struct_idx as usize)) as *u8, 0 as u8); }
+        unsafe { volatile_write(((states as usize) + (struct_idx as usize)) as *u8, LAYOUT_UNVISITED); }
         struct_idx += 1
     }
     struct_idx = 0

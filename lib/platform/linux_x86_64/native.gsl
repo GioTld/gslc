@@ -1,0 +1,27 @@
+// Linux x86_64 syscall ABI. This module is not a portable public API.
+const LINUX_O_RDONLY: u64 = 0
+const LINUX_O_WRONLY: u64 = 1
+const LINUX_O_CREAT: u64 = 64
+const LINUX_O_EXCL: u64 = 128
+const LINUX_O_TRUNC: u64 = 512
+const LINUX_EINTR: i64 = 4
+const LINUX_SYS_READ: u64 = 0
+const LINUX_SYS_WRITE: u64 = 1
+const LINUX_SYS_OPEN: u64 = 2
+const LINUX_SYS_CLOSE: u64 = 3
+
+func linux_open(path: string, flags: u64, mode: u64) i64 {
+    unsafe { return syscall(LINUX_SYS_OPEN, path as u64, flags, mode) }
+}
+
+func linux_read(handle: u64, buffer: *u8, count: usize) i64 {
+    unsafe { return syscall(LINUX_SYS_READ, handle, buffer as u64, count as u64) }
+}
+
+func linux_write(handle: u64, buffer: *u8, count: usize) i64 {
+    unsafe { return syscall(LINUX_SYS_WRITE, handle, buffer as u64, count as u64) }
+}
+
+func linux_close(handle: u64) i64 {
+    unsafe { return syscall(LINUX_SYS_CLOSE, handle, 0 as u64, 0 as u64) }
+}

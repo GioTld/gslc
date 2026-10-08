@@ -39,7 +39,7 @@ func sema_consume(s: *Sema, p: *Parser, index: u32, value: SemType) {
             let returned = sema_type_from_span(function.ret_type_ptr, function.ret_type_len)
             if returned.pointer_depth != 0 { indirect = true }
         }
-        if indirect && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.call.span, 2008) }
+        if indirect && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.span, 2008) }
         return
     }
     if node.kind != EXPR_IDENT { return }
@@ -47,15 +47,15 @@ func sema_consume(s: *Sema, p: *Parser, index: u32, value: SemType) {
     if symbol_index == INVALID_INDEX { return }
     let symbol = sema_symbol(s, symbol_index)
     if indirect || symbol.pointer_depth != 0 {
-        if s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.ident.span, 2008) }
+        if s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.span, 2008) }
         return
     }
     if s.loop_depth > 0 && symbol.scope_lvl < s.loop_scope {
-        sema_mark_diagnostic(s, &node.ident.span, 2007)
+        sema_mark_diagnostic(s, &node.span, 2007)
         return
     }
     if symbol.is_borrowed {
-        sema_mark_diagnostic(s, &node.ident.span, 2009)
+        sema_mark_diagnostic(s, &node.span, 2009)
         return
     }
     symbol.is_moved = true
@@ -176,8 +176,8 @@ func sema_reference_error(s: *Sema, p: *Parser, index: u32, code: u32) {
     var current = index
     while current != INVALID_INDEX {
         let node = parser_expr(p, current)
-        if node.kind == EXPR_IDENT { sema_mark_diagnostic(s, &node.ident.span, code); return; }
-        if node.kind == EXPR_CALL { sema_mark_diagnostic(s, &node.call.span, code); return; }
+        if node.kind == EXPR_IDENT { sema_mark_diagnostic(s, &node.span, code); return; }
+        if node.kind == EXPR_CALL { sema_mark_diagnostic(s, &node.span, code); return; }
         if node.kind == EXPR_MEMBER { current = node.member.base_idx } else if node.kind == EXPR_INDEX { current = node.binary.left_idx } else if node.kind == EXPR_UNARY { current = node.unary.operand_idx } else if node.kind == EXPR_CAST { current = node.cast.source_idx } else { break }
     }
     if s.error == false { sema_mark_error(s, 0, 0); s.error_code = code; }

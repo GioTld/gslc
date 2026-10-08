@@ -1,13 +1,13 @@
 import "compiler/token"
 import "compiler/ast"
 import "compiler/lexer"
-import "core/io"
+import "core/string"
 
-const PARSER_MAX_EXPRS:  u32 = 20480
-const PARSER_MAX_STMTS:  u32 = 5632
-const PARSER_MAX_PARAMS: u32 = 576
-const PARSER_MAX_DECLS:  u32 = 224
-const PARSER_MAX_CONSTS: u32 = 256
+const PARSER_MAX_EXPRS:  u32 = 26624
+const PARSER_MAX_STMTS:  u32 = 6656
+const PARSER_MAX_PARAMS: u32 = 1024
+const PARSER_MAX_DECLS:  u32 = 384
+const PARSER_MAX_CONSTS: u32 = 384
 const PARSER_MAX_STRUCTS: u32 = 128
 const PARSER_MAX_FIELDS: u32 = 768
 
@@ -231,10 +231,10 @@ func parse_index_suffix(p: *Parser, base: u32) u32 {
     node.kind = EXPR_INDEX
     node.binary.left_idx = base
     node.binary.right_idx = index
-    node.binary.span.start = bracket.offset
-    node.binary.span.end = p.cur.offset
-    node.binary.span.line = bracket.line
-    node.binary.span.col = bracket.col
+    node.span.start = bracket.offset
+    node.span.end = p.cur.offset
+    node.span.line = bracket.line
+    node.span.col = bracket.col
     return result
 }
 
@@ -304,9 +304,9 @@ func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token,
     unsafe { node.call.callee_ptr = name_ptr }
     node.call.callee_len = name_len
     node.call.callee_expr_idx = callee_expr_idx
-    node.call.span.start = start.offset
-    node.call.span.line = start.line
-    node.call.span.col = start.col
+    node.span.start = start.offset
+    node.span.line = start.line
+    node.span.col = start.col
 
     var arg_start: u32 = INVALID_INDEX
     var last_arg: u32 = INVALID_INDEX
@@ -321,10 +321,10 @@ func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token,
             argument.kind = EXPR_IDENT
             unsafe { argument.ident.name_ptr = parser_token_ptr(p, type_span) }
             argument.ident.name_len = type_span.len
-            argument.ident.span.start = type_span.offset
-            argument.ident.span.end = type_span.offset + type_span.len
-            argument.ident.span.line = type_span.line
-            argument.ident.span.col = type_span.col
+            argument.span.start = type_span.offset
+            argument.span.end = type_span.offset + type_span.len
+            argument.span.line = type_span.line
+            argument.span.col = type_span.col
         } else { arg_idx = parse_expr(p, PREC_NONE) }
         if p.error { return INVALID_INDEX }
         if arg_count == 0 { arg_start = arg_idx } else { parser_expr(p, last_arg).next_arg = arg_idx }
@@ -336,7 +336,7 @@ func parse_call_suffix(p: *Parser, name_ptr: *u8, name_len: usize, start: Token,
     parser_expect(p, TOKEN_RPAREN)
     node.call.arg_start = arg_start
     node.call.arg_count = arg_count
-    node.call.span.end = end
+    node.span.end = end
     return idx
 }
 
@@ -350,10 +350,10 @@ func parse_primary(p: *Parser) u32 {
         let node = parser_expr(p, idx)
         node.kind = EXPR_INT
         node.int_lit.val = tok.offset as i64
-        node.int_lit.span.start = tok.offset
-        node.int_lit.span.end = tok.offset + tok.len
-        node.int_lit.span.line = tok.line
-        node.int_lit.span.col = tok.col
+        node.span.start = tok.offset
+        node.span.end = tok.offset + tok.len
+        node.span.line = tok.line
+        node.span.col = tok.col
         return idx
     }
 
@@ -365,10 +365,10 @@ func parse_primary(p: *Parser) u32 {
         node.kind = EXPR_BOOL
         node.int_lit.val = 0
         if tok.kind == TOKEN_TRUE { node.int_lit.val = 1 }
-        node.int_lit.span.start = tok.offset
-        node.int_lit.span.end = tok.offset + tok.len
-        node.int_lit.span.line = tok.line
-        node.int_lit.span.col = tok.col
+        node.span.start = tok.offset
+        node.span.end = tok.offset + tok.len
+        node.span.line = tok.line
+        node.span.col = tok.col
         return idx
     }
 
@@ -378,10 +378,10 @@ func parse_primary(p: *Parser) u32 {
         if p.error { return INVALID_INDEX }
         let node = parser_expr(p, idx)
         node.kind = EXPR_STRING
-        node.string_lit.span.start = tok.offset
-        node.string_lit.span.end = tok.offset + tok.len
-        node.string_lit.span.line = tok.line
-        node.string_lit.span.col = tok.col
+        node.span.start = tok.offset
+        node.span.end = tok.offset + tok.len
+        node.span.line = tok.line
+        node.span.col = tok.col
         return idx
     }
 
@@ -398,10 +398,10 @@ func parse_primary(p: *Parser) u32 {
         node.kind = EXPR_IDENT
         unsafe { node.ident.name_ptr = parser_token_ptr(p, tok) }
         node.ident.name_len = tok.len
-        node.ident.span.start = tok.offset
-        node.ident.span.end = tok.offset + tok.len
-        node.ident.span.line = tok.line
-        node.ident.span.col = tok.col
+        node.span.start = tok.offset
+        node.span.end = tok.offset + tok.len
+        node.span.line = tok.line
+        node.span.col = tok.col
         return idx
     }
 
@@ -452,10 +452,10 @@ func parse_prefix_inner(p: *Parser) u32 {
         node.kind = EXPR_UNARY
         node.unary.op = op_tok.kind
         node.unary.operand_idx = operand
-        node.unary.span.start = op_tok.offset
-        node.unary.span.end = p.cur.offset
-        node.unary.span.line = op_tok.line
-        node.unary.span.col = op_tok.col
+        node.span.start = op_tok.offset
+        node.span.end = p.cur.offset
+        node.span.line = op_tok.line
+        node.span.col = op_tok.col
         return idx
     }
     return parse_primary(p)
@@ -518,9 +518,9 @@ func parse_expr_inner(p: *Parser, min_prec: u32) u32 {
         node.binary.op = op_tok.kind
         node.binary.left_idx = left
         node.binary.right_idx = right
-        node.binary.span.start = op_tok.offset
-        node.binary.span.line = op_tok.line
-        node.binary.span.col = op_tok.col
+        node.span.start = op_tok.offset
+        node.span.line = op_tok.line
+        node.span.col = op_tok.col
         left = idx
     }
 

@@ -1,0 +1,17 @@
+import "platform/linux_x86_64/native"
+import "platform/linux_x86_64/errors"
+
+func platform_read(handle: u64, buffer: *u8, count: usize) IoResult {
+    let status = linux_read(handle, buffer, count)
+    if status < 0 { return io_result(0 as usize, linux_io_error(status), false) }
+    return io_result(status as usize, IO_OK, status == 0 && count != 0 as usize)
+}
+
+func platform_write(handle: u64, buffer: *u8, count: usize) IoResult {
+    let status = linux_write(handle, buffer, count)
+    if status < 0 { return io_result(0 as usize, linux_io_error(status), false) }
+    return io_result(status as usize, IO_OK, false)
+}
+
+func platform_stdout() u64 { return 1 }
+func platform_stderr() u64 { return 2 }

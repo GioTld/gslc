@@ -1,5 +1,2 @@
-func exit(code: u32) {
-    unsafe {
-        syscall(60 as u64, code as u64, 0 as u64, 0 as u64)
-    }
-}
+import "platform/process"
+func process_exit(code: u32) { platform_exit(code) }

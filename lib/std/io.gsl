@@ -1,13 +1,53 @@
-import "core/io"
+import "core/string"
+import "std/types"
+import "platform/io"
 
-func println(msg: string) {
-    print(msg)
-    print("\n")
+// Buffers belong to the caller and must remain valid for the requested count.
+func io_read(file: *File, buffer: *u8, count: usize) IoResult {
+    if file.is_open == false { return io_result(0 as usize, IO_CLOSED, false) }
+    if count == 0 as usize { return io_result(0 as usize, IO_OK, false) }
+    return platform_read(file.handle, buffer, count)
 }
 
-func eprintln(msg: string) {
-    unsafe {
-        syscall_write(2 as u64, msg, 0 as u64)
-        syscall_write(2 as u64, "\n", 1 as u64)
+func io_write(file: *File, buffer: *u8, count: usize) IoResult {
+    if file.is_open == false { return io_result(0 as usize, IO_CLOSED, false) }
+    if count == 0 as usize { return io_result(0 as usize, IO_OK, false) }
+    return platform_write(file.handle, buffer, count)
+}
+
+func io_write_all(file: *File, buffer: *u8, count: usize) IoResult {
+    if file.is_open == false { return io_result(0 as usize, IO_CLOSED, false) }
+    var written: usize = 0 as usize
+    while written < count {
+        var current: *u8
+        unsafe { current = ((buffer as usize) + written) as *u8 }
+        let result = io_write(file, current, count - written)
+        if result.error != IO_INTERRUPTED {
+            if result.error != IO_OK { return io_result(written, result.error, false) }
+            if result.count == 0 as usize || result.count > count - written { return io_result(written, IO_ERROR, false) }
+            written += result.count
+        }
     }
+    return io_result(written, IO_OK, false)
 }
+
+func io_print_to(handle: u64, message: string, newline: bool) IoResult {
+    var file: File
+    file.handle = handle
+    file.is_open = true
+    var bytes: *u8
+    unsafe { bytes = message as *u8 }
+    var result = io_write_all(&file, bytes, strlen(message) as usize)
+    if newline && result.error == IO_OK {
+        unsafe { bytes = "\n" as *u8 }
+        let ending = io_write_all(&file, bytes, 1 as usize)
+        result.count += ending.count
+        result.error = ending.error
+    }
+    // Standard streams are borrowed; this helper does not close them.
+    return result
+}
+
+func io_print(message: string) IoResult { return io_print_to(platform_stdout(), message, false) }
+func io_println(message: string) IoResult { return io_print_to(platform_stdout(), message, true) }
+func io_eprintln(message: string) IoResult { return io_print_to(platform_stderr(), message, true) }

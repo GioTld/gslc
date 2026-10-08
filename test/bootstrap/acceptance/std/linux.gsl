@@ -1,0 +1,37 @@
+import "std/fs"
+import "platform/linux_x86_64/native"
+
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 2 { return 64 }
+    var path: string
+    unsafe { path = *(((argv as usize) + size_of(usize)) as *usize) as string }
+    var bytes: [8]u8
+    let exact = fs_read_into(path, &bytes[0], 5 as usize)
+    if exact.error != IO_OK || exact.count != 5 as usize || exact.eof == false { return 1 }
+    if bytes[0] != 0 as u8 || bytes[1] != 255 as u8 || bytes[4] != 4 as u8 { return 2 }
+    let small = fs_read_into(path, &bytes[0], 4 as usize)
+    if small.error != IO_BUFFER_SMALL || small.count != 4 as usize { return 3 }
+    let empty = fs_read_into("/dev/null", &bytes[0], 0 as usize)
+    if empty.error != IO_OK || empty.eof == false { return 4 }
+    var exists = fs_create_new(path)
+    if exists.error != IO_EXISTS || exists.file.is_open { return 5 }
+    var missing = fs_open_read("/gsl-nonexistent-parent/no-file")
+    if missing.error != IO_NOT_FOUND || missing.file.is_open { return 6 }
+    var directory = fs_open_read("/tmp")
+    if directory.error != IO_OK { return 7 }
+    let dir_read = io_read(&directory.file, &bytes[0], 8 as usize)
+    if dir_read.error != IO_DIRECTORY { return 8 }
+    if fs_close(&directory.file) != IO_OK { return 9 }
+    let full_handle = linux_open("/dev/full", LINUX_O_WRONLY, 0 as u64)
+    if full_handle < 0 { return 10 }
+    var full: File
+    full.handle = full_handle as u64
+    full.is_open = true
+    let failed = io_write_all(&full, &bytes[0], 8 as usize)
+    if failed.error != IO_NO_SPACE || failed.count != 0 as usize { return 11 }
+    if fs_close(&full) != IO_OK || fs_close(&full) != IO_CLOSED { return 12 }
+    let out = io_println("stdout")
+    let err = io_eprintln("stderr")
+    if out.error != IO_OK || out.count != 7 as usize || err.error != IO_OK || err.count != 7 as usize { return 13 }
+    return 0
+}

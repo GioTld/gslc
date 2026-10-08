@@ -1,4 +1,4 @@
-import "core/arch"
+import "arch/x86_64/cpu"
 
 func read_word(port: u16) u16 { unsafe { return inw(port) } }
 func write_word(port: u16, value: u16) { unsafe { outw(port, value) } }

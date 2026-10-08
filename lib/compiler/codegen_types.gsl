@@ -1,7 +1,7 @@
 import "compiler/codegen_text"
 import "compiler/intrinsics"
 
-const CODEGEN_MAX_LOCALS: u32 = 1920
+const CODEGEN_MAX_LOCALS: u32 = 3072
 // Scalar IDs encode bit widths; aggregates and pointer depth use disjoint ranges.
 const CODEGEN_STRUCT_BASE: u32 = 256
 const CODEGEN_POINTER_STEP: u32 = 65536
@@ -10,7 +10,8 @@ const CODEGEN_ARENA: u32 = 255
 const CODEGEN_STRING: u32 = 254
 const CODEGEN_MAX_LAYOUT: u32 = 4294967295
 const CODEGEN_MAX_POINTER_DEPTH: u32 = 8
-const CODEGEN_LOCAL_ARENA_BYTES: u32 = 65536
+const CODEGEN_LOCAL_ARENA_BYTES: u32 = 102400
+const LAYOUT_UNVISITED: u8 = 0
 const LAYOUT_VISITING: u8 = 1
 const LAYOUT_COMPLETE: u8 = 2
 
@@ -36,6 +37,8 @@ struct CodegenLocal {
     is_mut: bool
 }
 
+// Callers use a bound local index, or the next slot after checking capacity.
+// The table belongs to the current function's local_storage arena.
 func codegen_local(ctx: *Codegen, index: u32) *CodegenLocal {
     unsafe { return (((ctx.locals as usize) + (index as usize) * size_of(CodegenLocal)) as *CodegenLocal) }
 }
@@ -46,6 +49,7 @@ func codegen_bind(ctx: *Codegen, name_ptr: *u8, name_len: usize, value_reg: u32,
         return
     }
     let local = codegen_local(ctx, ctx.local_count)
+    // Names borrow the parser source buffer, which outlives the local table.
     unsafe { local.name_ptr = name_ptr }
     local.name_len = name_len
     local.value_reg = value_reg
@@ -125,6 +129,8 @@ func codegen_deref_type(type_id: u32) u32 {
     return result
 }
 
+// Preflight allocates one state byte per parser struct; recursive indices come
+// from resolved types. No state pointer escapes that preflight invocation.
 func codegen_struct_valid(p: *Parser, index: u32, states: *u8) bool {
     var state_ptr: *u8
     var state: u8
@@ -243,8 +249,8 @@ func codegen_find_global(p: *Parser, name: *u8, length: usize) u32 {
 func codegen_section_valid(p: *Parser, index: u32) bool {
     if index == INVALID_INDEX { return true }
     let value = parser_expr(p, index)
-    var offset = value.string_lit.span.start + 1 as usize
-    let end = value.string_lit.span.end - 1 as usize
+    var offset = value.span.start + 1 as usize
+    let end = value.span.end - 1 as usize
     if offset == end { return false }
     while offset < end {
         let ch = codegen_source_byte(p, offset)

@@ -1,0 +1,13 @@
+import "std/types"
+import "platform/fs"
+
+func fs_open_read(path: string) OpenResult { return platform_open_read(path) }
+func fs_create_new(path: string) OpenResult { return platform_create_new(path) }
+
+func fs_close(file: *File) u32 {
+    if file.is_open == false { return IO_CLOSED }
+    let handle = file.handle
+    file.is_open = false
+    file.handle = 0
+    return platform_close(handle)
+}

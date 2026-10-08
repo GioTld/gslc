@@ -48,7 +48,7 @@ def check(output, clang, linker):
     run(["gslc", "--version"])
     run(["gslc", "--help"])
     (project / "local.gsl").write_text("func answer() u32 { return 42 }\n")
-    (project / "main.gsl").write_text('import "std/io"\nimport "local"\nfunc main() u32 { println("installed GSL"); if answer()!=42 { return 1 }; return 0 }\n')
+    (project / "main.gsl").write_text('import "std/io"\nimport "local"\nfunc main() u32 { io_println("installed GSL"); if answer()!=42 { return 1 }; return 0 }\n')
     flags = ["--clang", clang, "--linker", linker]
     run(["gslc", "build", "main.gsl", "--output", "hosted", *flags])
     run([project / "hosted/program"], stdout="installed GSL\n")
@@ -56,6 +56,17 @@ def check(output, clang, linker):
     run(["gslc", "build", "kernel.gsl", "--target", "kernel", "--emit", "object", "--output", "kernel", *flags])
     if not (project / "kernel/program.o").is_file():
         raise RuntimeError("missing freestanding object")
+    external_backend = project / "external backend"
+    shutil.copytree(package.ROOT / "test/bootstrap/platform", external_backend)
+    (project / "portable.gsl").write_text('import "std/io"\nfunc kernel_main() { io_print("portable") }\n')
+    run(["gslc", "build", "portable.gsl", "--target", "kernel", "--emit", "object",
+         "--platform", "custom", "--platform-root", external_backend, "--output", "portable", *flags])
+    portable_ir = (project / "portable/program.ll").read_text()
+    if 'asm sideeffect "syscall"' in portable_ir or "@linux_" in portable_ir:
+        raise RuntimeError("installed std selected Linux for an external backend")
+    record = json.loads((project / "portable/report.json").read_text())
+    if record["platform"] != "custom" or not any(str(external_backend) in path for path in record["input_sources"]):
+        raise RuntimeError("installed build omitted backend source identity")
     (project / "bad.gsl").write_text('func main() u32 { return missing }\n')
     result = subprocess.run([str(command), "build", "bad.gsl", "--output", "bad", *flags],
                             cwd=project, env=environment, capture_output=True, timeout=60)

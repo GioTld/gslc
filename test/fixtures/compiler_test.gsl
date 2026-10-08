@@ -10,52 +10,52 @@ func main() u32 {
 
     let t1 = lexer_next(lex)
     if t1.kind != TOKEN_LET {
-        println("ERROR: esperado TOKEN_LET")
+        io_println("ERROR: esperado TOKEN_LET")
         return 1
     }
 
     let t2 = lexer_next(lex)
     if t2.kind != TOKEN_IDENT {
-        println("ERROR: esperado TOKEN_IDENT (x)")
+        io_println("ERROR: esperado TOKEN_IDENT (x)")
         return 2
     }
 
     let t3 = lexer_next(lex)
     if t3.kind != TOKEN_ASSIGN {
-        println("ERROR: esperado TOKEN_ASSIGN (=)")
+        io_println("ERROR: esperado TOKEN_ASSIGN (=)")
         return 3
     }
 
     let t4 = lexer_next(lex)
     if t4.kind != TOKEN_INT {
-        println("ERROR: esperado TOKEN_INT (42)")
+        io_println("ERROR: esperado TOKEN_INT (42)")
         return 4
     }
 
     let t5 = lexer_next(lex)
     if t5.kind != TOKEN_PLUS {
-        println("ERROR: esperado TOKEN_PLUS (+)")
+        io_println("ERROR: esperado TOKEN_PLUS (+)")
         return 5
     }
 
     let t6 = lexer_next(lex)
     if t6.kind != TOKEN_IDENT {
-        println("ERROR: esperado TOKEN_IDENT (y)")
+        io_println("ERROR: esperado TOKEN_IDENT (y)")
         return 6
     }
 
     let t7 = lexer_next(lex)
     if t7.kind != TOKEN_SEMICOLON {
-        println("ERROR: esperado TOKEN_SEMICOLON (;)")
+        io_println("ERROR: esperado TOKEN_SEMICOLON (;)")
         return 7
     }
 
     let t8 = lexer_next(lex)
     if t8.kind != TOKEN_EOF {
-        println("ERROR: esperado TOKEN_EOF")
+        io_println("ERROR: esperado TOKEN_EOF")
         return 8
     }
 
-    println("Lexer en GSL: Todos los tokens reconocidos exitosamente")
+    io_println("Lexer en GSL: Todos los tokens reconocidos exitosamente")
     return 0
 }

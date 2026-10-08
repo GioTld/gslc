@@ -4,24 +4,26 @@ import "compiler/imports"
 import "std/io"
 func metric(name: string, value: u64, first: bool) {
     var output: CompilerOutput; output.fd = 1; output.error = false;
-    if !first { print(","); }
-    print("\""); print(name); print("\":"); codegen_write_u64(&output,value);
+    if !first { io_print(","); }
+    io_print("\""); io_print(name); io_print("\":"); codegen_write_u64(&output,value);
 }
 func main(argc: u32, argv: *usize) u32 {
     if argc != 2 { return 1; }
     var path: string;
     unsafe { path = (*(((argv as usize) + size_of(usize)) as *usize)) as string; }
-    arena input(278536);
+    arena input(344072);
     var imports: ImportState;
-    imports.output = input.alloc(262145 as usize);
+    imports.output = input.alloc(327681 as usize);
     imports.paths = input.alloc(16384 as usize);
     imports.used = 0 as usize;
+    imports.platform = 0
+    imports.platform_root = ""
     imports.path_count = 0;
     if compiler_collect_file(path,&imports,0) != 0 { return 2; }
     return measure_loaded(compiler_import_as_string(imports.output),imports.used);
 }
 func measure_loaded(source: string, source_bytes: usize) u32 {
-    arena work(7471104);
+    arena work(6553600);
     var p: Parser;
     var s: Sema;
     let reserved = (PARSER_MAX_EXPRS as usize)*size_of(Expr)+(PARSER_MAX_STMTS as usize)*size_of(Stmt)+(PARSER_MAX_PARAMS as usize)*size_of(Param)+(PARSER_MAX_DECLS as usize)*size_of(FuncDecl)+(PARSER_MAX_CONSTS as usize)*size_of(CompilerConst)+(PARSER_MAX_STRUCTS as usize)*size_of(CompilerStruct)+(PARSER_MAX_FIELDS as usize)*size_of(CompilerField);
@@ -40,7 +42,7 @@ func measure_loaded(source: string, source_bytes: usize) u32 {
         if statement.kind == STMT_LET || statement.kind == STMT_VAR || statement.kind == STMT_ARENA { upper += 1; }
         index += 1;
     }
-    print("{");
+    io_print("{");
     metric("expressions",p.expr_count as u64,true);
     metric("max_expressions",PARSER_MAX_EXPRS as u64,false);
     metric("statements",p.stmt_count as u64,false);
@@ -61,7 +63,7 @@ func measure_loaded(source: string, source_bytes: usize) u32 {
     metric("storage_bytes",(reserved+(SEMA_MAX_SYMBOLS as usize)*size_of(Symbol)) as u64,false);
     metric("max_locals",CODEGEN_MAX_LOCALS as u64,false);
     metric("local_bytes",((CODEGEN_MAX_LOCALS as usize)*size_of(CodegenLocal)) as u64,false);
-    metric("local_arena_bytes",65536 as u64,false);
-    println("}");
+    metric("local_arena_bytes",102400 as u64,false);
+    io_println("}");
     return 0;
 }

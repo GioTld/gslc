@@ -1,0 +1,28 @@
+import "std/types"
+import "platform/linux_x86_64/native"
+const LINUX_EPERM: i64 = 1
+const LINUX_ENOENT: i64 = 2
+const LINUX_EBADF: i64 = 9
+const LINUX_EAGAIN: i64 = 11
+const LINUX_EACCES: i64 = 13
+const LINUX_EEXIST: i64 = 17
+const LINUX_EISDIR: i64 = 21
+const LINUX_EINVAL: i64 = 22
+const LINUX_ENOSPC: i64 = 28
+const LINUX_ENOSYS: i64 = 38
+const LINUX_EOPNOTSUPP: i64 = 95
+
+func linux_io_error(status: i64) u32 {
+    if status >= 0 { return IO_OK }
+    if status == -LINUX_ENOENT { return IO_NOT_FOUND }
+    if status == -LINUX_EINTR { return IO_INTERRUPTED }
+    if status == -LINUX_EBADF { return IO_CLOSED }
+    if status == -LINUX_EAGAIN { return IO_WOULD_BLOCK }
+    if status == -LINUX_EPERM || status == -LINUX_EACCES { return IO_PERMISSION }
+    if status == -LINUX_EEXIST { return IO_EXISTS }
+    if status == -LINUX_EISDIR { return IO_DIRECTORY }
+    if status == -LINUX_EINVAL { return IO_INVALID }
+    if status == -LINUX_ENOSPC { return IO_NO_SPACE }
+    if status == -LINUX_ENOSYS || status == -LINUX_EOPNOTSUPP { return IO_UNSUPPORTED }
+    return IO_ERROR
+}

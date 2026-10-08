@@ -1,38 +1,32 @@
-import "core/io"
+import "std/file"
+import "std/io"
 
-const O_RDONLY: u64 = 0
-const O_WRONLY: u64 = 1
-const O_RDWR: u64 = 2
-const O_CREAT: u64 = 64
-const O_TRUNC: u64 = 512
-
-func open(path: string, flags: u64, mode: u64) i64 {
-    unsafe {
-        return syscall(2 as u64, (path as usize) as u64, flags, mode)
+func fs_read_into(path: string, buffer: *u8, capacity: usize) IoResult {
+    var opened = fs_open_read(path)
+    if opened.error != IO_OK { return io_result(0 as usize, opened.error, false) }
+    var result = io_result(0 as usize, IO_OK, false)
+    while result.count < capacity && result.error == IO_OK && result.eof == false {
+        var current: *u8
+        unsafe { current = ((buffer as usize) + result.count) as *u8 }
+        let part = io_read(&opened.file, current, capacity - result.count)
+        if part.error != IO_INTERRUPTED {
+            result.error = part.error
+            result.eof = part.eof
+            if part.count > capacity - result.count { result.error = IO_ERROR } else { result.count += part.count }
+            if part.error == IO_OK && part.count == 0 as usize && part.eof == false { result.error = IO_ERROR }
+        }
     }
-}
-
-func read(fd: u64, buf: *u8, count: usize) i64 {
-    unsafe {
-        return syscall(0 as u64, fd, (buf as usize) as u64, count as u64)
+    if result.error == IO_OK && result.eof == false {
+        var extra: u8
+        var probe = io_result(0 as usize, IO_INTERRUPTED, false)
+        while probe.error == IO_INTERRUPTED { probe = io_read(&opened.file, &extra, 1 as usize) }
+        result.error = probe.error
+        result.eof = probe.eof
+        if probe.error == IO_OK {
+            if probe.count != 0 as usize { result.error = IO_BUFFER_SMALL } else if probe.eof == false { result.error = IO_ERROR }
+        }
     }
-}
-
-func write(fd: u64, buf: *u8, count: usize) i64 {
-    unsafe {
-        return syscall(1 as u64, fd, (buf as usize) as u64, count as u64)
-    }
-}
-
-func write_string(fd: u64, s: string) i64 {
-    let len = strlen(s)
-    unsafe {
-        return syscall(1 as u64, fd, (s as usize) as u64, len)
-    }
-}
-
-func close(fd: u64) i64 {
-    unsafe {
-        return syscall(3 as u64, fd, 0 as u64, 0 as u64)
-    }
+    let closed = fs_close(&opened.file)
+    if result.error == IO_OK { result.error = closed }
+    return result
 }

@@ -22,10 +22,11 @@ func string_probe() u32 {
     message.count = 6;
     let copied = message;
     if strlen(copied.text) != copied.count as u64 || copied.tag != 7 { return 2; }
-    print(identity(copied.text));
-    print(returned());
+    io_print(identity(copied.text));
+    io_print(returned());
     let text = "A\n\t\"\\é\x00\xFF\u263A\U0001F642\101";
-    print_raw(text, 17 as u64);
+    var standard: File; standard.handle = platform_stdout(); standard.is_open = true;
+    unsafe { io_write_all(&standard, text as *u8, 17 as usize); }
     var result: i64;
     unsafe {
         result = syscall_write(1 as u8, "SW", 2 as u16);
@@ -38,17 +39,17 @@ func main(argc: u32, argv: *usize) u32 {
     if argc != 3 { return 64; }
     let status = string_probe();
     if status != 0 { return status; }
-    let input = open(argument(argv, 1 as usize), 0 as u64, 0 as u64);
-    if input < 0 { return 5; }
+    var input = fs_open_read(argument(argv, 1 as usize));
+    if input.error != IO_OK { return 5; }
     arena bytes(64);
     let buffer = bytes.alloc(64 as usize);
-    let count = read(input as u64, buffer, 64 as usize);
-    close(input as u64);
-    if count != 8 { return 6; }
-    let output = open(argument(argv, 2 as usize), 577 as u64, 420 as u64);
-    if output < 0 { return 7; }
-    let written = write(output as u64, buffer, count as usize);
-    close(output as u64);
-    if written != count { return 8; }
+    let part = io_read(&input.file, buffer, 64 as usize);
+    fs_close(&input.file);
+    if part.error != IO_OK || part.count != 8 as usize { return 6; }
+    var output = fs_create_new(argument(argv, 2 as usize));
+    if output.error != IO_OK { return 7; }
+    let written = io_write_all(&output.file, buffer, part.count);
+    let closed = fs_close(&output.file);
+    if written.error != IO_OK || written.count != part.count || closed != IO_OK { return 8; }
     return 0;
 }

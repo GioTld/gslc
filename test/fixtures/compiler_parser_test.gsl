@@ -18,42 +18,42 @@ func main() u32 {
     parser_parse(&p)
 
     if p.error {
-        println("Parser: ERROR")
+        io_println("Parser: ERROR")
         return 1
     }
 
     if p.decl_count != 1 {
-        println("Parser: expected 1 func decl")
+        io_println("Parser: expected 1 func decl")
         return 2
     }
 
     if p.decls.name_len != 2 as usize {
-        println("Parser: wrong func name length")
+        io_println("Parser: wrong func name length")
         return 3
     }
 
     if p.decls.param_count != 1 {
-        println("Parser: expected 1 param")
+        io_println("Parser: expected 1 param")
         return 4
     }
 
     if p.decls.body_count != 1 {
-        println("Parser: expected 1 body stmt")
+        io_println("Parser: expected 1 body stmt")
         return 5
     }
 
-    println("Parser: func decl OK")
+    io_println("Parser: func decl OK")
 
     let symbols = work.alloc((SEMA_MAX_SYMBOLS as usize) * size_of(Symbol))
     sema_init(&s, symbols)
     sema_check(&s, &p)
 
     if s.error {
-        println("Sema: ERROR")
+        io_println("Sema: ERROR")
         return 6
     }
 
-    println("Sema: check OK")
-    println("Hito 7E: Parser y analisis semantico en GSL funcionan correctamente")
+    io_println("Sema: check OK")
+    io_println("Hito 7E: Parser y analisis semantico en GSL funcionan correctamente")
     return 0
 }

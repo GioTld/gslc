@@ -1,4 +1,4 @@
-import "core/arch"
+import "arch/x86_64/cpu"
 
 packed struct IDTEntry {
     offset_low: u16,

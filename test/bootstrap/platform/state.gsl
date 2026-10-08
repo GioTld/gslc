@@ -1,0 +1,30 @@
+import "std/types"
+
+var test_read_mode: u32
+var test_write_mode: u32
+var test_open_error: u32
+var test_close_error: u32
+var test_read_calls: u32
+var test_write_calls: u32
+var test_close_calls: u32
+var test_size: usize
+var test_offset: usize
+var test_written: usize
+var test_last_handle: u64
+var test_bytes: [64]u8
+
+func test_reset() {
+    unsafe {
+        test_read_mode = 0
+        test_write_mode = 0
+        test_open_error = IO_OK
+        test_close_error = IO_OK
+        test_read_calls = 0
+        test_write_calls = 0
+        test_close_calls = 0
+        test_size = 5 as usize
+        test_offset = 0 as usize
+        test_written = 0 as usize
+        test_last_handle = 0
+    }
+}

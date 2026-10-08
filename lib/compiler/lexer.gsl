@@ -1,5 +1,5 @@
 import "compiler/token"
-import "core/io"
+import "core/string"
 
 struct Lexer {
     src: *u8,

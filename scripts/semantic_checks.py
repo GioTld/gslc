@@ -10,9 +10,9 @@ TYPES = [(f"{prefix}{bits}", bits, prefix == "i")
              ("usize", 64, False), ("isize", 64, True)]
 OPERATORS = ["+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>",
              "==", "!=", "<", "<=", ">", ">="]
-PRELUDE = '''import "std/fs"
+PRELUDE = '''import "platform/linux_x86_64/native"
 func emit(value: u64) {
-    unsafe { write(1 as u64, (&value) as *u8, 8 as usize); }
+    unsafe { linux_write(1 as u64, (&value) as *u8, 8 as usize); }
 }
 '''
 

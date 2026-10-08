@@ -9,18 +9,11 @@ func at(buffer: *u8, offset: usize) *u8 {
 }
 func main(argc: u32, argv: *usize) u32 {
     if argc != 2 { return 1 }
-    arena input(262145)
-    let buffer = input.alloc(262145 as usize)
-    let fd = open(argument(argv), 0 as u64, 0 as u64)
-    if fd < 0 as i64 { return 2 }
-    var used: usize = 0 as usize
-    while used < 262144 as usize {
-        let count = read(fd as u64, at(buffer, used), (262144 as usize) - used)
-        if count < 0 as i64 { return 3 }
-        if count == 0 as i64 { break }
-        used += count as usize
-    }
-    close(fd as u64)
+    arena input(327681)
+    let buffer = input.alloc(327681 as usize)
+    let loaded = fs_read_into(argument(argv), buffer, 327680 as usize)
+    if loaded.error != IO_OK { return 2 }
+    let used = loaded.count
     unsafe { volatile_write(at(buffer, used), 0 as u8) }
     var lex: Lexer
     unsafe { lexer_init(&lex, (buffer as usize) as string) }

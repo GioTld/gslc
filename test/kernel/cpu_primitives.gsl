@@ -1,4 +1,4 @@
-import "core/serial"
+import "devices/pc/serial"
 
 copy struct Counter { value: u32 }
 func select_port(counter: *Counter) u16 { counter.value += 1; return 0x1cf as u16; }

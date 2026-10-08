@@ -1,0 +1,4 @@
+const LINUX_SYS_EXIT: u64 = 60
+func platform_exit(code: u32) {
+    unsafe { syscall(LINUX_SYS_EXIT, code as u64, 0 as u64, 0 as u64) }
+}

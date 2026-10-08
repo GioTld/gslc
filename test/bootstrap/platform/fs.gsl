@@ -1,0 +1,23 @@
+import "state"
+
+func platform_open_read(path: string) OpenResult {
+    unsafe {
+        var result: OpenResult
+        result.error = test_open_error
+        result.file.handle = 103
+        result.file.is_open = test_open_error == IO_OK
+        return result
+    }
+}
+
+func platform_create_new(path: string) OpenResult {
+    unsafe { return platform_open_read(path)     }
+}
+
+func platform_close(handle: u64) u32 {
+    unsafe {
+        test_last_handle = handle
+        test_close_calls += 1
+        return test_close_error
+    }
+}

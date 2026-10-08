@@ -1,3 +1,4 @@
+import "platform/linux_x86_64/native"
 import "compiler/output"
 
 const PIPE_NONBLOCK: u64 = 2048
@@ -8,12 +9,12 @@ const PIPE_BYTES: usize = 4096
 
 func main() u32 {
     var output: CompilerOutput
-    let full = open("/dev/full", O_WRONLY, 0 as u64)
+    let full = linux_open("/dev/full", LINUX_O_WRONLY, 0 as u64)
     if full < 0 { return 1 }
     output.fd = full as u64
     output.error = false
     compiler_output_string(&output, "must fail")
-    close(output.fd)
+    linux_close(output.fd)
     if output.error == false { return 2 }
 
     var pipes: [2]u32
@@ -34,16 +35,16 @@ func main() u32 {
         output.error = false
         compiler_output_write(&output, data, 8192 as usize)
         if output.error == false { return 5 }
-        if read(read_fd, received, 8192 as usize) != PIPE_BYTES as i64 { return 6 }
+        if linux_read(read_fd, received, 8192 as usize) != PIPE_BYTES as i64 { return 6 }
         index = 0 as usize
         while index < PIPE_BYTES {
             if volatile_read(((received as usize) + index) as *u8) != (index % 251 as usize) as u8 { return 7 }
             index += 1 as usize
         }
         compiler_output_string(&output, "error must remain set")
-        if read(read_fd, received, 8192 as usize) >= 0 { return 8 }
-        close(read_fd)
-        close(write_fd)
+        if linux_read(read_fd, received, 8192 as usize) >= 0 { return 8 }
+        linux_close(read_fd)
+        linux_close(write_fd)
         output.error = false
         compiler_output_string(&output, "closed descriptor")
         if output.error == false { return 9 }

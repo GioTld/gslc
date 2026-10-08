@@ -1,7 +1,8 @@
+import "platform/linux_x86_64/native"
 import "std/fs"
 struct State { trace: u64 }
 struct Item { value: u64 }
-func emit(value: u64) { unsafe { write(1 as u64, (&value) as *u8, 8 as usize); } }
+func emit(value: u64) { unsafe { linux_write(1 as u64, (&value) as *u8, 8 as usize); } }
 func mark(state: *State, digit: u64) bool { state.trace = state.trace * 10 + digit; return true; }
 func index(state: *State) usize { state.trace = state.trace * 10 + 2; return 1 as usize; }
 func value(state: *State) u64 { state.trace = state.trace * 10 + 3; return 77; }

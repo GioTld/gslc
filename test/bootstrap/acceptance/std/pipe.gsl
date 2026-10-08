@@ -1,0 +1,16 @@
+import "std/io"
+import "platform/linux_x86_64/native"
+const TEST_SYS_PIPE2: u64 = 293
+func main() u32 {
+    var handles: [2]u32
+    unsafe { if syscall(TEST_SYS_PIPE2, (&handles) as u64, 0 as u64, 0 as u64) != 0 { return 1 } }
+    linux_close(handles[0] as u64)
+    var pipe: File
+    pipe.handle = handles[1] as u64
+    pipe.is_open = true
+    var byte: u8 = 65 as u8
+    let result = io_write_all(&pipe, &byte, 1 as usize)
+    linux_close(pipe.handle)
+    if result.error != IO_ERROR || result.count != 0 as usize { return 2 }
+    return 0
+}

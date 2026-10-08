@@ -130,8 +130,8 @@ func codegen_char_size(value: CodegenChar) u32 {
 
 func codegen_string_size(p: *Parser, expr_idx: u32) u32 {
     let node = parser_expr(p, expr_idx)
-    var offset = node.string_lit.span.start + 1 as usize
-    let end = node.string_lit.span.end - 1 as usize
+    var offset = node.span.start + 1 as usize
+    let end = node.span.end - 1 as usize
     var size: u32 = 1
     while offset < end {
         let value = codegen_decode_char(p, offset, end)
@@ -177,8 +177,8 @@ func codegen_emit_strings(p: *Parser, output: *CompilerOutput) {
             compiler_output_string(output, " = private unnamed_addr constant [")
             codegen_write_u32(output, codegen_string_size(p, index))
             compiler_output_string(output, " x i8] c\"")
-            var offset = node.string_lit.span.start + 1 as usize
-            let end = node.string_lit.span.end - 1 as usize
+            var offset = node.span.start + 1 as usize
+            let end = node.span.end - 1 as usize
             while offset < end {
                 let value = codegen_decode_char(p, offset, end)
                 codegen_write_char(output, value)
@@ -195,8 +195,8 @@ func codegen_parse_integer(p: *Parser, expr_idx: u32) CodegenInteger {
     var result: CodegenInteger
     result.value = 0 as u64
     result.valid = false
-    var offset = node.int_lit.span.start
-    let end = node.int_lit.span.end
+    var offset = node.span.start
+    let end = node.span.end
     var base: u64 = 10 as u64
     if end - offset > 2 as usize && codegen_source_byte(p, offset) == ASCII_DIGIT_ZERO {
         let prefix = codegen_source_byte(p, offset + 1 as usize)
@@ -240,8 +240,8 @@ func codegen_write_label(output: *CompilerOutput, name: string, label: u32) {
 
 func codegen_write_assembly_literal(p: *Parser, output: *CompilerOutput, index: u32) {
     let node = parser_expr(p, index)
-    var offset = node.string_lit.span.start + 1 as usize
-    let end = node.string_lit.span.end - 1 as usize
+    var offset = node.span.start + 1 as usize
+    let end = node.span.end - 1 as usize
     while offset < end {
         let value = codegen_decode_char(p, offset, end)
         codegen_write_char(output, value)

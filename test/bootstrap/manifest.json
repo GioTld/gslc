@@ -1,38 +1,46 @@
 {
   "version": 3,
   "entry": "lib/compiler/cli.gsl",
-  "input_max_bytes": 262144,
+  "input_max_bytes": 327680,
   "storage": {
     "limits": {
-      "expressions": 20480,
-      "statements": 5632,
-      "functions": 224,
-      "parameters": 576,
-      "constants": 256,
+      "expressions": 26624,
+      "statements": 6656,
+      "functions": 384,
+      "parameters": 1024,
+      "constants": 384,
       "structs": 128,
       "fields": 768,
-      "symbols": 1920
+      "symbols": 3072
     },
-    "work_arena_bytes": 7471104
+    "work_arena_bytes": 6553600
   },
   "source_files": [
+    "lib/core/string.gsl",
+    "lib/std/types.gsl",
+    "lib/platform/linux_x86_64/native.gsl",
+    "lib/platform/linux_x86_64/errors.gsl",
+    "lib/platform/linux_x86_64/io.gsl",
+    "lib/std/io.gsl",
+    "lib/compiler/host_linux.gsl",
     "lib/compiler/token.gsl",
-    "lib/core/io.gsl",
     "lib/compiler/lexer.gsl",
     "lib/compiler/ast.gsl",
     "lib/compiler/parser.gsl",
     "lib/compiler/intrinsics.gsl",
     "lib/compiler/ownership.gsl",
     "lib/compiler/sema.gsl",
-    "lib/std/fs.gsl",
     "lib/compiler/output.gsl",
     "lib/compiler/codegen_text.gsl",
     "lib/compiler/codegen_types.gsl",
     "lib/compiler/codegen_validate.gsl",
     "lib/compiler/codegen_runtime.gsl",
+    "lib/compiler/codegen_memory.gsl",
+    "lib/compiler/codegen_hardware.gsl",
     "lib/compiler/codegen.gsl",
+    "lib/platform/linux_x86_64/fs.gsl",
+    "lib/std/file.gsl",
     "lib/compiler/imports.gsl",
-    "lib/std/io.gsl",
     "lib/compiler/driver.gsl",
     "lib/compiler/cli.gsl"
   ],
@@ -87,7 +95,7 @@
     },
     {
       "name": "strings, their runtime ABI, and Linux file I/O",
-      "source": "lib/std/fs.gsl",
+      "source": "lib/std/file.gsl",
       "gsl_level": "bounded"
     },
     {

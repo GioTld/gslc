@@ -1,0 +1,2 @@
+// The test backend has no process manager. This terminal operation is not run.
+func platform_exit(code: u32) { while true {} }

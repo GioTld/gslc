@@ -1,6 +1,6 @@
 import "core/mem"
 import "core/sync"
-import "core/io"
+import "core/string"
 
 func main() u32 {
     arena buf(256)

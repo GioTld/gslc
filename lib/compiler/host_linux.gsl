@@ -1,0 +1,88 @@
+import "platform/linux_x86_64/native"
+
+const OUTPUT_PATH_BYTES: usize = 4096
+const OUTPUT_SUFFIX_RESERVE: usize = 32
+const OUTPUT_O_EXCL: u64 = 128
+const OUTPUT_FILE_TYPE_MASK: u32 = 61440
+const OUTPUT_REGULAR_FILE: u32 = 32768
+const OUTPUT_PERMISSION_MASK: u32 = 511
+const OUTPUT_STAT_BYTES: usize = 144
+const OUTPUT_STAT_MODE_OFFSET: usize = 24
+const OUTPUT_ENOENT: i64 = 2
+const OUTPUT_SYS_LSTAT: u64 = 6
+const OUTPUT_SYS_GETPID: u64 = 39
+const OUTPUT_SYS_FSYNC: u64 = 74
+const OUTPUT_SYS_RENAME: u64 = 82
+const OUTPUT_SYS_UNLINK: u64 = 87
+const OUTPUT_SYS_FCHMOD: u64 = 91
+
+func compiler_emit_file(p: *Parser, path: string, kernel: bool) u32 {
+    let length = strlen(path) as usize
+    if length == 0 as usize || length >= OUTPUT_PATH_BYTES - OUTPUT_SUFFIX_RESERVE { return 3 }
+    arena paths(4240)
+    let temporary = paths.alloc(OUTPUT_PATH_BYTES)
+    let metadata = paths.alloc(OUTPUT_STAT_BYTES)
+    let path_ptr = compiler_import_string_ptr(path)
+    var mode = COMPILER_OUTPUT_MODE
+    var existed = false
+    unsafe {
+        let status = syscall(OUTPUT_SYS_LSTAT, path_ptr as u64, metadata as u64, 0 as u64)
+        if status == 0 {
+            existed = true
+            let file_mode = *(((metadata as usize) + OUTPUT_STAT_MODE_OFFSET) as *u32)
+            if (file_mode & OUTPUT_FILE_TYPE_MASK) != OUTPUT_REGULAR_FILE { return 3 }
+            mode = (file_mode & OUTPUT_PERMISSION_MASK) as u64
+        } else if status != -OUTPUT_ENOENT { return 3 }
+    }
+    var offset: usize = 0
+    while offset < length {
+        compiler_import_put(temporary, offset, compiler_import_byte(path_ptr, offset))
+        offset += 1 as usize
+    }
+    let suffix_name = ".gsl-tmp-"
+    let suffix = compiler_import_string_ptr(suffix_name)
+    var index: usize = 0
+    while index < strlen(suffix_name) as usize {
+        compiler_import_put(temporary, offset, compiler_import_byte(suffix, index))
+        offset += 1 as usize
+        index += 1 as usize
+    }
+    var pid: u64
+    unsafe { pid = syscall(OUTPUT_SYS_GETPID, 0 as u64, 0 as u64, 0 as u64) as u64 }
+    var place: u64 = 1
+    while pid / place >= 10 { place = place * 10 }
+    while place > 0 {
+        compiler_import_put(temporary, offset, (pid / place) as u8 + ASCII_DIGIT_ZERO)
+        offset += 1 as usize
+        pid = pid % place
+        place = place / 10
+    }
+    compiler_import_put(temporary, offset, 0 as u8)
+    let fd = linux_open(compiler_import_as_string(temporary), LINUX_O_WRONLY | LINUX_O_CREAT | OUTPUT_O_EXCL, mode)
+    if fd < 0 { return 3 }
+    var output: CompilerOutput
+    output.fd = fd as u64
+    output.error = false
+    let valid = codegen_emit_profile(p, &output, kernel)
+    if valid && output.error == false {
+        unsafe {
+            if existed && syscall(OUTPUT_SYS_FCHMOD, output.fd, mode, 0 as u64) != 0 { output.error = true }
+            var synced = -LINUX_EINTR
+            while synced == -LINUX_EINTR { synced = syscall(OUTPUT_SYS_FSYNC, output.fd, 0 as u64, 0 as u64) }
+            if synced != 0 { output.error = true }
+        }
+    }
+    // Linux releases the descriptor even when close reports an error; do not retry it.
+    if linux_close(output.fd) != 0 { output.error = true }
+    if valid && output.error == false {
+        unsafe {
+            if syscall(OUTPUT_SYS_RENAME, temporary as u64, path_ptr as u64, 0 as u64) == 0 { return 0 }
+        }
+        output.error = true
+    }
+    unsafe {
+        if syscall(OUTPUT_SYS_UNLINK, temporary as u64, 0 as u64, 0 as u64) != 0 { output.error = true }
+    }
+    if output.error { return 3 }
+    return 4
+}

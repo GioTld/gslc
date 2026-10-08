@@ -48,6 +48,9 @@ class Runner:
             for name, version in self.versions.items():
                 require(re.search(r'\b' + re.escape(args.llvm_version) + r'\b', version), f"unexpected {name} version: {version}")
         self.compare = None
+        self.platform = getattr(args, "platform", None)
+        self.platform_root = getattr(args, "platform_root", None)
+        self.record_sources = args.command == "build"
         self.report.update(tools=self.versions, seed=str(self.bundle), compiler_sha256=seed.sha(self.compiler.read_bytes()))
         self.save()
 
@@ -70,11 +73,28 @@ class Runner:
         self.save()
         print(f"PASS {name}", flush=True)
 
+    def platform_options(self):
+        options = []
+        if self.platform is not None:
+            options += ["--platform", self.platform]
+        if self.platform_root is not None:
+            options += ["--platform-root", self.platform_root.resolve()]
+        return options
+
     def emit(self, source, output, target="hosted"):
-        self.run([self.compiler, "--target=" + TARGETS[target], source, output])
+        options = self.platform_options()
+        self.run([self.compiler, "--target=" + TARGETS[target], *options, source, output])
+        if self.record_sources:
+            listed = self.run([self.compiler, "--list-sources", "--target=" + TARGETS[target], *options, source, output])
+            paths = [Path(line) for line in listed.stdout.decode().splitlines()]
+            paths = [path if path.is_absolute() else self.root / path for path in paths]
+            self.report["platform"] = self.platform or ("linux-x86_64" if target == "hosted" else "none")
+            self.report["platform_root"] = str(self.platform_root.resolve()) if self.platform_root else None
+            self.report["input_sources"] = {str(path.resolve()): seed.sha(path.read_bytes()) for path in paths}
+            self.save()
         if self.compare:
             alternate = output.with_suffix(".compare.ll")
-            self.run([self.compare, "--target=" + TARGETS[target], source, alternate])
+            self.run([self.compare, "--target=" + TARGETS[target], *options, source, alternate])
             require(output.read_bytes() == alternate.read_bytes(), f"fixture IR differs: {source}")
         if target == "kernel":
             kernel_ir(output.read_text())
@@ -131,9 +151,19 @@ class Runner:
                 repeated = self.run([compiler, "--diagnostics=json", "--target=" + TARGETS[case.get("target", "hosted")], source, output], case["status"])
                 require(not output.exists(), f"rejected input created output: {name}")
                 require(json.loads(repeated.stdout) == record, "output existence changed diagnostic")
+            if "human" in case:
+                for present in [True, False]:
+                    output.unlink(missing_ok=True)
+                    if present:
+                        output.write_bytes(b"preserved")
+                    human = self.run([compiler, "--target=" + TARGETS[case.get("target", "hosted")], source, output], case["status"])
+                    require(human.stdout == case["human"].encode() and not human.stderr, f"human diagnostic mismatch: {name}: {human.stdout!r}")
+                    require(output.read_bytes() == b"preserved" if present else not output.exists(), f"human diagnostic changed output: {name}")
             diagnostics.append(record)
         require(all(record == diagnostics[0] for record in diagnostics), f"candidate diagnostics differ: {name}")
         self.passed(name)
+        if "human" in case:
+            self.passed(name + "-human")
 
     def object_case(self, case):
         ir = self.work / (case["name"] + ".ll")
@@ -180,6 +210,7 @@ class Runner:
         from output_checks import check_output
         from mutation_checks import check_mutations
         from semantic_checks import check_semantics
+        from stdlib_checks import check_std
 
         self.rebuild()
         inventory = seed.read_json(self.root / "test/bootstrap/acceptance.json")
@@ -270,6 +301,7 @@ class Runner:
             result = self.run([seed.executable("qemu-system-x86_64"), "-display", "none", "-serial", "stdio", "-monitor", "none", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-kernel", image, *case["qemu_args"]], 1, 10)
             require(result.stdout == case["stdout"].encode() and not result.stderr, f"QEMU output mismatch: {case['name']}")
             self.passed(case["name"])
+        check_std(self)
         check_output(self)
         check_mutations(self)
         check_semantics(self)
@@ -296,6 +328,8 @@ def compiler_closure(root, manifest):
         visited.add(name)
         text = (root / name).read_text()
         for imported in re.findall(r'^\s*import\s+"([^"\n]+)"', text, re.MULTILINE):
+            if imported in {"platform/io", "platform/fs", "platform/process"}:
+                imported = "platform/linux_x86_64/" + imported.split("/")[1]
             visit("lib/" + seed.relative(imported) + ".gsl")
         ordered.append(name)
     visit(manifest["entry"])
@@ -431,6 +465,8 @@ def main(argv=None, installed=False):
         parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--target", choices=TARGETS, default="hosted")
+    parser.add_argument("--platform", choices=["linux-x86_64", "none", "custom"])
+    parser.add_argument("--platform-root", type=Path)
     parser.add_argument("--clang", default="clang")
     parser.add_argument("--linker", default="ld.lld")
     parser.add_argument("--llvm-version")

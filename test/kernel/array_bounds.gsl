@@ -1,5 +1,5 @@
-import "core/serial"
-import "core/descriptors"
+import "devices/pc/serial"
+import "arch/x86_64/descriptors"
 
 func interrupt_gate() {
     serial_write_byte(66 as u8)

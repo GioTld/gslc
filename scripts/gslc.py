@@ -9,7 +9,7 @@ sys.path.insert(0, str(root / "scripts"))
 
 if sys.argv[1:] == ["--version"]:
     metadata = json.loads((root / "compiler.json").read_text())
-    print(f"gslc {metadata['host']} {metadata['source_revision']}")
+    print(f"gslc {metadata.get('version', 'development')} {metadata['host']} {metadata['source_revision']}")
 else:
     import gsl
     sys.exit(gsl.main(installed=True))

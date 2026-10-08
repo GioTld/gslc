@@ -1,17 +1,25 @@
+import "compiler/intrinsics"
+import "std/io"
 import "compiler/token"
 import "compiler/lexer"
-import "std/fs"
+import "std/file"
 
-const COMPILER_MAX_SOURCE_BYTES: usize = 262144
+const COMPILER_MAX_SOURCE_BYTES: usize = 327680
 const COMPILER_MAX_MODULES: u32 = 64
 const COMPILER_MAX_IMPORT_DEPTH: u32 = 16
 const COMPILER_PATH_SLOT_BYTES: usize = 256
+const COMPILER_PLATFORM_LINUX: u32 = 0
+const COMPILER_PLATFORM_NONE: u32 = 1
+const COMPILER_PLATFORM_CUSTOM: u32 = 2
+const COMPILER_PLATFORM_PREFIX_BYTES: usize = 9
 
 struct ImportState {
     output: *u8,
     used: usize,
     paths: *u8,
-    path_count: u32
+    path_count: u32,
+    platform: u32,
+    platform_root: string
 }
 
 func compiler_import_at(buffer: *u8, offset: usize) *u8 {
@@ -158,10 +166,65 @@ func compiler_import_candidate(current: string, name: *u8, name_len: usize, fall
     return true
 }
 
+func compiler_platform_kind(name: string, root: string, kernel: bool) u32 {
+    let bytes = compiler_import_string_ptr(name)
+    let length = strlen(name) as usize
+    if compiler_name_is(bytes, length, "custom") {
+        if strlen(root) == 0 { return INVALID_INDEX }
+        return COMPILER_PLATFORM_CUSTOM
+    }
+    if strlen(root) != 0 { return INVALID_INDEX }
+    if compiler_name_is(bytes, length, "none") { return COMPILER_PLATFORM_NONE }
+    if length == 0 as usize {
+        if kernel { return COMPILER_PLATFORM_NONE }
+        return COMPILER_PLATFORM_LINUX
+    }
+    if compiler_name_is(bytes, length, "linux-x86_64") && kernel == false { return COMPILER_PLATFORM_LINUX }
+    return INVALID_INDEX
+}
+
+func compiler_platform_candidate(current: string, name: *u8, length: usize, state: *ImportState, output: *u8) bool {
+    if state.platform == COMPILER_PLATFORM_NONE { return false }
+    if state.platform == COMPILER_PLATFORM_LINUX {
+        var module = "platform/linux_x86_64/io"
+        if compiler_name_is(name, length, "platform/fs") { module = "platform/linux_x86_64/fs" }
+        if compiler_name_is(name, length, "platform/process") { module = "platform/linux_x86_64/process" }
+        return compiler_import_candidate(current, compiler_import_string_ptr(module), strlen(module) as usize, true, output)
+    }
+    let root = compiler_import_string_ptr(state.platform_root)
+    let root_length = strlen(state.platform_root) as usize
+    if root_length + length + 5 as usize >= COMPILER_PATH_SLOT_BYTES { return false }
+    var offset: usize = 0 as usize
+    while offset < root_length {
+        compiler_import_put(output, offset, compiler_import_byte(root, offset))
+        offset += 1 as usize
+    }
+    if offset > 0 as usize && compiler_import_byte(output, offset - 1 as usize) != 47 as u8 {
+        compiler_import_put(output, offset, 47 as u8)
+        offset += 1 as usize
+    }
+    // Reserved imports omit the "platform/" prefix in an external backend.
+    var index: usize = COMPILER_PLATFORM_PREFIX_BYTES
+    while index < length {
+        compiler_import_put(output, offset, compiler_import_byte(name, index))
+        offset += 1 as usize
+        index += 1 as usize
+    }
+    let extension = compiler_import_string_ptr(".gsl")
+    index = 0 as usize
+    while index < 4 as usize {
+        compiler_import_put(output, offset, compiler_import_byte(extension, index))
+        offset += 1 as usize
+        index += 1 as usize
+    }
+    compiler_import_put(output, offset, 0 as u8)
+    return true
+}
+
 func compiler_import_exists(path: string) bool {
-    let fd = open(path, 0 as u64, 0 as u64)
-    if fd < 0 as i64 { return false }
-    close(fd as u64)
+    var opened = fs_open_read(path)
+    if opened.error != IO_OK { return false }
+    fs_close(&opened.file)
     return true
 }
 
@@ -171,22 +234,25 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
     if seen == 1 { return 0 }
     if seen == 2 { return 9 }
 
-    arena module(262664)
-    let source = module.alloc(262145 as usize)
+    arena module(328200)
+    let source = module.alloc(327681 as usize)
     let resolved = module.alloc(512 as usize)
-    let fd = open(path, 0 as u64, 0 as u64)
-    if fd < 0 as i64 { return 5 }
+    var opened = fs_open_read(path)
+    if opened.error != IO_OK { return 5 }
     var length: usize = 0 as usize
-    while length < 262145 as usize {
-        let count = read(fd as u64, compiler_import_at(source, length), (262145 as usize) - length)
-        if count < 0 as i64 {
-            close(fd as u64)
-            return 6
+    while length < 327681 as usize {
+        let part = io_read(&opened.file, compiler_import_at(source, length), (327681 as usize) - length)
+        if part.error != IO_INTERRUPTED {
+            if part.error != IO_OK {
+                fs_close(&opened.file)
+                return 6
+            }
+            if part.eof { break }
+            if part.count == 0 as usize || part.count > (327681 as usize) - length { fs_close(&opened.file); return 6 }
+            length += part.count
         }
-        if count == 0 as i64 { break }
-        length += count as usize
     }
-    close(fd as u64)
+    if fs_close(&opened.file) != IO_OK { return 6 }
     if length > COMPILER_MAX_SOURCE_BYTES { return 7 }
     var offset: usize = 0 as usize
     while offset < length {
@@ -209,12 +275,17 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
             if module_name.kind != TOKEN_STRING || module_name.len < 3 as usize { return 1 }
             let name = compiler_import_at(source, module_name.offset + 1 as usize)
             let name_len = module_name.len - 2 as usize
-            if compiler_import_candidate(path, name, name_len, false, resolved) == false { return 1 }
-            var target = compiler_import_as_string(resolved)
-            if compiler_import_exists(target) == false {
-                if compiler_import_candidate(path, name, name_len, true, resolved) == false { return 1 }
-                target = compiler_import_as_string(resolved)
+            let reserved = compiler_name_is(name, name_len, "platform/io") || compiler_name_is(name, name_len, "platform/fs") || compiler_name_is(name, name_len, "platform/process")
+            if reserved {
+                if compiler_platform_candidate(path, name, name_len, state, resolved) == false { return 10 }
+                if compiler_import_exists(compiler_import_as_string(resolved)) == false { return 10 }
+            } else {
+                if compiler_import_candidate(path, name, name_len, false, resolved) == false { return 1 }
+                if compiler_import_exists(compiler_import_as_string(resolved)) == false {
+                    if compiler_import_candidate(path, name, name_len, true, resolved) == false { return 1 }
+                }
             }
+            let target = compiler_import_as_string(resolved)
             let result = compiler_collect_file(target, state, depth + 1)
             if result != 0 { return result }
         }

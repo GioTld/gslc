@@ -3,7 +3,7 @@ import "compiler/sema"
 import "compiler/imports"
 
 func sema_status(source: string) u32 {
-    arena work(7471104)
+    arena work(6553600)
     var p: Parser
     var s: Sema
     let storage = work.alloc((PARSER_MAX_EXPRS as usize) * size_of(Expr) + (PARSER_MAX_STMTS as usize) * size_of(Stmt) + (PARSER_MAX_PARAMS as usize) * size_of(Param) + (PARSER_MAX_DECLS as usize) * size_of(FuncDecl) + (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst) + (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct) + (PARSER_MAX_FIELDS as usize) * size_of(CompilerField))
@@ -18,11 +18,13 @@ func sema_status(source: string) u32 {
 }
 
 func sema_compiler_closure(path: string) u32 {
-    arena input(278536)
+    arena input(344072)
     var imports: ImportState
-    imports.output = input.alloc(262145 as usize)
+    imports.output = input.alloc(327681 as usize)
     imports.paths = input.alloc(16384 as usize)
     imports.used = 0 as usize
+    imports.platform = 0
+    imports.platform_root = ""
     imports.path_count = 0
     let loaded = compiler_collect_file(path, &imports, 0)
     if loaded != 0 { return loaded }
@@ -31,7 +33,7 @@ func sema_compiler_closure(path: string) u32 {
 }
 
 func sema_loaded_closure(source: string) u32 {
-    arena work(7471104)
+    arena work(6553600)
     var p: Parser
     var s: Sema
     let storage = work.alloc((PARSER_MAX_EXPRS as usize) * size_of(Expr) + (PARSER_MAX_STMTS as usize) * size_of(Stmt) + (PARSER_MAX_PARAMS as usize) * size_of(Param) + (PARSER_MAX_DECLS as usize) * size_of(FuncDecl) + (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst) + (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct) + (PARSER_MAX_FIELDS as usize) * size_of(CompilerField))

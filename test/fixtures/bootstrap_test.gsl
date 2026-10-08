@@ -7,10 +7,10 @@ func main() u32 {
 
     let status = compile_string(target_src, out_file)
     if status != 0 {
-        println("ERROR: compilacion auto-alojada fallo")
+        io_println("ERROR: compilacion auto-alojada fallo")
         return status
     }
 
-    println("Hito 7F: Bootstrap Stage 1 completado exitosamente")
+    io_println("Hito 7F: Bootstrap Stage 1 completado exitosamente")
     return 0
 }

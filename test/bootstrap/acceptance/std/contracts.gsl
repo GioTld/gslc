@@ -1,0 +1,93 @@
+import "std/fs"
+import "std/process"
+
+func main() u32 {
+    unsafe {
+        var bytes: [8]u8
+        let buffer = &bytes[0]
+        test_reset()
+        var opened = fs_open_read("input")
+        if opened.error != IO_OK { return 1 }
+        let empty = io_read(&opened.file, buffer, 0 as usize)
+        if empty.count != 0 as usize || empty.eof || empty.error != IO_OK || test_read_calls != 0 { return 2 }
+        let part = io_read(&opened.file, buffer, 8 as usize)
+        if part.count != 2 as usize || part.eof || bytes[0] != 0 as u8 || bytes[1] != 1 as u8 { return 3 }
+        let written = io_write(&opened.file, buffer, 8 as usize)
+        if written.count != 2 as usize || written.error != IO_OK { return 4 }
+        if fs_close(&opened.file) != IO_OK || fs_close(&opened.file) != IO_CLOSED || test_close_calls != 1 { return 5 }
+        let closed_read = io_read(&opened.file, buffer, 0 as usize)
+        let closed_write = io_write_all(&opened.file, buffer, 0 as usize)
+        if closed_read.error != IO_CLOSED || closed_write.error != IO_CLOSED { return 6 }
+
+        var mode: u32 = 0
+        while mode < 5 {
+            test_reset()
+            test_write_mode = mode
+            let result = io_print("abcde")
+            if mode < 2 {
+                if result.error != IO_OK || result.count != 5 as usize || test_written != 5 as usize { return 10 + mode }
+                if test_bytes[0] != 97 as u8 || test_bytes[4] != 101 as u8 { return 15 }
+            } else if mode == 2 {
+                if result.error != IO_WOULD_BLOCK || result.count != 2 as usize { return 16 }
+            } else if mode == 3 {
+                if result.error != IO_ERROR || result.count != 0 as usize || test_write_calls != 1 { return 17 }
+            } else {
+                if result.error != IO_ERROR || result.count != 2 as usize { return 18 }
+            }
+            if test_close_calls != 0 { return 19 }
+            mode += 1
+        }
+        test_reset()
+        let line = io_eprintln("err")
+        if line.error != IO_OK || line.count != 4 as usize || test_last_handle != 102 { return 20 }
+        if test_bytes[0] != 101 as u8 || test_bytes[2] != 114 as u8 || test_bytes[3] != 10 as u8 { return 21 }
+        test_reset()
+        test_write_mode = 4
+        let failed_line = io_println("abcde")
+        if failed_line.error != IO_ERROR || failed_line.count != 2 as usize || test_write_calls != 2 { return 22 }
+
+        test_reset()
+        test_open_error = IO_NOT_FOUND
+        let missing = fs_read_into("missing", buffer, 8 as usize)
+        if missing.error != IO_NOT_FOUND || test_close_calls != 0 { return 30 }
+        mode = 0
+        while mode < 5 {
+            test_reset()
+            test_read_mode = mode
+            let read = fs_read_into("input", buffer, 8 as usize)
+            if mode < 2 {
+                if read.error != IO_OK || read.eof == false || read.count != 5 as usize || bytes[4] != 4 as u8 { return 31 }
+            } else if mode == 2 {
+                if read.error != IO_ERROR || read.count != 2 as usize { return 32 }
+            } else if mode == 3 {
+                if read.error != IO_WOULD_BLOCK || read.count != 0 as usize { return 33 }
+            } else {
+                if read.error != IO_ERROR || test_read_calls != 1 { return 34 }
+            }
+            if test_close_calls != 1 { return 35 }
+            mode += 1
+        }
+        test_reset()
+        let small = fs_read_into("input", buffer, 4 as usize)
+        if small.error != IO_BUFFER_SMALL || small.count != 4 as usize || test_offset != 5 as usize || test_close_calls != 1 { return 40 }
+        test_reset()
+        let exact = fs_read_into("input", buffer, 5 as usize)
+        if exact.error != IO_OK || exact.eof == false || exact.count != 5 as usize || test_close_calls != 1 { return 41 }
+        test_reset()
+        test_size = 0 as usize
+        let zero = fs_read_into("empty", buffer, 0 as usize)
+        if zero.error != IO_OK || zero.eof == false || zero.count != 0 as usize || test_close_calls != 1 { return 42 }
+        test_reset()
+        let no_room = fs_read_into("input", buffer, 0 as usize)
+        if no_room.error != IO_BUFFER_SMALL || no_room.count != 0 as usize || test_close_calls != 1 { return 43 }
+        test_reset()
+        test_close_error = IO_ERROR
+        let close_failed = fs_read_into("input", buffer, 8 as usize)
+        if close_failed.error != IO_ERROR || close_failed.count != 5 as usize || test_close_calls != 1 { return 44 }
+        test_reset()
+        test_close_error = IO_ERROR
+        let first_error = fs_read_into("input", buffer, 1 as usize)
+        if first_error.error != IO_BUFFER_SMALL || test_close_calls != 1 { return 45 }
+        return 0
+    }
+}

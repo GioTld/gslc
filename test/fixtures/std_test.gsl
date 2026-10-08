@@ -1,17 +1,12 @@
-import "std/io"
 import "std/fs"
-import "std/process"
-
 func main() u32 {
-    println("Probando lib/std en GSL")
-
-    // Open/create file for writing (O_WRONLY | O_CREAT = 65, mode 420 = 0644)
-    let fd = open("/tmp/gsl_test_file.txt", 65 as u64, 420 as u64)
-    if fd >= 0 {
-        write_string(fd as u64, "Hola desde lib/std\n")
-        close(fd as u64)
-        println("Operaciones de archivo completadas")
-    }
-
-    return 0
+    var opened = fs_create_new("/tmp/gsl_test_file.txt")
+    if opened.error != IO_OK { return opened.error }
+    let message = "Hello from GSL std\n"
+    var bytes: *u8
+    unsafe { bytes = message as *u8 }
+    let written = io_write_all(&opened.file, bytes, strlen(message) as usize)
+    let closed = fs_close(&opened.file)
+    if written.error != IO_OK { return written.error }
+    return closed
 }
