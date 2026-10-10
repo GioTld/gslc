@@ -13,7 +13,7 @@ const IO_BUFFER_SMALL: u32 = 11
 const IO_ERROR: u32 = 12
 
 // Only std and platform implementations interpret the handle.
-resource struct File {
+struct File {
     handle: u64,
     is_open: bool
 }
