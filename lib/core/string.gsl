@@ -9,3 +9,21 @@ func strlen(s: string) u64 {
     return len
 }
 
+func streq(a: string, b: string) bool {
+    let la = strlen(a)
+    let lb = strlen(b)
+    if la != lb { return false }
+    var i: usize = 0
+    unsafe {
+        let pa = (a as usize) as *u8
+        let pb = (b as usize) as *u8
+        while i < (la as usize) {
+            let ca = volatile_read(((pa as usize) + i) as *u8)
+            let cb = volatile_read(((pb as usize) + i) as *u8)
+            if ca != cb { return false }
+            i += 1 as usize
+        }
+    }
+    return true
+}
+

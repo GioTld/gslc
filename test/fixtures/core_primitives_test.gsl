@@ -1,0 +1,57 @@
+import "core/mem"
+import "core/string"
+
+func main() u32 {
+    // 1. Bit and alignment tests
+    if align_up(1 as usize, 8 as usize) != 8 as usize { return 1 }
+    if align_up(8 as usize, 8 as usize) != 8 as usize { return 2 }
+    if align_up(9 as usize, 8 as usize) != 16 as usize { return 3 }
+    if align_down(15 as usize, 8 as usize) != 8 as usize { return 4 }
+    if align_down(8 as usize, 8 as usize) != 8 as usize { return 5 }
+
+    // 2. Endian bswap tests
+    if bswap16(4660 as u16) != 13330 as u16 { return 6 } // 0x1234 -> 0x3412
+    if bswap32(305419896 as u32) != 2018915346 as u32 { return 7 } // 0x12345678 -> 0x78563412
+
+    // 3. String tests
+    if streq("hello", "hello") == false { return 8 }
+    if streq("hello", "world") == true { return 9 }
+    if streq("short", "longer") == true { return 10 }
+
+    // 4. ByteView tests
+    var buffer: [64]u8
+    let view = byte_view(&buffer[0 as usize], 64 as usize)
+    if view.len != 64 as usize { return 11 }
+    let sub = byte_view_slice(view, 8 as usize, 16 as usize)
+    if sub.len != 16 as usize { return 12 }
+    let invalid_sub = byte_view_slice(view, 60 as usize, 10 as usize)
+    if invalid_sub.len != 0 as usize { return 13 }
+
+    // 5. Arena allocator tests
+    var a = arena_init(&buffer[0 as usize], 32 as usize)
+    if arena_remaining(&a) != 32 as usize { return 14 }
+
+    // First alloc: 16 bytes aligned to 8
+    let r1 = arena_alloc(&a, 16 as usize, 8 as usize)
+    if r1.error != ALLOC_OK || (r1.ptr as usize) == 0 as usize { return 15 }
+    if arena_remaining(&a) != 16 as usize { return 16 }
+
+    // Second alloc: 16 bytes aligned to 8 (fills the arena)
+    let r2 = arena_alloc(&a, 16 as usize, 8 as usize)
+    if r2.error != ALLOC_OK || (r2.ptr as usize) == 0 as usize { return 17 }
+    if arena_remaining(&a) != 0 as usize { return 18 }
+
+    // Third alloc: should fail with ALLOC_ERR_OOM
+    let r3 = arena_alloc(&a, 8 as usize, 8 as usize)
+    if r3.error != ALLOC_ERR_OOM || (r3.ptr as usize) != 0 as usize { return 19 }
+
+    // Reset arena
+    arena_reset(&a)
+    if arena_remaining(&a) != 32 as usize { return 20 }
+
+    // Can allocate again after reset
+    let r4 = arena_alloc(&a, 8 as usize, 8 as usize)
+    if r4.error != ALLOC_OK || (r4.ptr as usize) == 0 as usize { return 21 }
+
+    return 0
+}

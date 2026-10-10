@@ -49,3 +49,110 @@ func memcmp(left: *u8, right: *u8, count: usize) i32 {
     }
     return 0 as i32
 }
+
+func align_up(val: usize, alignment: usize) usize {
+    if alignment <= 1 as usize { return val }
+    let mask = alignment - (1 as usize)
+    return (val + mask) & (0 as usize - alignment)
+}
+
+func align_down(val: usize, alignment: usize) usize {
+    if alignment <= 1 as usize { return val }
+    return val & (0 as usize - alignment)
+}
+
+func bswap16(val: u16) u16 {
+    return ((val >> 8) | (val << 8)) as u16
+}
+
+func bswap32(val: u32) u32 {
+    return ((val >> 24) | ((val & 16711680) >> 8) | ((val & 65280) << 8) | (val << 24)) as u32
+}
+
+func bswap64(val: u64) u64 {
+    let low = bswap32((val & 4294967295) as u32) as u64
+    let high = bswap32((val >> 32) as u32) as u64
+    return (low << 32) | high
+}
+
+copy struct ByteView {
+    data: *u8,
+    len: usize
+}
+
+func byte_view(data: *u8, len: usize) ByteView {
+    var v: ByteView
+    v.data = data
+    v.len = len
+    return v
+}
+
+func byte_view_slice(v: ByteView, start: usize, len: usize) ByteView {
+    unsafe {
+        if start + len > v.len { return byte_view(0 as *u8, 0 as usize) }
+        let sub = ((v.data as usize) + start) as *u8
+        return byte_view(sub, len)
+    }
+}
+
+const ALLOC_OK: u32 = 0
+const ALLOC_ERR_OOM: u32 = 1
+const ALLOC_ERR_ALIGN: u32 = 2
+
+copy struct AllocResult {
+    ptr: *u8,
+    error: u32
+}
+
+func alloc_ok(ptr: *u8) AllocResult {
+    var r: AllocResult
+    r.ptr = ptr
+    r.error = ALLOC_OK
+    return r
+}
+
+func alloc_fail(err: u32) AllocResult {
+    var r: AllocResult
+    unsafe {
+        r.ptr = 0 as *u8
+    }
+    r.error = err
+    return r
+}
+
+struct Arena {
+    buffer: *u8,
+    capacity: usize,
+    offset: usize
+}
+
+func arena_init(buffer: *u8, capacity: usize) Arena {
+    var a: Arena
+    a.buffer = buffer
+    a.capacity = capacity
+    a.offset = 0 as usize
+    return a
+}
+
+func arena_alloc(a: *Arena, size: usize, alignment: usize) AllocResult {
+    if alignment == 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
+    let current = (a.buffer as usize) + a.offset
+    let aligned = align_up(current, alignment)
+    let new_offset = aligned - (a.buffer as usize) + size
+    if new_offset > a.capacity {
+        return alloc_fail(ALLOC_ERR_OOM)
+    }
+    a.offset = new_offset
+    unsafe {
+        return alloc_ok(aligned as *u8)
+    }
+}
+
+func arena_reset(a: *Arena) {
+    a.offset = 0 as usize
+}
+
+func arena_remaining(a: *Arena) usize {
+    if a.offset >= a.capacity { return 0 as usize }
+    return a.capacity - a.offset
+}

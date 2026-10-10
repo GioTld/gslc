@@ -503,6 +503,11 @@
       "exit": 11
     },
     {
+      "name": "core_primitives",
+      "fixture": "test/fixtures/core_primitives_test.gsl",
+      "exit": 0
+    },
+    {
       "name": "output_writer",
       "fixture": "test/bootstrap/acceptance/output_writer.gsl",
       "exit": 0
@@ -2427,13 +2432,13 @@
       "record": {
         "code": "E2001",
         "span": {
-          "start": 270,
-          "end": 277
+          "start": 761,
+          "end": 768
         },
         "message": "undefined identifier"
       },
       "check_missing_output": true,
-      "human": "gslc-self: E2001: undefined identifier at combined source 15:12\n"
+      "human": "gslc-self: E2001: undefined identifier at combined source 33:12\n"
     }
   ],
   "capacities": [
