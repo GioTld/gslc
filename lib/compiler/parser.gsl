@@ -206,6 +206,7 @@ func parser_type_span(p: *Parser) Token {
             structure.field_start = 0
             structure.field_count = 0
             structure.is_copy = true
+            structure.is_resource = false
             p.struct_count += 1
         }
         var result = start
@@ -695,6 +696,17 @@ func parse_stmt(p: *Parser) u32 {
     if p.cur.kind == TOKEN_ARENA {
         return parse_arena_stmt(p)
     }
+    if p.cur.kind == TOKEN_DEFER {
+        parser_advance(p)
+        let expr_idx = parse_expr(p, PREC_NONE)
+        parser_statement_end(p)
+        let idx = alloc_stmt(p)
+        if p.error { return INVALID_INDEX }
+        let node = parser_stmt(p, idx)
+        node.kind = STMT_DEFER
+        node.expr_idx = expr_idx
+        return idx
+    }
     if p.cur.kind == TOKEN_IF {
         return parse_block_stmt(p, STMT_IF)
     }
@@ -740,6 +752,7 @@ func parse_stmt(p: *Parser) u32 {
 
 func parse_struct_decl(p: *Parser) {
     var is_copy = false
+    var is_resource = false
     var is_packed = false
     if p.cur.kind == TOKEN_PACKED {
         is_packed = true
@@ -747,6 +760,16 @@ func parse_struct_decl(p: *Parser) {
     }
     if p.cur.kind == TOKEN_COPY && is_packed == false {
         is_copy = true
+        parser_advance(p)
+    }
+    if p.cur.kind == TOKEN_RESOURCE && is_packed == false {
+        if is_copy {
+            p.error = true
+            p.error_line = p.cur.line
+            p.error_col = p.cur.col
+            return
+        }
+        is_resource = true
         parser_advance(p)
     }
     parser_expect(p, TOKEN_STRUCT)
@@ -795,6 +818,7 @@ func parse_struct_decl(p: *Parser) {
     node.field_count = p.field_count - field_start
     node.is_packed = is_packed
     node.is_copy = is_copy
+    node.is_resource = is_resource
     node.is_array = false
     p.struct_count += 1
 }
@@ -1020,7 +1044,7 @@ func parser_parse(p: *Parser) {
                 if p.error == false { parser_const(p, index).section_idx = section }
             } else { p.error = true }
 
-        } else if p.cur.kind == TOKEN_STRUCT || p.cur.kind == TOKEN_COPY || p.cur.kind == TOKEN_PACKED {
+        } else if p.cur.kind == TOKEN_STRUCT || p.cur.kind == TOKEN_COPY || p.cur.kind == TOKEN_PACKED || p.cur.kind == TOKEN_RESOURCE {
             parse_struct_decl(p)
         } else {
             p.error = true

@@ -11,6 +11,7 @@ const CODEGEN_STRING: u32 = 254
 const CODEGEN_MAX_LAYOUT: u32 = 4294967295
 const CODEGEN_MAX_POINTER_DEPTH: u32 = 8
 const CODEGEN_LOCAL_ARENA_BYTES: u32 = 102400
+const CODEGEN_MAX_DEFERS: u32 = 64
 const LAYOUT_UNVISITED: u8 = 0
 const LAYOUT_VISITING: u8 = 1
 const LAYOUT_COMPLETE: u8 = 2
@@ -25,6 +26,8 @@ struct Codegen {
     return_signed: bool,
     locals: *CodegenLocal,
     local_count: u32,
+    defers: *u32,
+    defer_count: u32,
     error: bool
 }
 

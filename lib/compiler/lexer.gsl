@@ -99,6 +99,8 @@ func lexer_keyword(lex: *Lexer, start: usize, length: usize) u32 {
     if lexer_word_is(lex, start, length, "false") { return TOKEN_FALSE }
     if lexer_word_is(lex, start, length, "packed") { return TOKEN_PACKED }
     if lexer_word_is(lex, start, length, "copy") { return TOKEN_COPY }
+    if lexer_word_is(lex, start, length, "resource") { return TOKEN_RESOURCE }
+    if lexer_word_is(lex, start, length, "defer") { return TOKEN_DEFER }
     return TOKEN_IDENT
 }
 

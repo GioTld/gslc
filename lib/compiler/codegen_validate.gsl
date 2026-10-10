@@ -31,7 +31,7 @@ func codegen_preflight_control_block(p: *Parser, start: u32, count: u32, in_loop
             if codegen_preflight_control_block(p, stmt.block.body_start, stmt.block.body_count, in_loop) == false { return false }
         } else if stmt.kind == STMT_ARENA {
             if codegen_capacity(p, stmt.arena_s.size_expr_idx) == 0 { return false }
-        } else if stmt.kind != STMT_EXPR {
+        } else if stmt.kind != STMT_EXPR && stmt.kind != STMT_DEFER {
             return false
         }
         stmt_idx = stmt.next_idx
@@ -308,8 +308,12 @@ func codegen_validate_block(p: *Parser, start: u32, count: u32, ctx: *Codegen) b
 func codegen_preflight_types(p: *Parser) bool {
     arena local_storage(CODEGEN_LOCAL_ARENA_BYTES)
     var ctx: Codegen
-    unsafe { ctx.locals = local_storage.alloc((CODEGEN_MAX_LOCALS as usize) * size_of(CodegenLocal)) as *CodegenLocal }
+    unsafe {
+        ctx.locals = local_storage.alloc((CODEGEN_MAX_LOCALS as usize) * size_of(CodegenLocal)) as *CodegenLocal
+        ctx.defers = local_storage.alloc((CODEGEN_MAX_DEFERS as usize) * size_of(u32)) as *u32
+    }
     ctx.local_count = 0
+    ctx.defer_count = 0
     ctx.param_start = 0
     ctx.param_count = 0
     ctx.error = false

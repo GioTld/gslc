@@ -32,6 +32,7 @@ const STMT_BREAK:  u32 = 8
 const STMT_CONTINUE: u32 = 9
 const STMT_ASSIGN: u32 = 10
 const STMT_ARENA: u32 = 11
+const STMT_DEFER: u32 = 12
 
 const DECL_FUNC: u32 = 1
 
@@ -202,6 +203,7 @@ struct CompilerStruct {
     field_count: u32,
     is_copy: bool,
     is_packed: bool,
+    is_resource: bool,
     size: u32,
     alignment: u32
 }

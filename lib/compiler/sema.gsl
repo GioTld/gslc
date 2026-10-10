@@ -713,7 +713,7 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         return
     }
 
-    if kind == STMT_EXPR {
+    if kind == STMT_EXPR || kind == STMT_DEFER {
         sema_check_expr(s, p, node.expr_idx)
         return
     }

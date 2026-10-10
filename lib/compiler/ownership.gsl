@@ -12,7 +12,7 @@ func sema_copy_type(p: *Parser, value: SemType, depth: u32) bool {
     let index = parser_find_type(p, value.name_ptr, value.name_len)
     if index == INVALID_INDEX { return true }
     let structure = parser_struct(p, index)
-    if structure.is_array || structure.is_copy == false || depth >= PARSER_MAX_EXPR_DEPTH { return false }
+    if structure.is_array || structure.is_resource || depth >= PARSER_MAX_EXPR_DEPTH { return false }
     var field_index = structure.field_start
     while field_index < structure.field_start + structure.field_count {
         let field = parser_field(p, field_index)

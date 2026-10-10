@@ -63,6 +63,8 @@ const TOKEN_BIT_NOT: u32 = 62
 const TOKEN_DIV_ASSIGN: u32 = 63
 const TOKEN_REM_ASSIGN: u32 = 64
 const TOKEN_SHR_ASSIGN: u32 = 65
+const TOKEN_RESOURCE: u32 = 66
+const TOKEN_DEFER: u32 = 67
 
 copy struct Token {
     kind: u32,

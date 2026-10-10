@@ -3,10 +3,23 @@ import "compiler/codegen_runtime"
 import "compiler/codegen_memory"
 import "compiler/codegen_hardware"
 
+func codegen_emit_defers(p: *Parser, output: *CompilerOutput, ctx: *Codegen, until: u32) {
+    var i = ctx.defer_count
+    while i > until {
+        i -= 1
+        unsafe {
+            let slot = ((ctx.defers as usize) + (i as usize) * size_of(u32)) as *u32
+            let expr_idx = *slot
+            codegen_emit_expr(p, expr_idx, output, ctx, 32, false)
+        }
+    }
+}
+
 func codegen_emit_return(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) {
     let stmt = parser_stmt(p, stmt_idx)
     var value: u32 = 0
     if stmt.ret_s.has_expr { value = codegen_emit_expr(p, stmt.ret_s.expr_idx, output, ctx, ctx.return_type, ctx.return_signed) }
+    codegen_emit_defers(p, output, ctx, 0)
     compiler_output_string(output, "  ret ")
     codegen_write_type(p, output, ctx.return_type)
     if ctx.return_type != 0 { compiler_output_string(output, " "); codegen_write_reg(output, value) }
@@ -501,17 +514,20 @@ func codegen_emit_binding(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ct
 
 func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *CompilerOutput, ctx: *Codegen) bool {
     let saved_local_count = ctx.local_count
+    let saved_defer_count = ctx.defer_count
     var stmt_idx = start
     var seen: u32 = 0
     while stmt_idx != INVALID_INDEX && seen < count {
         let stmt = parser_stmt(p, stmt_idx)
         if stmt.kind == STMT_RETURN {
             codegen_emit_return(p, stmt_idx, output, ctx)
+            ctx.defer_count = saved_defer_count
             ctx.local_count = saved_local_count
             return true
         }
         if stmt.kind == STMT_IF {
             if codegen_emit_if(p, stmt_idx, output, ctx) {
+                ctx.defer_count = saved_defer_count
                 ctx.local_count = saved_local_count
                 return true
             }
@@ -525,12 +541,24 @@ func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *Com
             codegen_emit_binding(p, stmt_idx, output, ctx)
         } else if stmt.kind == STMT_UNSAFE {
             if codegen_emit_control_block(p, stmt.block.body_start, stmt.block.body_count, output, ctx) {
+                ctx.defer_count = saved_defer_count
                 ctx.local_count = saved_local_count
                 return true
             }
         } else if stmt.kind == STMT_EXPR {
             codegen_emit_expr(p, stmt.expr_idx, output, ctx, 32, false)
+        } else if stmt.kind == STMT_DEFER {
+            if ctx.defer_count < CODEGEN_MAX_DEFERS {
+                unsafe {
+                    let slot = ((ctx.defers as usize) + (ctx.defer_count as usize) * size_of(u32)) as *u32
+                    *slot = stmt.expr_idx
+                }
+                ctx.defer_count += 1
+            } else {
+                ctx.error = true
+            }
         } else if stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE {
+            codegen_emit_defers(p, output, ctx, saved_defer_count)
             compiler_output_string(output, "  br label %")
             if stmt.kind == STMT_BREAK {
                 codegen_write_label(output, "loop_end_", ctx.loop_label)
@@ -538,12 +566,15 @@ func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *Com
                 codegen_write_label(output, "loop_cond_", ctx.loop_label)
             }
             compiler_output_string(output, "\n")
+            ctx.defer_count = saved_defer_count
             ctx.local_count = saved_local_count
             return true
         }
         stmt_idx = stmt.next_idx
         seen += 1
     }
+    codegen_emit_defers(p, output, ctx, saved_defer_count)
+    ctx.defer_count = saved_defer_count
     ctx.local_count = saved_local_count
     return false
 }
@@ -667,8 +698,10 @@ func codegen_emit_func(p: *Parser, decl_idx: u32, output: *CompilerOutput) bool 
     arena local_storage(CODEGEN_LOCAL_ARENA_BYTES)
     unsafe {
         ctx.locals = local_storage.alloc((CODEGEN_MAX_LOCALS as usize) * size_of(CodegenLocal)) as *CodegenLocal
+        ctx.defers = local_storage.alloc((CODEGEN_MAX_DEFERS as usize) * size_of(u32)) as *u32
     }
     ctx.local_count = 0
+    ctx.defer_count = 0
     param_idx = decl.param_start
     while param_idx < param_end {
         let param = parser_param(p, param_idx)
