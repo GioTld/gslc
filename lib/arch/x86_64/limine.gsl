@@ -1,0 +1,45 @@
+// Limine Boot Protocol declarations for x86_64 freestanding consumers
+// Supports Limine protocol revisions up to Base Revision 3
+
+const LIMINE_COMMON_MAGIC_0: u64 = 0xc7b1dd30df4c8b88
+const LIMINE_COMMON_MAGIC_1: u64 = 0x0a82e883a194f07b
+
+const LIMINE_BASE_REVISION_TAG_0: u64 = 0xf9562b2d5c95a6c8
+const LIMINE_BASE_REVISION_TAG_1: u64 = 0x6a7b384944536bdc
+
+const LIMINE_MEMMAP_USABLE: u64 = 0
+const LIMINE_MEMMAP_RESERVED: u64 = 1
+const LIMINE_MEMMAP_ACPI_RECLAIMABLE: u64 = 2
+const LIMINE_MEMMAP_ACPI_NVS: u64 = 3
+const LIMINE_MEMMAP_BAD_MEMORY: u64 = 4
+const LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE: u64 = 5
+const LIMINE_MEMMAP_KERNEL_AND_MODULES: u64 = 6
+const LIMINE_MEMMAP_FRAMEBUFFER: u64 = 7
+
+struct LimineMemmapEntry {
+    base: u64,
+    length: u64,
+    kind: u64
+}
+
+struct LimineMemmapResponse {
+    revision: u64,
+    entry_count: u64,
+    entries: *usize
+}
+
+struct LimineFramebuffer {
+    address: usize,
+    width: u64,
+    height: u64,
+    pitch: u64,
+    bpp: u16,
+    memory_model: u8,
+    red_mask_size: u8,
+    red_mask_shift: u8,
+    green_mask_size: u8,
+    green_mask_shift: u8,
+    blue_mask_size: u8,
+    blue_mask_shift: u8
+}
+func limine_version() u64 { return 3 as u64 }

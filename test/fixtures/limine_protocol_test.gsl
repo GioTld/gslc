@@ -1,0 +1,10 @@
+import "arch/x86_64/limine"
+
+func main() u32 {
+    let ver = limine_version()
+    if ver != 3 as u64 { return 1 }
+    if LIMINE_MEMMAP_USABLE != 0 as u64 { return 2 }
+    if LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE != 5 as u64 { return 3 }
+    if LIMINE_MEMMAP_FRAMEBUFFER != 7 as u64 { return 4 }
+    return 0
+}
