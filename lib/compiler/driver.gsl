@@ -126,8 +126,7 @@ func compiler_compile_source(src: string, out_path: string, machine: bool, kerne
         return 1
     }
 
-    let symbols = work.alloc((SEMA_MAX_SYMBOLS as usize) * size_of(Symbol))
-    sema_init(&s, symbols)
+    sema_init(&s)
     s.kernel = kernel
     sema_check(&s, &p)
 

@@ -2,8 +2,23 @@ import "compiler/intrinsics"
 import "compiler/ownership"
 import "compiler/token"
 import "compiler/ast"
+import "platform/linux_x86_64/native"
+import "core/mem"
 import "core/string"
 
+func sema_chunk_grow(a: *ChunkArena, capacity: usize) bool {
+    let header = linux_sbrk(size_of(Chunk))
+    if (header as usize) == 0 { return false }
+    let buffer = linux_sbrk(capacity)
+    if (buffer as usize) == 0 { return false }
+    unsafe {
+        let chunk = header as *Chunk
+        chunk_arena_append(a, chunk, buffer, capacity)
+    }
+    return true
+}
+
+const SEMA_SYMBOL_POOL: usize = 147456
 const SEMA_MAX_SYMBOLS: u32 = 3072
 
 const SYM_LET:  u32 = 1
@@ -42,7 +57,7 @@ struct Symbol {
 
 struct Sema {
     kernel: bool,
-    syms:       *Symbol,
+    syms:       ChunkArena,
     sym_count:  u32,
     scope_lvl:  u32,
     loop_depth: u32,
@@ -174,7 +189,7 @@ func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType
 
 func sema_symbol(s: *Sema, idx: u32) *Symbol {
     unsafe {
-        return (((s.syms as usize) + (idx as usize) * size_of(Symbol)) as *Symbol)
+        return chunk_arena_item_ptr(&s.syms, idx, size_of(Symbol)) as *Symbol
     }
 }
 
@@ -346,9 +361,17 @@ func sema_declare(s: *Sema, name: *u8, name_len: usize, kind: u32, line: u32, co
         }
     }
 
-    if s.sym_count >= SEMA_MAX_SYMBOLS {
-        sema_mark_error(s, line, col)
-        return false
+    let r = chunk_arena_alloc(&s.syms, size_of(Symbol), size_of(Symbol))
+    if r.error != ALLOC_OK {
+        if sema_chunk_grow(&s.syms, SEMA_SYMBOL_POOL) == false {
+            sema_mark_error(s, line, col)
+            return false
+        }
+        let r2 = chunk_arena_alloc(&s.syms, size_of(Symbol), size_of(Symbol))
+        if r2.error != ALLOC_OK {
+            sema_mark_error(s, line, col)
+            return false
+        }
     }
     let idx = s.sym_count
     let symbol = sema_symbol(s, idx)
@@ -871,11 +894,10 @@ func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
     s.return_type_len = 0 as usize
 }
 
-func sema_init(s: *Sema, storage: *u8) {
+func sema_init(s: *Sema) {
     s.kernel = false
-    unsafe {
-        s.syms = storage as *Symbol
-    }
+    chunk_arena_init_empty(&s.syms)
+    if sema_chunk_grow(&s.syms, SEMA_SYMBOL_POOL) == false { s.error = true }
     s.sym_count = 0
     s.scope_lvl = 0
     s.loop_depth = 0

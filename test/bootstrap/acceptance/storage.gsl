@@ -30,8 +30,7 @@ func measure_loaded(source: string, source_bytes: usize) u32 {
     parser_init(&p,source);
     parser_parse(&p);
     if p.error { return 3; }
-    let symbols = work.alloc((SEMA_MAX_SYMBOLS as usize)*size_of(Symbol));
-    sema_init(&s,symbols);
+    sema_init(&s);
     sema_check(&s,&p);
     if s.error { return 4; }
     var upper = p.decl_count+p.param_count+p.const_count+p.struct_count;

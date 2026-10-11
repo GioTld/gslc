@@ -2443,11 +2443,6 @@
   ],
   "capacities": [
     {
-      "name": "symbols",
-      "generator": "symbols",
-      "status": 2
-    },
-    {
       "name": "input_bytes",
       "generator": "input_bytes",
       "status": 7

@@ -45,8 +45,7 @@ func main() u32 {
 
     io_println("Parser: func decl OK")
 
-    let symbols = work.alloc((SEMA_MAX_SYMBOLS as usize) * size_of(Symbol))
-    sema_init(&s, symbols)
+    sema_init(&s)
     sema_check(&s, &p)
 
     if s.error {
