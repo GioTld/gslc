@@ -1,0 +1,34 @@
+import "core/mem"
+
+func main() u32 {
+    var initial_buf: [128]u8
+    var second_buf: [128]u8
+    var chunk1: Chunk
+    var chunk2: Chunk
+    var pool: ChunkArena
+
+    unsafe {
+        chunk_arena_init(&pool, &chunk1, &initial_buf[0], 128 as usize)
+        
+        // Asignación 1: 64 bytes
+        let r1 = chunk_arena_alloc(&pool, 64 as usize, 8 as usize)
+        if r1.error != ALLOC_OK { return 1 }
+        
+        // Enlazar chunk 2
+        chunk_arena_append(&pool, &chunk2, &second_buf[0], 128 as usize)
+        
+        // Asignación 2: 64 bytes (llena el chunk 1)
+        let r2 = chunk_arena_alloc(&pool, 64 as usize, 8 as usize)
+        if r2.error != ALLOC_OK { return 2 }
+        
+        // Asignación 3: 32 bytes (debe pasar automáticamente al chunk 2)
+        let r3 = chunk_arena_alloc(&pool, 32 as usize, 8 as usize)
+        if r3.error != ALLOC_OK { return 3 }
+        
+        // Verificar que el puntero de r3 cae dentro de second_buf
+        let p3 = r3.ptr as usize
+        let b2 = (&second_buf[0]) as usize
+        if p3 < b2 || p3 >= b2 + 128 as usize { return 4 }
+    }
+    return 0
+}

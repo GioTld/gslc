@@ -156,3 +156,72 @@ func arena_remaining(a: *Arena) usize {
     if a.offset >= a.capacity { return 0 as usize }
     return a.capacity - a.offset
 }
+
+struct Chunk {
+    buffer: *u8,
+    capacity: usize,
+    offset: usize,
+    next: *Chunk
+}
+
+struct ChunkArena {
+    first: *Chunk,
+    current: *Chunk,
+    total_allocated: usize
+}
+
+func chunk_arena_init(a: *ChunkArena, initial: *Chunk, buffer: *u8, capacity: usize) {
+    unsafe {
+        initial.buffer = buffer
+        initial.capacity = capacity
+        initial.offset = 0 as usize
+        initial.next = 0 as *Chunk
+        a.first = initial
+        a.current = initial
+    }
+    a.total_allocated = 0 as usize
+}
+
+func chunk_arena_alloc(a: *ChunkArena, size: usize, alignment: usize) AllocResult {
+    if alignment == 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
+    var cur = a.current
+    if (cur as usize) == 0 { return alloc_fail(ALLOC_ERR_OOM) }
+    let current_addr = (cur.buffer as usize) + cur.offset
+    let aligned = align_up(current_addr, alignment)
+    let new_offset = aligned - (cur.buffer as usize) + size
+    if new_offset <= cur.capacity {
+        unsafe {
+            cur.offset = new_offset
+        }
+        a.total_allocated += size
+        unsafe {
+            return alloc_ok(aligned as *u8)
+        }
+    }
+    // Si el chunk actual se llena, avanza al siguiente chunk ya enlazado si existe
+    if (cur.next as usize) != 0 {
+        unsafe {
+            a.current = cur.next
+        }
+        return chunk_arena_alloc(a, size, alignment)
+    }
+    return alloc_fail(ALLOC_ERR_OOM)
+}
+
+func chunk_arena_append(a: *ChunkArena, new_chunk: *Chunk, buffer: *u8, capacity: usize) {
+    unsafe {
+        new_chunk.buffer = buffer
+        new_chunk.capacity = capacity
+        new_chunk.offset = 0 as usize
+        new_chunk.next = 0 as *Chunk
+        var tail = a.first
+        while (tail.next as usize) != 0 {
+            tail = tail.next
+        }
+        tail.next = new_chunk
+        if a.current.offset >= a.current.capacity {
+            a.current = new_chunk
+        }
+    }
+}
+
