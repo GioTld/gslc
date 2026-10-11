@@ -63,16 +63,23 @@ func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
 }
 
 func compiler_slot_get_u64(slot: *u8, offset: usize) usize {
-    unsafe {
-        let ptr = ((slot as usize) + offset) as *usize
-        return volatile_read(ptr)
+    var val: usize = 0 as usize
+    var i: usize = 0 as usize
+    while i < 8 as usize {
+        let b = compiler_import_byte(slot, offset + i) as usize
+        val = val | (b << (i * 8 as usize))
+        i += 1 as usize
     }
+    return val
 }
 
 func compiler_slot_set_u64(slot: *u8, offset: usize, value: usize) {
-    unsafe {
-        let ptr = ((slot as usize) + offset) as *usize
-        volatile_write(ptr, value)
+    var temp = value
+    var i: usize = 0 as usize
+    while i < 8 as usize {
+        compiler_import_put(slot, offset + i, (temp & 255 as usize) as u8)
+        temp = temp >> 8
+        i += 1 as usize
     }
 }
 
