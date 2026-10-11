@@ -225,3 +225,10 @@ func chunk_arena_append(a: *ChunkArena, new_chunk: *Chunk, buffer: *u8, capacity
     }
 }
 
+func chunk_arena_init_empty(a: *ChunkArena) {
+    unsafe {
+        a.first = 0 as *Chunk
+        a.current = 0 as *Chunk
+    }
+    a.total_allocated = 0 as usize
+}
