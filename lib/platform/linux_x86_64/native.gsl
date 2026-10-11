@@ -9,6 +9,18 @@ const LINUX_SYS_READ: u64 = 0
 const LINUX_SYS_WRITE: u64 = 1
 const LINUX_SYS_OPEN: u64 = 2
 const LINUX_SYS_CLOSE: u64 = 3
+const LINUX_SYS_BRK:   u64 = 12
+
+func linux_sbrk(increment: usize) *u8 {
+    unsafe {
+        let current = syscall(LINUX_SYS_BRK, 0 as u64, 0 as u64, 0 as u64) as usize
+        let next = current + increment
+        let result = syscall(LINUX_SYS_BRK, next as u64, 0 as u64, 0 as u64) as usize
+        if result != next { return 0 as *u8 }
+        return current as *u8
+    }
+}
+
 
 func linux_open(path: string, flags: u64, mode: u64) i64 {
     unsafe { return syscall(LINUX_SYS_OPEN, path as u64, flags, mode) }

@@ -1,14 +1,14 @@
 {
   "format": 1,
   "host": "linux-x86_64",
-  "compiler_sha256": "af8d2fe6cb012b7575a5623ab845b9b87d7be69db8c1e0c840815f1cce44f191",
-  "compressed_sha256": "c127cf4689380ce853b8f5e24bec128a81c7e3930f73e2b29f76ae980e6eb9f2",
+  "compiler_sha256": "a00bbf25f6ca54e4b166e3c3de401f121211dd56ddb37ff78cabfd75c51e05f4",
+  "compressed_sha256": "652925b1198b9f0c912394799f88431de1937c2ae85bd0fed13fcf4d72408b99",
   "source_revision": "sha256:39a0119d11c2600614ae44f5b5362a7159bc53850a0f78506cdd297f7d69e66b",
   "source_revision_format": "canonical-source-hashes-v1",
   "source_files": {
     "lib/core/string.gsl": "ab16d1a4076dd22615f7d6509f7a514a9f259ee0d060e1d969635bfcba944089",
     "lib/std/types.gsl": "40a085a995bdf0708a78ea5afcc1fbfdbb2c46c195b027d8746cd8e5724d0bdc",
-    "lib/platform/linux_x86_64/native.gsl": "e3876b25227fcf0213d2db18884b66be77e0bf3b59803d7bf7380c943e6ff704",
+    "lib/platform/linux_x86_64/native.gsl": "7795a166dc6981666002d5a7cd42405a0d3f20c69f6aa9cda98b70381198959a",
     "lib/platform/linux_x86_64/errors.gsl": "bddb97825d82cabf0608ec1566d0cf9e9273597234b997df476aa1e405c8783b",
     "lib/platform/linux_x86_64/io.gsl": "73b6c5689c5feb0cd5410ec0730ffe5ef00e329d1217d23e2eed3025c05a20fc",
     "lib/std/io.gsl": "6cc3597fffefdd7875d511a2ce3410d104007a0d6634191c9431b8db8a43406b",
@@ -16,7 +16,8 @@
     "lib/compiler/token.gsl": "0d42d97ad6c4c6ba44188882218347cac7fb40593186099ce4dda3b8b80944b5",
     "lib/compiler/lexer.gsl": "5125bf5f33d289529b4dfa6ad25f8722aa4441d0ae62419aa26f2f5d7daa320b",
     "lib/compiler/ast.gsl": "22bda5e35a95ec3c65a871138121a1570dd9dbf7f7713997dbb87970493dfa78",
-    "lib/compiler/parser.gsl": "209ca73cf884cb2ea0f1ca18cae0d029ae9bee8fc5763b7868c342c0acd9ce12",
+    "lib/core/mem.gsl": "884a2c48e0f3c15fd08903af316af635f1c324825a1716c3366afa3de2e50957",
+    "lib/compiler/parser.gsl": "47c23671ef532d140114eb1f6fd8166e04dd17a4ddc73d1d5394aea469f25e4b",
     "lib/compiler/intrinsics.gsl": "d16a3be8a4eb3bb9141407d421a6f18cca49e12e1c88cad8ae77fd9225c19ec5",
     "lib/compiler/ownership.gsl": "1de4d95e0122737a517b6ceb6a0dac17754adbe0f1e062d2798fcf7434e2c399",
     "lib/compiler/sema.gsl": "debb8e6fc9270ff7afe5276024686713e6fafe89693907894b91568a73cd1cbc",
@@ -31,12 +32,12 @@
     "lib/platform/linux_x86_64/fs.gsl": "ab73de72624043162f844d29fda2e4c00be78bd68466a47d591731608a1e10ff",
     "lib/std/file.gsl": "540623da8ac21b9cf2747c96eb876bc6ae5f84fe84b5d7b20c4e217eead08ad6",
     "lib/compiler/imports.gsl": "116584cd7ccac5d07bcfea622da10ac53898dc431e36de294762a69efe6db10e",
-    "lib/compiler/driver.gsl": "6ca702a6ff0dd0bacc7ec19fcf72a93d20c81a06a1d03b7e904f42236ae9d1d8",
+    "lib/compiler/driver.gsl": "367851cb4946dd4840c49be199333f28200e41d9e2853b1452df180945567d8f",
     "lib/compiler/cli.gsl": "48829149241d09685f5f490b90a32c155a2b9fbbc610c0b1723ab2a8e0b5571a"
   },
   "toolchain": "Clang/LLD 18.1.3",
   "acceptance": {
-    "checks": 1126,
+    "checks": 1117,
     "qemu_boots": 9,
     "report_sha256": ""
   },

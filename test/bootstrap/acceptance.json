@@ -2443,41 +2443,6 @@
   ],
   "capacities": [
     {
-      "name": "expressions",
-      "generator": "expressions",
-      "status": 1
-    },
-    {
-      "name": "statements",
-      "generator": "statements",
-      "status": 1
-    },
-    {
-      "name": "functions",
-      "generator": "functions",
-      "status": 1
-    },
-    {
-      "name": "parameters",
-      "generator": "parameters",
-      "status": 1
-    },
-    {
-      "name": "constants",
-      "generator": "constants",
-      "status": 1
-    },
-    {
-      "name": "structs",
-      "generator": "structs",
-      "status": 1
-    },
-    {
-      "name": "fields",
-      "generator": "fields",
-      "status": 1
-    },
-    {
       "name": "symbols",
       "generator": "symbols",
       "status": 2
@@ -2486,11 +2451,6 @@
       "name": "input_bytes",
       "generator": "input_bytes",
       "status": 7
-    },
-    {
-      "name": "array_types",
-      "generator": "array_types",
-      "status": 1
     },
     {
       "name": "array_layout_overflow",
@@ -2532,14 +2492,6 @@
     {
       "name": "deep_cast_tree",
       "generator": "deep_cast_tree",
-      "status": 1,
-      "code": "E1000",
-      "check_code": true,
-      "check_missing_output": true
-    },
-    {
-      "name": "section_function_capacity",
-      "generator": "section_function_capacity",
       "status": 1,
       "code": "E1000",
       "check_code": true,

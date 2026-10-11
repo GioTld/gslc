@@ -1,15 +1,38 @@
 import "compiler/token"
 import "compiler/ast"
 import "compiler/lexer"
+import "platform/linux_x86_64/native"
+import "core/mem"
 import "core/string"
 
-const PARSER_MAX_EXPRS:  u32 = 26624
-const PARSER_MAX_STMTS:  u32 = 6656
-const PARSER_MAX_PARAMS: u32 = 1024
-const PARSER_MAX_DECLS:  u32 = 384
-const PARSER_MAX_CONSTS: u32 = 384
+func parser_chunk_grow(a: *ChunkArena, capacity: usize) bool {
+    let header = linux_sbrk(size_of(Chunk))
+    if (header as usize) == 0 { return false }
+    let buffer = linux_sbrk(capacity)
+    if (buffer as usize) == 0 { return false }
+    unsafe {
+        let chunk = header as *Chunk
+        chunk_arena_append(a, chunk, buffer, capacity)
+    }
+    return true
+}
+
+// Initial pool sizes (bytes). These are starting capacities, not hard limits.
+const PARSER_EXPR_POOL:   usize = 2621440
+const PARSER_STMT_POOL:   usize = 655360
+const PARSER_PARAM_POOL:  usize = 131072
+const PARSER_DECL_POOL:   usize = 98304
+const PARSER_CONST_POOL:  usize = 65536
+const PARSER_STRUCT_POOL: usize = 32768
+const PARSER_FIELD_POOL:  usize = 98304
+
+const PARSER_MAX_EXPRS:   u32 = 26624
+const PARSER_MAX_STMTS:   u32 = 6656
+const PARSER_MAX_PARAMS:  u32 = 1024
+const PARSER_MAX_DECLS:   u32 = 384
+const PARSER_MAX_CONSTS:  u32 = 384
 const PARSER_MAX_STRUCTS: u32 = 128
-const PARSER_MAX_FIELDS: u32 = 768
+const PARSER_MAX_FIELDS:  u32 = 768
 
 const PARSER_MAX_RECURSION: u32 = 64
 const PARSER_MAX_EXPR_DEPTH: u32 = 128
@@ -20,24 +43,24 @@ struct Parser {
     peek_tok:    Token,
     has_peek:    bool,
 
-    exprs:       *Expr,
+    exprs:       ChunkArena,
     expr_count:  u32,
 
-    stmts:       *Stmt,
+    stmts:       ChunkArena,
     stmt_count:  u32,
 
-    params:      *Param,
+    params:      ChunkArena,
     param_count: u32,
 
-    decls:       *FuncDecl,
+    decls:       ChunkArena,
     decl_count:  u32,
 
-    consts:      *CompilerConst,
+    consts:      ChunkArena,
     const_count: u32,
 
-    structs:     *CompilerStruct,
+    structs:     ChunkArena,
     struct_count: u32,
-    fields:      *CompilerField,
+    fields:      ChunkArena,
     field_count: u32,
 
     type_depth: u32,
@@ -76,40 +99,40 @@ func parser_token_ptr(p: *Parser, tok: Token) *u8 {
 
 func parser_expr(p: *Parser, idx: u32) *Expr {
     unsafe {
-        return (((p.exprs as usize) + (idx as usize) * size_of(Expr)) as *Expr)
+        return chunk_arena_item_ptr(&p.exprs, idx, size_of(Expr)) as *Expr
     }
 }
 
 func parser_stmt(p: *Parser, idx: u32) *Stmt {
     unsafe {
-        return (((p.stmts as usize) + (idx as usize) * size_of(Stmt)) as *Stmt)
+        return chunk_arena_item_ptr(&p.stmts, idx, size_of(Stmt)) as *Stmt
     }
 }
 
 func parser_param(p: *Parser, idx: u32) *Param {
     unsafe {
-        return (((p.params as usize) + (idx as usize) * size_of(Param)) as *Param)
+        return chunk_arena_item_ptr(&p.params, idx, size_of(Param)) as *Param
     }
 }
 
 func parser_decl(p: *Parser, idx: u32) *FuncDecl {
     unsafe {
-        return (((p.decls as usize) + (idx as usize) * size_of(FuncDecl)) as *FuncDecl)
+        return chunk_arena_item_ptr(&p.decls, idx, size_of(FuncDecl)) as *FuncDecl
     }
 }
 
 func parser_const(p: *Parser, idx: u32) *CompilerConst {
     unsafe {
-        return (((p.consts as usize) + (idx as usize) * size_of(CompilerConst)) as *CompilerConst)
+        return chunk_arena_item_ptr(&p.consts, idx, size_of(CompilerConst)) as *CompilerConst
     }
 }
 
 func parser_struct(p: *Parser, idx: u32) *CompilerStruct {
-    unsafe { return (((p.structs as usize) + (idx as usize) * size_of(CompilerStruct)) as *CompilerStruct) }
+    unsafe { return chunk_arena_item_ptr(&p.structs, idx, size_of(CompilerStruct)) as *CompilerStruct }
 }
 
 func parser_field(p: *Parser, idx: u32) *CompilerField {
-    unsafe { return (((p.fields as usize) + (idx as usize) * size_of(CompilerField)) as *CompilerField) }
+    unsafe { return chunk_arena_item_ptr(&p.fields, idx, size_of(CompilerField)) as *CompilerField }
 }
 
 func parser_expect(p: *Parser, kind: u32) bool {
@@ -194,7 +217,8 @@ func parser_type_span(p: *Parser) Token {
         var array_type = base
         array_type.len = element.offset + element.len - base.offset
         if p.error == false && parser_find_type(p, parser_token_ptr(p, array_type), array_type.len) == INVALID_INDEX {
-            if p.struct_count >= PARSER_MAX_STRUCTS { p.error = true; p.type_depth -= 1; return start }
+            parser_pool_ensure(&p.structs, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
+            if p.error { p.type_depth -= 1; return start }
             let structure = parser_struct(p, p.struct_count)
             unsafe { structure.name_ptr = parser_token_ptr(p, array_type) }
             structure.name_len = array_type.len
@@ -239,12 +263,19 @@ func parse_index_suffix(p: *Parser, base: u32) u32 {
     return result
 }
 
+// Ensures the arena has room for one more item of item_size bytes, growing via sbrk if needed.
+func parser_pool_ensure(a: *ChunkArena, item_size: usize, pool_capacity: usize, p: *Parser) {
+    let r = chunk_arena_alloc(a, item_size, item_size)
+    if r.error == ALLOC_OK { return }
+    if parser_chunk_grow(a, pool_capacity) == false { parser_fail(p); return }
+    let r2 = chunk_arena_alloc(a, item_size, item_size)
+    if r2.error != ALLOC_OK { parser_fail(p) }
+}
+
 func alloc_expr(p: *Parser) u32 {
     if p.error { return INVALID_INDEX }
-    if p.expr_count >= PARSER_MAX_EXPRS {
-        parser_fail(p)
-        return INVALID_INDEX
-    }
+    parser_pool_ensure(&p.exprs, size_of(Expr), PARSER_EXPR_POOL, p)
+    if p.error { return INVALID_INDEX }
     let idx = p.expr_count
     p.expr_count += 1
     parser_expr(p, idx).value_reg = 0
@@ -254,10 +285,8 @@ func alloc_expr(p: *Parser) u32 {
 
 func alloc_stmt(p: *Parser) u32 {
     if p.error { return INVALID_INDEX }
-    if p.stmt_count >= PARSER_MAX_STMTS {
-        parser_fail(p)
-        return INVALID_INDEX
-    }
+    parser_pool_ensure(&p.stmts, size_of(Stmt), PARSER_STMT_POOL, p)
+    if p.error { return INVALID_INDEX }
     let idx = p.stmt_count
     p.stmt_count += 1
     parser_stmt(p, idx).next_idx = INVALID_INDEX
@@ -786,8 +815,8 @@ func parse_struct_decl(p: *Parser) {
             parser_expect(p, TOKEN_COLON)
             let field_type = parser_type_span(p)
             if p.error { return }
-            if p.field_count >= PARSER_MAX_FIELDS {
-                p.error = true
+            parser_pool_ensure(&p.fields, size_of(CompilerField), PARSER_FIELD_POOL, p)
+            if p.error {
                 p.error_line = field_name.line
                 p.error_col = field_name.col
                 return
@@ -805,8 +834,8 @@ func parse_struct_decl(p: *Parser) {
     }
     parser_expect(p, TOKEN_RBRACE)
     if p.error { return }
-    if p.struct_count >= PARSER_MAX_STRUCTS {
-        p.error = true
+    parser_pool_ensure(&p.structs, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
+    if p.error {
         p.error_line = name.line
         p.error_col = name.col
         return
@@ -868,8 +897,8 @@ func parse_const_decl(p: *Parser) {
     if is_global && type_len == 0 as usize { p.error = true }
     parser_expect(p, TOKEN_SEMICOLON)
     if p.error { return }
-    if p.const_count >= PARSER_MAX_CONSTS {
-        p.error = true
+    parser_pool_ensure(&p.consts, size_of(CompilerConst), PARSER_CONST_POOL, p)
+    if p.error {
         p.error_line = span_line
         p.error_col = span_col
         return
@@ -910,10 +939,8 @@ func parse_func_decl(p: *Parser) u32 {
         let ptype = parser_type_span(p)
         if p.error { return INVALID_INDEX }
 
-        if p.param_count >= PARSER_MAX_PARAMS {
-            p.error = true
-            return 0
-        }
+        parser_pool_ensure(&p.params, size_of(Param), PARSER_PARAM_POOL, p)
+        if p.error { return 0 }
         let param = parser_param(p, p.param_count)
         unsafe { param.name_ptr = parser_token_ptr(p, pname) }
         unsafe { param.type_ptr = parser_token_ptr(p, ptype) }
@@ -959,10 +986,8 @@ func parse_func_decl(p: *Parser) u32 {
     }
     parser_expect(p, TOKEN_RBRACE)
 
-    if p.decl_count >= PARSER_MAX_DECLS {
-        parser_fail(p)
-        return INVALID_INDEX
-    }
+    parser_pool_ensure(&p.decls, size_of(FuncDecl), PARSER_DECL_POOL, p)
+    if p.error { return INVALID_INDEX }
     let idx = p.decl_count
     let decl = parser_decl(p, idx)
     decl.section_idx = INVALID_INDEX
@@ -981,22 +1006,21 @@ func parse_func_decl(p: *Parser) u32 {
     return idx
 }
 
-func parser_init(p: *Parser, src: string, storage: *u8) {
-    let expr_bytes = (PARSER_MAX_EXPRS as usize) * size_of(Expr)
-    let stmt_bytes = (PARSER_MAX_STMTS as usize) * size_of(Stmt)
-    let param_bytes = (PARSER_MAX_PARAMS as usize) * size_of(Param)
-    let decl_bytes = (PARSER_MAX_DECLS as usize) * size_of(FuncDecl)
-    let const_bytes = (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst)
-    let struct_bytes = (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct)
-    unsafe {
-        p.exprs = storage as *Expr
-        p.stmts = ((storage as usize) + expr_bytes) as *Stmt
-        p.params = ((storage as usize) + expr_bytes + stmt_bytes) as *Param
-        p.decls = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes) as *FuncDecl
-        p.consts = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes) as *CompilerConst
-        p.structs = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes + const_bytes) as *CompilerStruct
-        p.fields = ((storage as usize) + expr_bytes + stmt_bytes + param_bytes + decl_bytes + const_bytes + struct_bytes) as *CompilerField
-    }
+
+func parser_pool_init(a: *ChunkArena, capacity: usize, p: *Parser) {
+    chunk_arena_init_empty(a)
+    if parser_chunk_grow(a, capacity) == false { p.error = true }
+}
+
+func parser_init(p: *Parser, src: string) {
+    p.error = false
+    parser_pool_init(&p.exprs,   PARSER_EXPR_POOL,   p)
+    parser_pool_init(&p.stmts,   PARSER_STMT_POOL,   p)
+    parser_pool_init(&p.params,  PARSER_PARAM_POOL,  p)
+    parser_pool_init(&p.decls,   PARSER_DECL_POOL,   p)
+    parser_pool_init(&p.consts,  PARSER_CONST_POOL,  p)
+    parser_pool_init(&p.structs, PARSER_STRUCT_POOL, p)
+    parser_pool_init(&p.fields,  PARSER_FIELD_POOL,  p)
     lexer_init(&p.lex, src)
     p.expr_count = 0
     p.stmt_count = 0
@@ -1010,11 +1034,10 @@ func parser_init(p: *Parser, src: string, storage: *u8) {
     p.has_peek = false
     p.type_depth = 0
     p.recursion_depth = 0
-    p.error = false
     p.error_line = 0
     p.error_col = 0
 
-    parser_advance(p)
+    if p.error == false { parser_advance(p) }
 }
 
 func parser_parse(p: *Parser) {

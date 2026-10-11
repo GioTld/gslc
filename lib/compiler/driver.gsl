@@ -106,8 +106,7 @@ func compiler_compile_source(src: string, out_path: string, machine: bool, kerne
     var p: Parser
     var s: Sema
 
-    let storage = work.alloc((PARSER_MAX_EXPRS as usize) * size_of(Expr) + (PARSER_MAX_STMTS as usize) * size_of(Stmt) + (PARSER_MAX_PARAMS as usize) * size_of(Param) + (PARSER_MAX_DECLS as usize) * size_of(FuncDecl) + (PARSER_MAX_CONSTS as usize) * size_of(CompilerConst) + (PARSER_MAX_STRUCTS as usize) * size_of(CompilerStruct) + (PARSER_MAX_FIELDS as usize) * size_of(CompilerField))
-    parser_init(&p, src, storage)
+    parser_init(&p, src)
     parser_parse(&p)
 
     if p.error {

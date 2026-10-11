@@ -26,6 +26,7 @@
     "lib/compiler/token.gsl",
     "lib/compiler/lexer.gsl",
     "lib/compiler/ast.gsl",
+    "lib/core/mem.gsl",
     "lib/compiler/parser.gsl",
     "lib/compiler/intrinsics.gsl",
     "lib/compiler/ownership.gsl",
@@ -45,7 +46,6 @@
     "lib/compiler/cli.gsl"
   ],
   "excluded_modules": [
-    "lib/core/mem.gsl"
   ],
   "required_features": [
     {
