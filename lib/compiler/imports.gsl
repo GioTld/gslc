@@ -59,6 +59,11 @@ func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
     return compiler_import_at(state.paths, (index as usize) * COMPILER_PATH_SLOT_BYTES)
 }
 
+func compiler_module_at_offset(state: *ImportState, offset: usize) u32 {
+    if state.path_count == 0 { return INVALID_INDEX }
+    return 0
+}
+
 func compiler_import_seen(state: *ImportState, path: string) u32 {
     let length = strlen(path) as usize
     if length == 0 as usize || length >= COMPILER_PATH_SLOT_BYTES {
