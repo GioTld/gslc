@@ -8,6 +8,9 @@ const COMPILER_MAX_SOURCE_BYTES: usize = 327680
 const COMPILER_MAX_MODULES: u32 = 64
 const COMPILER_MAX_IMPORT_DEPTH: u32 = 16
 const COMPILER_PATH_SLOT_BYTES: usize = 256
+const COMPILER_MODULE_PATH_LIMIT: usize = 239
+const COMPILER_SLOT_START_OFFSET: usize = 240
+const COMPILER_SLOT_END_OFFSET: usize = 248
 const COMPILER_PLATFORM_LINUX: u32 = 0
 const COMPILER_PLATFORM_NONE: u32 = 1
 const COMPILER_PLATFORM_CUSTOM: u32 = 2
@@ -59,14 +62,37 @@ func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
     return compiler_import_at(state.paths, (index as usize) * COMPILER_PATH_SLOT_BYTES)
 }
 
+func compiler_slot_get_u64(slot: *u8, offset: usize) usize {
+    unsafe {
+        let ptr = ((slot as usize) + offset) as *usize
+        return volatile_read(ptr)
+    }
+}
+
+func compiler_slot_set_u64(slot: *u8, offset: usize, value: usize) {
+    unsafe {
+        let ptr = ((slot as usize) + offset) as *usize
+        volatile_write(ptr, value)
+    }
+}
+
 func compiler_module_at_offset(state: *ImportState, offset: usize) u32 {
-    if state.path_count == 0 { return INVALID_INDEX }
-    return 0
+    var i: u32 = 0
+    while i < state.path_count {
+        let slot = compiler_import_path_slot(state, i)
+        let start = compiler_slot_get_u64(slot, COMPILER_SLOT_START_OFFSET)
+        let end = compiler_slot_get_u64(slot, COMPILER_SLOT_END_OFFSET)
+        if offset >= start && offset < end {
+            return i
+        }
+        i += 1
+    }
+    return INVALID_INDEX
 }
 
 func compiler_import_seen(state: *ImportState, path: string) u32 {
     let length = strlen(path) as usize
-    if length == 0 as usize || length >= COMPILER_PATH_SLOT_BYTES {
+    if length == 0 as usize || length >= COMPILER_MODULE_PATH_LIMIT {
         return 2
     }
     var index: u32 = 0
@@ -301,6 +327,7 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
         compiler_import_put(state.output, state.used, 10 as u8)
         state.used += 1 as usize
     }
+    let module_start = state.used
     lexer_init(&lex, compiler_import_as_string(source))
     braces = 0
     var segment: usize = 0 as usize
@@ -319,5 +346,9 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
     }
     if compiler_import_append(state, source, segment, length) == false { return 7 }
     compiler_import_put(state.output, state.used, 0 as u8)
+    let module_end = state.used
+    let slot = compiler_import_path_slot(state, seen)
+    compiler_slot_set_u64(slot, COMPILER_SLOT_START_OFFSET, module_start)
+    compiler_slot_set_u64(slot, COMPILER_SLOT_END_OFFSET, module_end)
     return 0
 }
