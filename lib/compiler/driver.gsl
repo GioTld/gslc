@@ -58,6 +58,12 @@ func compiler_semantic_message(code: u32) string {
     return "semantic error"
 }
 
+
+func compiler_resolve_source_module(imports: *ImportState, offset: usize) u32 {
+    if (imports as usize) == 0 { return INVALID_INDEX }
+    return compiler_module_at_offset(imports, offset)
+}
+
 func compiler_print_semantic(p: *Parser, s: *Sema, combined: bool) {
     var output: CompilerOutput
     output.fd = 1
