@@ -1,0 +1,109 @@
+import "compiler/token"
+
+const SOURCE_MAX_FILES: u32 = 64
+const SOURCE_PATH_MAX: usize = 256
+
+copy struct SourceSpan {
+    file_id: u32,
+    start: usize,
+    end: usize,
+    line: u32,
+    col: u32
+}
+
+struct SourceFile {
+    id: u32,
+    path_ptr: *u8,
+    path_len: usize,
+    src_ptr: *u8,
+    src_len: usize,
+    line_count: u32
+}
+
+struct SourceManager {
+    files: *SourceFile,
+    file_count: u32,
+    total_bytes: usize
+}
+
+func source_span_init(file_id: u32, start: usize, end: usize, line: u32, col: u32) SourceSpan {
+    var span: SourceSpan
+    span.file_id = file_id
+    span.start = start
+    span.end = end
+    span.line = line
+    span.col = col
+    return span
+}
+
+func source_file_at(mgr: *SourceManager, index: u32) *SourceFile {
+    unsafe {
+        return (((mgr.files as usize) + (index as usize) * size_of(SourceFile)) as *SourceFile)
+    }
+}
+
+func source_manager_init(mgr: *SourceManager, storage: *u8) {
+    unsafe {
+        mgr.files = storage as *SourceFile
+    }
+    mgr.file_count = 0
+    mgr.total_bytes = 0 as usize
+}
+
+func source_manager_add(mgr: *SourceManager, path: string, path_len: usize, src: *u8, src_len: usize) u32 {
+    if mgr.file_count >= SOURCE_MAX_FILES {
+        return 4294967295
+    }
+    let id = mgr.file_count
+    let file = source_file_at(mgr, id)
+    file.id = id
+    unsafe {
+        file.path_ptr = (path as usize) as *u8
+        file.src_ptr = src
+    }
+    file.path_len = path_len
+    file.src_len = src_len
+
+    var lines: u32 = 1
+    var offset: usize = 0 as usize
+    while offset < src_len {
+        unsafe {
+            if volatile_read(((src as usize) + offset) as *u8) == 10 as u8 {
+                lines += 1
+            }
+        }
+        offset += 1 as usize
+    }
+    file.line_count = lines
+
+    mgr.file_count += 1
+    mgr.total_bytes += src_len
+    return id
+}
+
+func source_manager_find(mgr: *SourceManager, path: *u8, path_len: usize) u32 {
+    var i: u32 = 0
+    while i < mgr.file_count {
+        let file = source_file_at(mgr, i)
+        if file.path_len == path_len {
+            var match = true
+            var offset: usize = 0 as usize
+            while offset < path_len {
+                unsafe {
+                    let a = volatile_read(((file.path_ptr as usize) + offset) as *u8)
+                    let b = volatile_read(((path as usize) + offset) as *u8)
+                    if a != b {
+                        match = false
+                        break
+                    }
+                }
+                offset += 1 as usize
+            }
+            if match {
+                return i
+            }
+        }
+        i += 1
+    }
+    return 4294967295
+}
