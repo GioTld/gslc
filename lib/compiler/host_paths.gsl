@@ -1,0 +1,111 @@
+import "compiler/host_storage"
+import "core/string"
+
+const HOST_PATH_BYTES: usize = 4096
+const HOST_PATH_MAX_LINKS: u32 = 40
+const HOST_PATH_SYS_GETCWD: u64 = 79
+const HOST_PATH_SYS_READLINK: u64 = 89
+const HOST_PATH_SYS_LSTAT: u64 = 6
+const HOST_PATH_STAT_BYTES: usize = 144
+const HOST_PATH_MODE_OFFSET: usize = 24
+const HOST_PATH_TYPE_MASK: u32 = 61440
+const HOST_PATH_DIRECTORY: u32 = 16384
+const HOST_PATH_SYMLINK: u32 = 40960
+
+struct CompilerPaths {
+    context: *CompilerContext,
+    pending: *u8,
+    resolved: *u8,
+    link: *u8,
+    metadata: *u8,
+    initialized: bool
+}
+
+func host_path_byte(data: *u8, index: usize) u8 {
+    unsafe { return *((data as usize + index) as *u8) }
+}
+
+func host_path_put(data: *u8, index: usize, value: u8) {
+    unsafe { *((data as usize + index) as *u8) = value }
+}
+
+func host_path_copy(target: *u8, offset: usize, source: *u8, start: usize, length: usize) {
+    unsafe { memcpy((target as usize + offset) as *u8, (source as usize + start) as *u8, length) }
+}
+
+func host_paths_prepare(paths: *CompilerPaths) bool {
+    if paths.initialized { return true }
+    let memory = compiler_storage_allocate(paths.context, HOST_PATH_BYTES * 3 as usize + HOST_PATH_STAT_BYTES)
+    if memory as usize == 0 as usize { return false }
+    unsafe {
+        paths.pending = memory
+        paths.resolved = (memory as usize + HOST_PATH_BYTES) as *u8
+        paths.link = (memory as usize + HOST_PATH_BYTES * 2 as usize) as *u8
+        paths.metadata = (memory as usize + HOST_PATH_BYTES * 3 as usize) as *u8
+    }
+    paths.initialized = true
+    return true
+}
+
+// Returned bytes are scratch storage, valid until the next resolution call.
+func host_path_resolve(paths: *CompilerPaths, path: string) bool {
+    if host_paths_prepare(paths) == false { return false }
+    let length = strlen(path) as usize
+    if length == 0 as usize || length >= HOST_PATH_BYTES { return false }
+    unsafe { memcpy(paths.pending, path as *u8, length + 1 as usize) }
+    var used: usize = 1
+    host_path_put(paths.resolved, 0 as usize, 47 as u8)
+    host_path_put(paths.resolved, used, 0 as u8)
+    if host_path_byte(paths.pending, 0 as usize) != 47 as u8 {
+        var status: i64
+        unsafe { status = syscall(HOST_PATH_SYS_GETCWD, paths.resolved as u64, HOST_PATH_BYTES as u64, 0 as u64) }
+        if status <= 0 { return false }
+        used = status as usize - 1 as usize
+    }
+    var cursor: usize = 0
+    var links: u32 = 0
+    while host_path_byte(paths.pending, cursor) != 0 as u8 {
+        if host_path_byte(paths.pending, cursor) == 47 as u8 { cursor += 1 as usize; continue }
+        let start = cursor
+        while host_path_byte(paths.pending, cursor) != 0 as u8 && host_path_byte(paths.pending, cursor) != 47 as u8 { cursor += 1 as usize }
+        let count = cursor - start
+        if count == 1 as usize && host_path_byte(paths.pending, start) == 46 as u8 { continue }
+        if count == 2 as usize && host_path_byte(paths.pending, start) == 46 as u8 && host_path_byte(paths.pending, start + 1 as usize) == 46 as u8 {
+            while used > 1 as usize && host_path_byte(paths.resolved, used - 1 as usize) != 47 as u8 { used -= 1 as usize }
+            if used > 1 as usize { used -= 1 as usize }
+            host_path_put(paths.resolved, used, 0 as u8)
+            continue
+        }
+        let parent = used
+        if used > 1 as usize { used += 1 as usize; host_path_put(paths.resolved, used - 1 as usize, 47 as u8) }
+        if count >= HOST_PATH_BYTES - used { return false }
+        host_path_copy(paths.resolved, used, paths.pending, start, count)
+        used += count
+        host_path_put(paths.resolved, used, 0 as u8)
+        var status: i64
+        unsafe { status = syscall(HOST_PATH_SYS_LSTAT, paths.resolved as u64, paths.metadata as u64, 0 as u64) }
+        if status != 0 { return false }
+        var kind: u32
+        unsafe { kind = *((paths.metadata as usize + HOST_PATH_MODE_OFFSET) as *u32) & HOST_PATH_TYPE_MASK }
+        if kind == HOST_PATH_SYMLINK {
+            if links >= HOST_PATH_MAX_LINKS { return false }
+            links += 1
+            unsafe { status = syscall(HOST_PATH_SYS_READLINK, paths.resolved as u64, paths.link as u64, HOST_PATH_BYTES as u64) }
+            if status <= 0 || status as usize >= HOST_PATH_BYTES { return false }
+            let link_length = status as usize
+            var pending_length: usize
+            unsafe { pending_length = strlen(paths.pending as string) as usize }
+            let remaining = pending_length - cursor
+            if remaining >= HOST_PATH_BYTES - link_length { return false }
+            host_path_copy(paths.link, link_length, paths.pending, cursor, remaining + 1 as usize)
+            memcpy(paths.pending, paths.link, link_length + remaining + 1 as usize)
+            used = parent
+            if host_path_byte(paths.pending, 0 as usize) == 47 as u8 { used = 1 as usize }
+            host_path_put(paths.resolved, used, 0 as u8)
+            cursor = 0 as usize
+        } else {
+            if host_path_byte(paths.pending, cursor) == 47 as u8 && kind != HOST_PATH_DIRECTORY { return false }
+        }
+    }
+    return true
+}

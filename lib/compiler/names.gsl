@@ -1,0 +1,130 @@
+import "compiler/host_storage"
+import "core/string"
+
+const NAME_BUCKETS_INITIAL: u32 = 64
+const NAME_RECORD_BYTES: usize = 4096
+const NAME_HASH_OFFSET: u32 = 2166136261
+const NAME_HASH_PRIME: u32 = 16777619
+
+struct CompilerName {
+    text: *u8,
+    length: usize,
+    hash: u32,
+    binding: u32
+}
+
+struct CompilerNames {
+    context: *CompilerContext,
+    records: CompilerPool,
+    count: u32,
+    buckets: *u32,
+    capacity: u32
+}
+
+func compiler_names_init(names: *CompilerNames, context: *CompilerContext) {
+    unsafe { names.context = context }
+    compiler_pool_init(&names.records, context)
+    names.count = 0
+    names.capacity = 0
+    unsafe { names.buckets = 0 as *u32 }
+}
+
+func compiler_name_record(names: *CompilerNames, index: u32) *CompilerName {
+    unsafe { return compiler_pool_item_ptr(&names.records, index, size_of(CompilerName)) as *CompilerName }
+}
+
+func compiler_name_bucket(names: *CompilerNames, index: u32) *u32 {
+    unsafe { return ((names.buckets as usize) + (index as usize) * size_of(u32)) as *u32 }
+}
+
+func compiler_name_hash(text: *u8, length: usize) u32 {
+    var hash = NAME_HASH_OFFSET
+    var offset: usize = 0 as usize
+    while offset < length {
+        unsafe { hash = (hash ^ (*(((text as usize) + offset) as *u8) as u32)) * NAME_HASH_PRIME }
+        offset += 1 as usize
+    }
+    return hash
+}
+
+func compiler_name_find(names: *CompilerNames, text: *u8, length: usize, hash: u32) u32 {
+    if names.capacity == 0 { return INVALID_INDEX }
+    var bucket = hash & (names.capacity - 1)
+    unsafe {
+        while true {
+            let stored = *compiler_name_bucket(names, bucket)
+            if stored == 0 { return INVALID_INDEX }
+            let entry = compiler_name_record(names, stored - 1)
+            if entry.hash == hash && entry.length == length && bytes_equal(entry.text, entry.length, text, length) { return stored - 1 }
+            bucket = (bucket + 1) & (names.capacity - 1)
+        }
+    }
+    return INVALID_INDEX
+}
+
+func compiler_names_grow(names: *CompilerNames) bool {
+    if names.capacity >= 2147483648 { unsafe { names.context.error = true }; return false }
+    var capacity = NAME_BUCKETS_INITIAL
+    if names.capacity != 0 { capacity = names.capacity * 2 }
+    let memory = compiler_storage_allocate(names.context, (capacity as usize) * size_of(u32))
+    if (memory as usize) == 0 as usize { return false }
+    unsafe { names.buckets = memory as *u32 }
+    names.capacity = capacity
+    var index: u32 = 0
+    while index < capacity {
+        unsafe { *compiler_name_bucket(names, index) = 0 }
+        index += 1
+    }
+    index = 0
+    while index < names.count {
+        let entry = compiler_name_record(names, index)
+        var bucket = entry.hash & (capacity - 1)
+        unsafe {
+            while *compiler_name_bucket(names, bucket) != 0 { bucket = (bucket + 1) & (capacity - 1) }
+            *compiler_name_bucket(names, bucket) = index + 1
+        }
+        index += 1
+    }
+    return true
+}
+
+// Names borrow source bytes; IDs and entries survive rehashing and scope changes.
+func compiler_name_intern(names: *CompilerNames, text: *u8, length: usize) u32 {
+    let hash = compiler_name_hash(text, length)
+    let existing = compiler_name_find(names, text, length, hash)
+    if existing != INVALID_INDEX { return existing }
+    if names.count >= names.capacity / 2 && compiler_names_grow(names) == false { return INVALID_INDEX }
+    let index = names.count
+    if compiler_pool_ensure(&names.records, index, size_of(CompilerName), NAME_RECORD_BYTES) == false { return INVALID_INDEX }
+    let entry = compiler_name_record(names, index)
+    unsafe { entry.text = text }
+    entry.length = length
+    entry.hash = hash
+    entry.binding = INVALID_INDEX
+    var bucket = hash & (names.capacity - 1)
+    unsafe {
+        while *compiler_name_bucket(names, bucket) != 0 { bucket = (bucket + 1) & (names.capacity - 1) }
+        *compiler_name_bucket(names, bucket) = index + 1
+    }
+    names.count += 1
+    return index
+}
+
+func bytes_equal(a: *u8, alen: usize, b: *u8, blen: usize) bool {
+    if alen != blen {
+        return false
+    }
+    var i: usize = 0 as usize
+    while i < alen {
+        unsafe {
+            let ca = volatile_read(((a as usize) + i) as *u8)
+            let cb = volatile_read(((b as usize) + i) as *u8)
+            if ca != cb {
+                return false
+            }
+        }
+        i += 1 as usize
+    }
+    return true
+}
+

@@ -1,0 +1,43 @@
+import "compiler/sema"
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var names: CompilerNames
+    compiler_names_init(&names, &context)
+    let text = compiler_storage_allocate(&context, 8000 as usize)
+    var index: u32 = 0
+    while index < 1000 {
+        unsafe {
+            let word = ((text as usize) + (index as usize) * 8 as usize) as *u8
+            var digit: u32 = 0
+            while digit < 8 {
+                *((word as usize + digit as usize) as *u8) = (97 + ((index >> (digit * 4)) & 15)) as u8
+                digit += 1
+            }
+            if compiler_name_intern(&names, word, 8 as usize) != index { return 1 }
+        }
+        index += 1
+    }
+    index = 0
+    while index < 1000 {
+        unsafe {
+            let word = ((text as usize) + (index as usize) * 8 as usize) as *u8
+            if compiler_name_intern(&names, word, 8 as usize) != index { return 2 }
+        }
+        index += 1
+    }
+    if names.count != 1000 { return 3 }
+    var sema: Sema
+    sema_init(&sema, &context)
+    let name = compiler_name_record(&names, 0)
+    if sema_declare(&sema, name.text, name.length, SYM_PARAM, 1, 1) == false { return 4 }
+    sema_enter_scope(&sema)
+    if sema_declare(&sema, name.text, name.length, SYM_PARAM, 1, 1) == false { return 5 }
+    if sema_lookup(&sema, name.text, name.length) != 1 { return 6 }
+    sema_exit_scope(&sema)
+    if sema_lookup(&sema, name.text, name.length) != 0 { return 7 }
+    if sema_declare(&sema, name.text, name.length, SYM_PARAM, 1, 1) { return 8 }
+    return 0
+}

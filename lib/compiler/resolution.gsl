@@ -1,0 +1,41 @@
+const BINDING_UNRESOLVED: u32 = 0
+const BINDING_LOCAL: u32 = 1
+const BINDING_PARAMETER: u32 = 2
+const BINDING_GLOBAL: u32 = 3
+const BINDING_FUNCTION: u32 = 4
+
+const RESOLUTION_MISSING_LOCAL: u32 = 4294967294
+const RESOLUTION_SIGNED_FALSE_VALID: u32 = 1
+const RESOLUTION_SIGNED_FALSE_VALUE: u32 = 2
+const RESOLUTION_SIGNED_TRUE_VALID: u32 = 4
+const RESOLUTION_SIGNED_TRUE_VALUE: u32 = 8
+
+// Derived facts are stable for an expression's lexical scope. Ownership state is not cached.
+struct ExprResolution {
+    semantic_slot: u32,
+    binding_kind: u32,
+    binding_index: u32,
+    local_index: u32,
+    declaration: u32,
+    field: u32,
+    natural_type: u32,
+    signedness: u32
+}
+
+
+struct ResolvedType {
+    base_ptr: *u8,
+    base_len: usize,
+    pointer_depth: u32,
+    type_id: u32,
+    canonical_id: u32
+}
+
+struct TypeDescriptor {
+    kind: u32,
+    bits: u32,
+    is_signed: bool,
+    declaration: u32,
+    pointee: u32,
+    pointer_type: u32
+}

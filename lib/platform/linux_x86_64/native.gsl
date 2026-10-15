@@ -14,7 +14,11 @@ const LINUX_SYS_BRK:   u64 = 12
 func linux_sbrk(increment: usize) *u8 {
     unsafe {
         let current = syscall(LINUX_SYS_BRK, 0 as u64, 0 as u64, 0 as u64) as usize
-        let next = current + increment
+        if increment > (18446744073709551615 as usize) - current { return 0 as *u8 }
+        if increment > (18446744073709551608 as usize) { return 0 as *u8 }
+        let rounded = (increment + 7 as usize) & (18446744073709551608 as usize)
+        if rounded > (18446744073709551615 as usize) - current { return 0 as *u8 }
+        let next = current + rounded
         let result = syscall(LINUX_SYS_BRK, next as u64, 0 as u64, 0 as u64) as usize
         if result != next { return 0 as *u8 }
         return current as *u8
@@ -36,4 +40,17 @@ func linux_write(handle: u64, buffer: *u8, count: usize) i64 {
 
 func linux_close(handle: u64) i64 {
     unsafe { return syscall(LINUX_SYS_CLOSE, handle, 0 as u64, 0 as u64) }
+}
+
+// Private anonymous read/write pages; these mappings never change the process break.
+func linux_map_storage(bytes: usize) *u8 {
+    unsafe {
+        let result = asm_u64("mov $$9, %rax; xor %rdi, %rdi; mov $$3, %rdx; mov $$34, %r10; mov $$-1, %r8; xor %r9, %r9; syscall", "={rax},{rsi},~{rdi},~{rdx},~{r10},~{r8},~{r9},~{rcx},~{r11},~{memory}", bytes) as i64
+        if result < 0 { return 0 as *u8 }
+        return result as *u8
+    }
+}
+
+func linux_unmap(memory: *u8, bytes: usize) i64 {
+    unsafe { return syscall(11 as u64, memory as u64, bytes as u64, 0 as u64) }
 }

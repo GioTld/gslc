@@ -1,0 +1,34 @@
+import "compiler/host_storage"
+import "compiler/token"
+
+func main() u32 {
+    let original_break = linux_sbrk(0 as usize)
+    var first: CompilerContext
+    var second: CompilerContext
+    compiler_context_init(&first)
+    compiler_context_init(&second)
+    defer compiler_context_release(&first)
+    defer compiler_context_release(&second)
+    let a = compiler_storage_allocate(&first, 8 as usize)
+    let b = compiler_storage_allocate(&second, 8 as usize)
+    if first.error || second.error { return 1 }
+    unsafe { *(a as *u64) = 17 as u64; *(b as *u64) = 29 as u64 }
+    let old_mapping = first.blocks
+    let large = compiler_storage_allocate(&first, 100000 as usize)
+    if first.error || large as usize == 0 as usize { return 2 }
+    unsafe { if *(a as *u64) != 17 as u64 { return 3 } }
+    let failed = compiler_storage_allocate(&first, MEM_MAX_SIZE)
+    if failed as usize != 0 as usize || first.error == false || second.error { return 4 }
+    if compiler_storage_allocate(&second, 8 as usize) as usize == 0 as usize { return 5 }
+    compiler_context_release(&first)
+    if first.mapped_bytes != 0 as usize || first.used_bytes != 0 as usize || first.error { return 6 }
+    unsafe {
+        if *(b as *u64) != 29 as u64 { return 7 }
+        // mincore reports ENOMEM for a range that has been unmapped.
+        var residency: u8 = 0 as u8
+        if syscall(27 as u64, old_mapping as u64, 4096 as u64, &residency as u64) != -12 { return 8 }
+    }
+    if compiler_storage_allocate(&first, 32 as usize) as usize == 0 as usize { return 9 }
+    if linux_sbrk(0 as usize) as usize != original_break as usize { return 10 }
+    return 0
+}

@@ -1,0 +1,32 @@
+import "core/mem"
+
+func main() u32 {
+    arena storage(128)
+    let buffer = storage.alloc(128 as usize)
+    var a = arena_init(buffer, 128 as usize)
+    if arena_alloc(&a, 1 as usize, 3 as usize).error != ALLOC_ERR_ALIGN { return 1 }
+    if a.offset != 0 as usize { return 2 }
+    if arena_alloc(&a, MEM_MAX_SIZE, 8 as usize).error == ALLOC_OK { return 3 }
+    if a.offset != 0 as usize { return 4 }
+    if arena_alloc(&a, 128 as usize, 1 as usize).error != ALLOC_OK { return 5 }
+    if arena_alloc(&a, 1 as usize, 1 as usize).error != ALLOC_ERR_OOM { return 6 }
+    if arena_alloc(&a, 0 as usize, 1 as usize).error != ALLOC_OK { return 7 }
+    let view = byte_view(buffer, 8 as usize)
+    if byte_view_slice(view, 4 as usize, MEM_MAX_SIZE).len != 0 as usize { return 8 }
+    if byte_view_slice(view, 9 as usize, 0 as usize).len != 0 as usize { return 9 }
+    if byte_view_slice(view, 2 as usize, 6 as usize).len != 6 as usize { return 10 }
+    unsafe {
+        var high = arena_init((MEM_MAX_SIZE - 3 as usize) as *u8, 16 as usize)
+        if arena_alloc(&high, 1 as usize, 8 as usize).error != ALLOC_ERR_OVERFLOW { return 11 }
+        if high.offset != 0 as usize { return 12 }
+    }
+    var chunks: ChunkArena
+    var first: Chunk
+    var second: Chunk
+    chunk_arena_init(&chunks, &first, buffer, 8 as usize)
+    unsafe { chunk_arena_append(&chunks, &second, ((buffer as usize) + 8 as usize) as *u8, 8 as usize) }
+    if chunk_arena_alloc(&chunks, 8 as usize, 1 as usize).error != ALLOC_OK { return 13 }
+    if chunk_arena_alloc(&chunks, 8 as usize, 1 as usize).error != ALLOC_OK { return 14 }
+    if chunk_arena_alloc(&chunks, 1 as usize, 1 as usize).error != ALLOC_ERR_OOM { return 15 }
+    return 0
+}

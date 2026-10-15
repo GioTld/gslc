@@ -1,0 +1,56 @@
+import "compiler/sema"
+import "compiler/codegen_validate"
+
+func cleanup_argument(parser: *Parser, index: u32) i64 {
+    let call = parser_expr(parser, flow_cleanup(parser, index).expression)
+    return parser_expr(parser, call.call.arg_start).int_lit.val
+}
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    var sema: Sema
+    parser_init(&parser, "func sink(x:u32) {} func run() { defer sink(1); while true { defer sink(2); if true { defer sink(3); break }; continue }; return } func main() { defer sink(4) }", &context)
+    parser_parse(&parser)
+    if parser.error { return 1 }
+    sema_init(&sema, &context)
+    sema_check(&sema, &parser)
+    if sema.error || codegen_preflight(&parser) == false { return 2 }
+    let first = parser_decl(&parser, 1).body_start
+    let loop_index = parser_stmt(&parser, first).next_idx
+    let loop = parser_stmt(&parser, loop_index)
+    let body = parser_stmt(&parser, loop.block.body_start)
+    let branch = parser_stmt(&parser, body.next_idx)
+    let inner = parser_stmt(&parser, branch.block.body_start)
+    let stopped = flow_exit(&parser, parser_stmt(&parser, inner.next_idx).flow_exit)
+    if stopped.kind != FLOW_BREAK || stopped.target != loop_index { return 3 }
+    if cleanup_argument(&parser, stopped.cleanup_head) != 3 { return 4 }
+    if cleanup_argument(&parser, flow_cleanup(&parser, stopped.cleanup_head).previous) != 2 { return 5 }
+    if cleanup_argument(&parser, stopped.cleanup_stop) != 1 { return 6 }
+    let continued = flow_exit(&parser, parser_stmt(&parser, branch.next_idx).flow_exit)
+    if continued.kind != FLOW_CONTINUE || continued.target != loop_index { return 7 }
+    if cleanup_argument(&parser, continued.cleanup_head) != 2 || continued.cleanup_stop != stopped.cleanup_stop { return 8 }
+    let returned = flow_exit(&parser, parser_stmt(&parser, loop.next_idx).flow_exit)
+    if returned.kind != FLOW_RETURN || returned.cleanup_stop != INVALID_INDEX { return 9 }
+    if cleanup_argument(&parser, returned.cleanup_head) != 1 { return 10 }
+    let normal = parser_decl(&parser, 2).body_start
+    let fallthrough = flow_exit(&parser, parser_stmt(&parser, normal).flow_block_exit)
+    if fallthrough.kind != FLOW_FALLTHROUGH || fallthrough.cleanup_stop != INVALID_INDEX { return 11 }
+    if cleanup_argument(&parser, fallthrough.cleanup_head) != 4 { return 12 }
+    let loop_block = flow_block(&parser, loop_index)
+    if loop_block.second != loop.next_idx { return 13 }
+    if flow_block(&parser, inner.next_idx).first != loop.next_idx { return 14 }
+    if flow_block(&parser, branch.next_idx).first != loop_index { return 15 }
+    let branch_index = body.next_idx
+    let graph_branch = flow_block(&parser, branch_index)
+    if flow_region_reaches(&parser, graph_branch.first, graph_branch.join, graph_branch.depth + 1) { return 16 }
+    if flow_region_reaches(&parser, graph_branch.second, graph_branch.join, graph_branch.depth + 1) == false { return 17 }
+    // A loop back edge must not make a terminated arm reach a later iteration's join.
+    if flow_region_reaches(&parser, branch.next_idx, inner.next_idx, loop_block.depth + 1) { return 18 }
+    parser.flow_visit = 4294967295
+    if flow_region_reaches(&parser, loop_index, loop.next_idx, loop_block.depth) == false { return 19 }
+    if parser.flow_visit != 1 { return 20 }
+    return 0
+}

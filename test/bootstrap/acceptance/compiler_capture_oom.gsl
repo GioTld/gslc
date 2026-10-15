@@ -1,0 +1,68 @@
+import "compiler/codegen"
+import "compiler/sema"
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "func sample() { unsafe { syscall(1 as u64, 1 as u64, 0 as u64, 0 as u64); asm_u64(\"mov $1, $0\", \"=r,r\", 7 as usize) } }", &context)
+    parser_parse(&parser)
+    if parser.error { return 1 }
+    var sema: Sema
+    sema_init(&sema, &context)
+    sema_check(&sema, &parser)
+    if sema.error { return 11 }
+    if codegen_preflight(&parser) == false { return 12 }
+    var failed: CompilerContext
+    compiler_context_init(&failed)
+    defer compiler_context_release(&failed)
+    failed.error = true
+    var arguments: CompilerPool
+    compiler_pool_init(&arguments, &failed)
+    var function: IrFunction
+    ir_function_init(&function)
+    defer compiler_context_release(&function.context)
+    var ctx: Codegen
+    unsafe { ctx.function = &function; ctx.arguments = &arguments }
+    compiler_names_init(&ctx.names, &context)
+    compiler_pool_init(&ctx.locals, &context)
+    ctx.next_reg = 0
+    ctx.next_label = 0
+    ctx.local_count = 0
+    ctx.param_start = 0
+    ctx.param_count = 0
+    ctx.return_type = 0
+    ctx.return_signed = false
+    ctx.capture_call = INVALID_INDEX
+    ctx.replay_call = INVALID_INDEX
+    var output: CompilerOutput
+    output.fd = 1
+    output.error = false
+    var index: u32 = 0
+    var calls: u32 = 0
+    while index < parser.expr_count {
+        if parser_expr(&parser, index).kind == EXPR_CALL {
+            ctx.error = false
+            if codegen_emit_builtin(&parser, index, &output, &ctx) != 0 || ctx.error == false { return 3 }
+            calls += 1
+        }
+        index += 1
+    }
+    if calls != 2 || context.error || function.context.error { return 4 }
+    if codegen_emit_expr(&parser, INVALID_INDEX, &output, &ctx, 64, false) != 0 { return 6 }
+    if codegen_emit_control_block(&parser, parser.stmt_count, 1, &output, &ctx) == false { return 7 }
+    ctx.error = false
+    function.context.error = true
+    if codegen_emit_expr(&parser, INVALID_INDEX, &output, &ctx, 64, false) != 0 || ctx.error == false { return 8 }
+    function.context.error = false
+    index = 0
+    while index < function.count {
+        unsafe {
+            let instruction = compiler_pool_item_ptr(&function.instructions, index, size_of(IrInstruction)) as *IrInstruction
+            if instruction.kind == IR_INSTRUCTION_SYSCALL || instruction.kind == IR_INSTRUCTION_ASSEMBLY { return 5 }
+        }
+        index += 1
+    }
+    return 0
+}

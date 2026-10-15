@@ -1,0 +1,91 @@
+import "compiler/ast"
+import "compiler/host_storage"
+
+const PARSER_WALK_BLOCK_BYTES: usize = 4096
+
+struct ParserDepthFrame {
+    expression: u32,
+    phase: u32,
+    argument: u32,
+    arguments_left: u32,
+    maximum: u32
+}
+
+func parser_depth_frame(p: *Parser, index: u32) *ParserDepthFrame {
+    unsafe { return compiler_pool_item_ptr(&p.depth_frames, index, size_of(ParserDepthFrame)) as *ParserDepthFrame }
+}
+
+func parser_depth_push(p: *Parser, depth: u32, expression: u32) {
+    if compiler_pool_ensure(&p.depth_frames, depth, size_of(ParserDepthFrame), PARSER_WALK_BLOCK_BYTES) == false { p.context.error = true; parser_fail(p); return }
+    let frame = parser_depth_frame(p, depth)
+    frame.expression = expression
+    frame.phase = 0
+    frame.argument = INVALID_INDEX
+    frame.arguments_left = 0
+    frame.maximum = 0
+    let node = parser_expr(p, expression)
+    if node.kind == EXPR_CALL || node.kind == EXPR_DATA {
+        frame.argument = node.call.arg_start
+        frame.arguments_left = node.call.arg_count
+    }
+}
+
+func parser_depth_child(p: *Parser, frame: *ParserDepthFrame) u32 {
+    let node = parser_expr(p, frame.expression)
+    if node.kind == EXPR_BINARY || node.kind == EXPR_INDEX {
+        frame.phase += 1
+        if frame.phase == 1 { return node.binary.left_idx }
+        if frame.phase == 2 { return node.binary.right_idx }
+        return INVALID_INDEX
+    }
+    if frame.phase == 0 {
+        frame.phase = 1
+        if node.kind == EXPR_UNARY { return node.unary.operand_idx }
+        if node.kind == EXPR_CAST { return node.cast.source_idx }
+        if node.kind == EXPR_MEMBER { return node.member.base_idx }
+        if node.kind == EXPR_CALL && node.call.callee_expr_idx != INVALID_INDEX { return node.call.callee_expr_idx }
+    }
+    if frame.arguments_left != 0 {
+        let argument = frame.argument
+        if argument >= p.expr_count { parser_fail(p); return INVALID_INDEX }
+        frame.argument = parser_expr(p, argument).next_arg
+        frame.arguments_left -= 1
+        return argument
+    }
+    return INVALID_INDEX
+}
+
+// The work stack follows syntax edges; LLVM registers are never used as parse metadata.
+func parser_expression_depth(p: *Parser, index: u32, remaining: u32) u32 {
+    if p.error { return 0 }
+    if index >= p.expr_count || remaining == 0 { parser_fail(p); return 0 }
+    if parser_expr(p, index).syntax_depth != 0 { return parser_expr(p, index).syntax_depth }
+    parser_depth_push(p, 0, index)
+    var depth: u32 = 1
+    while depth != 0 && p.error == false {
+        let frame = parser_depth_frame(p, depth - 1)
+        let child = parser_depth_child(p, frame)
+        if p.error { return 0 }
+        if child != INVALID_INDEX {
+            if child >= p.expr_count || depth >= remaining { parser_fail(p); return 0 }
+            let cached = parser_expr(p, child).syntax_depth
+            if cached != 0 {
+                if cached > frame.maximum { frame.maximum = cached }
+            } else {
+                parser_depth_push(p, depth, child)
+                depth += 1
+            }
+        } else {
+            let value = frame.maximum + 1
+            if value > PARSER_MAX_EXPR_DEPTH { parser_fail(p); return 0 }
+            parser_expr(p, frame.expression).syntax_depth = value
+            depth -= 1
+            if depth != 0 {
+                let parent = parser_depth_frame(p, depth - 1)
+                if value > parent.maximum { parent.maximum = value }
+            }
+        }
+    }
+    if p.error { return 0 }
+    return parser_expr(p, index).syntax_depth
+}

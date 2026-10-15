@@ -1,0 +1,55 @@
+import "compiler/codegen_operations"
+
+func codegen_emit_function_header(p: *Parser, output: *CompilerOutput, parameters: *CompilerPool, header: *IrFunctionHeader) {
+    compiler_output_string(output, "define ")
+    codegen_write_type(p, output, header.return_type)
+    compiler_output_string(output, " @")
+    compiler_output_write(output, header.name, header.name_length)
+    compiler_output_string(output, "(")
+    var index: u32 = 0
+    while index < header.parameter_count {
+        if index > 0 { compiler_output_string(output, ", ") }
+        codegen_write_type(p, output, codegen_ir_argument(parameters, index).type_id)
+        compiler_output_string(output, " %arg")
+        codegen_write_u32(output, index)
+        index += 1
+    }
+    compiler_output_string(output, ") #0")
+    if header.section_end > header.section_start {
+        compiler_output_string(output, " section \"")
+        codegen_emit_assembly_bytes(p, output, header.section_start, header.section_end, false)
+        compiler_output_string(output, "\"")
+    }
+    compiler_output_string(output, " {\nentry:\n")
+}
+
+func codegen_emit_global(p: *Parser, output: *CompilerOutput, elements: *CompilerPool, global: *IrGlobal) {
+    compiler_output_string(output, "@")
+    compiler_output_write(output, global.name, global.name_length)
+    compiler_output_string(output, " = global ")
+    codegen_write_type(p, output, global.type_id)
+    compiler_output_string(output, " ")
+    if global.initialized == false { compiler_output_string(output, "zeroinitializer") } else if global.is_array {
+        compiler_output_string(output, "[")
+        var index: u32 = 0
+        while index < global.element_count {
+            if index > 0 { compiler_output_string(output, ", ") }
+            codegen_write_type(p, output, global.element_type)
+            compiler_output_string(output, " ")
+            unsafe {
+                let element = compiler_pool_item_ptr(elements, index, size_of(IrGlobalElement)) as *IrGlobalElement
+                codegen_write_u64(output, element.value)
+            }
+            index += 1
+        }
+        compiler_output_string(output, "]")
+    } else { codegen_write_u64(output, global.value) }
+    if global.section_end > global.section_start {
+        compiler_output_string(output, ", section \"")
+        codegen_emit_assembly_bytes(p, output, global.section_start, global.section_end, false)
+        compiler_output_string(output, "\"")
+    }
+    compiler_output_string(output, ", align ")
+    codegen_write_u32(output, global.alignment)
+    compiler_output_string(output, "\n")
+}

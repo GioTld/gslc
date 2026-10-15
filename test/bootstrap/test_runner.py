@@ -153,16 +153,16 @@ class RunnerTests(unittest.TestCase):
         driver = (ROOT / "lib/compiler/driver.gsl").read_text()
         emitter = "\n".join((ROOT / name).read_text() for name in manifest["source_files"])
         probe = (ROOT / "test/bootstrap/acceptance/storage.gsl").read_text()
-        work = str(manifest["storage"]["work_arena_bytes"])
-        self.assertEqual(re.findall(r"arena work\((\d+)\)", driver), [work])
-        self.assertEqual(re.findall(r"arena work\((\d+)\)", probe), [work])
+        self.assertEqual(re.findall(r"arena work\((\d+)\)", driver), [])
+        self.assertEqual(re.findall(r"arena work\((\d+)\)", probe), [])
         local = re.findall(r"arena local_storage\(CODEGEN_LOCAL_ARENA_BYTES\)", emitter)
         capacity = re.findall(r"const CODEGEN_LOCAL_ARENA_BYTES: u32 = (\d+)", emitter)
-        self.assertTrue(local)
-        self.assertEqual(set(capacity), set(re.findall(r'metric\("local_arena_bytes",(\d+) as u64', probe)))
+        self.assertEqual(local, [])
+        self.assertEqual(capacity, [])
+        self.assertEqual(re.findall(r'metric\("local_arena_bytes",(\d+) as u64', probe), ["0"])
         sema = (ROOT / "lib/compiler/sema.gsl").read_text()
         move_buffers = re.findall(r"var (?:before|after): \[(\d+)\]u16", sema)
-        self.assertEqual(move_buffers, [str(manifest["storage"]["limits"]["symbols"])] * 2)
+        self.assertEqual(move_buffers, [])
 
     def test_storage_report_rejects_capacity_drift_and_overflow(self):
         manifest = gsl.seed.read_json(ROOT / "test/bootstrap/manifest.json")
@@ -171,7 +171,7 @@ class RunnerTests(unittest.TestCase):
         values.update(source_bytes=10, storage_bytes=10, local_bytes=10, local_arena_bytes=20,
                       max_locals=manifest["storage"]["limits"]["symbols"])
         gsl.storage_report(values, manifest)
-        for name, value in [("max_expressions", 1), ("expressions", manifest["storage"]["limits"]["expressions"]+1),
+        for name, value in [("expressions", manifest["storage"]["limits"]["expressions"]+1),
                             ("storage_bytes", manifest["storage"]["work_arena_bytes"]+1), ("local_bytes", 21)]:
             with self.subTest(name=name), self.assertRaises(gsl.seed.SeedError):
                 gsl.storage_report(dict(values, **{name: value}), manifest)

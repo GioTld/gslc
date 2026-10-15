@@ -5,7 +5,7 @@ import "compiler/ast"
 import "compiler/parser"
 import "compiler/sema"
 import "compiler/codegen"
-import "compiler/imports"
+import "compiler/source_parse"
 import "std/file"
 import "std/io"
 
@@ -59,12 +59,30 @@ func compiler_semantic_message(code: u32) string {
 }
 
 
-func compiler_resolve_source_module(imports: *ImportState, offset: usize) u32 {
-    if (imports as usize) == 0 { return INVALID_INDEX }
-    return compiler_module_at_offset(imports, offset)
+func compiler_print_source_location(imports: *ImportState, offset: usize, output: *CompilerOutput) bool {
+    if (imports as usize) == 0 as usize { return false }
+    let index = compiler_segment_at_offset(imports, offset)
+    if index == INVALID_INDEX { return false }
+    let segment = compiler_source_segment(imports, index)
+    let source = compiler_source(imports, segment.module_id)
+    let original_offset = segment.original_start + offset - segment.start
+    var line: u32 = 1
+    var column: u32 = 1
+    var position: usize = 0 as usize
+    while position < original_offset {
+        if compiler_import_byte(source.text, position) == 10 as u8 { line += 1; column = 1 } else { column += 1 }
+        position += 1 as usize
+    }
+    io_print(" at ")
+    io_print(compiler_import_as_string(source.path))
+    io_print(":")
+    codegen_write_u32(output, line)
+    io_print(":")
+    codegen_write_u32(output, column)
+    return true
 }
 
-func compiler_print_semantic(p: *Parser, s: *Sema, combined: bool) {
+func compiler_print_semantic(p: *Parser, s: *Sema, combined: bool, imports: *ImportState) {
     var output: CompilerOutput
     output.fd = 1
     output.error = false
@@ -72,6 +90,9 @@ func compiler_print_semantic(p: *Parser, s: *Sema, combined: bool) {
     codegen_write_u32(&output, s.error_code)
     io_print(": ")
     io_print(compiler_semantic_message(s.error_code))
+    if combined && s.error_end > s.error_start {
+        if compiler_print_source_location(imports, s.error_start, &output) { io_println(""); return }
+    }
     var line = s.error_line
     var column = s.error_col
     if s.error_end > s.error_start {
@@ -101,15 +122,36 @@ func compile_string_profile(src: string, out_path: string, machine: bool, kernel
 }
 
 func compiler_compile_source(src: string, out_path: string, machine: bool, kernel: bool, combined: bool) u32 {
-    arena work(6553600)
+    var context: CompilerContext
+    compiler_context_init(&context)
+    var imports: *ImportState
+    unsafe { imports = 0 as *ImportState }
+    let status = compiler_compile_source_inner(src, out_path, machine, kernel, combined, &context, imports)
+    return compiler_storage_finish(&context, status, machine)
+}
+
+func compiler_storage_finish(context: *CompilerContext, result: u32, machine: bool) u32 {
+    var status = result
+    unsafe {
+        if context.error {
+            if machine { compiler_print_diagnostic(3002, 0 as usize, 0 as usize, "compiler storage exhausted") } else { io_println("gslc-self: E3002: compiler storage exhausted") }
+            status = 3
+        }
+    }
+    compiler_context_release(context)
+    return status
+}
+
+func compiler_compile_source_inner(src: string, out_path: string, machine: bool, kernel: bool, combined: bool, context: *CompilerContext, imports: *ImportState) u32 {
 
     var p: Parser
     var s: Sema
 
-    parser_init(&p, src)
-    parser_parse(&p)
+    parser_init(&p, src, context)
+    compiler_parse_sources(&p, imports)
 
     if p.error {
+        unsafe { if context.error { return 3 } }
         if machine {
             let offset = compiler_error_offset(&p, p.error_line, p.error_col)
             compiler_print_diagnostic(1000, offset, offset, "syntax error")
@@ -126,26 +168,29 @@ func compiler_compile_source(src: string, out_path: string, machine: bool, kerne
         return 1
     }
 
-    sema_init(&s)
+    sema_init(&s, context)
     s.kernel = kernel
     sema_check(&s, &p)
 
     if s.error {
+        unsafe { if context.error { return 3 } }
         if machine {
             compiler_print_diagnostic(s.error_code, s.error_start, s.error_end, compiler_semantic_message(s.error_code))
             return 2
         }
-        compiler_print_semantic(&p, &s, combined)
+        compiler_print_semantic(&p, &s, combined, imports)
         return 2
     }
 
     if codegen_preflight(&p) == false {
+        unsafe { if context.error { return 3 } }
         if machine { compiler_print_diagnostic(4000, 0 as usize, 0 as usize, "unsupported construct"); return 4; }
         io_println("gslc-self: unsupported construct")
         return 4
     }
 
     let status = compiler_emit_file(&p, out_path, kernel)
+    unsafe { if context.error { return 3 } }
     if status == 3 {
         if machine { compiler_print_diagnostic(3001, 0 as usize, 0 as usize, "output error"); return 3; }
         io_println("gslc-self: failed to write output file")
@@ -174,18 +219,20 @@ func compile_file_profile(src_path: string, out_path: string, machine: bool, ker
 }
 
 func compile_file_options(src_path: string, out_path: string, machine: bool, kernel: bool, platform: string, root: string, list_sources: bool) u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    let status = compiler_compile_file_inner(src_path, out_path, machine, kernel, platform, root, list_sources, &context)
+    return compiler_storage_finish(&context, status, machine)
+}
+
+func compiler_compile_file_inner(src_path: string, out_path: string, machine: bool, kernel: bool, platform: string, root: string, list_sources: bool, context: *CompilerContext) u32 {
     let kind = compiler_platform_kind(platform, root, kernel)
     if kind == INVALID_INDEX { io_println("gslc-self: incompatible platform options"); return 64 }
-    arena input(344072)
     var imports: ImportState
-    imports.output = input.alloc(327681 as usize)
-    imports.paths = input.alloc(16384 as usize)
-    imports.used = 0 as usize
-    imports.platform = kind
-    unsafe { imports.platform_root = root }
-    imports.path_count = 0
+    compiler_import_init(&imports, kind, root, context)
     let result = compiler_collect_file(src_path, &imports, 0)
     if result != 0 {
+        unsafe { if context.error { return 3 } }
         if machine { compiler_print_diagnostic(3000, 0 as usize, 0 as usize, "input error"); return result; }
         if result == 10 { io_println("gslc-self: platform module unavailable"); return result }
         io_println("gslc-self: failed to load source closure")
@@ -199,6 +246,6 @@ func compile_file_options(src_path: string, out_path: string, machine: bool, ker
         }
         return 0
     }
-    return compiler_compile_source(compiler_import_as_string(imports.output), out_path, machine, kernel, imports.path_count > 1)
+    return compiler_compile_source_inner("", out_path, machine, kernel, imports.path_count > 1, context, &imports)
 }
 

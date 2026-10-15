@@ -1,37 +1,33 @@
 import "compiler/codegen_text"
 import "compiler/intrinsics"
+import "compiler/names"
+import "compiler/types"
+import "compiler/type_layout"
+import "compiler/ir_storage"
 
-const CODEGEN_MAX_LOCALS: u32 = 3072
-// Scalar IDs encode bit widths; aggregates and pointer depth use disjoint ranges.
-const CODEGEN_STRUCT_BASE: u32 = 256
-const CODEGEN_POINTER_STEP: u32 = 65536
-const CODEGEN_SIGNED_BASE: u32 = 128
-const CODEGEN_ARENA: u32 = 255
-const CODEGEN_STRING: u32 = 254
-const CODEGEN_MAX_LAYOUT: u32 = 4294967295
-const CODEGEN_MAX_POINTER_DEPTH: u32 = 8
-const CODEGEN_LOCAL_ARENA_BYTES: u32 = 102400
-const CODEGEN_MAX_DEFERS: u32 = 64
-const LAYOUT_UNVISITED: u8 = 0
-const LAYOUT_VISITING: u8 = 1
-const LAYOUT_COMPLETE: u8 = 2
+const CODEGEN_LOCAL_POOL: usize = 4096
+
 
 struct Codegen {
+    function: *IrFunction,
+    arguments: *CompilerPool,
+    names: CompilerNames,
     next_reg: u32,
     next_label: u32,
-    loop_label: u32,
     param_start: u32,
     param_count: u32,
     return_type: u32,
     return_signed: bool,
-    locals: *CodegenLocal,
+    locals: CompilerPool,
     local_count: u32,
-    defers: *u32,
-    defer_count: u32,
+    capture_call: u32,
+    replay_call: u32,
     error: bool
 }
 
 struct CodegenLocal {
+    name_id: u32,
+    previous_binding: u32,
     name_ptr: *u8,
     name_len: usize,
     value_reg: u32,
@@ -40,18 +36,23 @@ struct CodegenLocal {
     is_mut: bool
 }
 
-// Callers use a bound local index, or the next slot after checking capacity.
-// The table belongs to the current function's local_storage arena.
+// Callers use a bound index, or a slot reserved by codegen_bind.
 func codegen_local(ctx: *Codegen, index: u32) *CodegenLocal {
-    unsafe { return (((ctx.locals as usize) + (index as usize) * size_of(CodegenLocal)) as *CodegenLocal) }
+    unsafe { return compiler_pool_item_ptr(&ctx.locals, index, size_of(CodegenLocal)) as *CodegenLocal }
 }
 
 func codegen_bind(ctx: *Codegen, name_ptr: *u8, name_len: usize, value_reg: u32, type_id: u32, is_signed: bool, is_mut: bool) {
-    if ctx.local_count >= CODEGEN_MAX_LOCALS {
+    if compiler_pool_ensure(&ctx.locals, ctx.local_count, size_of(CodegenLocal), CODEGEN_LOCAL_POOL) == false {
         ctx.error = true
         return
     }
+    let name_id = compiler_name_intern(&ctx.names, name_ptr, name_len)
+    if name_id == INVALID_INDEX { ctx.error = true; return }
+    let entry = compiler_name_record(&ctx.names, name_id)
     let local = codegen_local(ctx, ctx.local_count)
+    local.name_id = name_id
+    local.previous_binding = entry.binding
+    entry.binding = ctx.local_count
     // Names borrow the parser source buffer, which outlives the local table.
     unsafe { local.name_ptr = name_ptr }
     local.name_len = name_len
@@ -63,159 +64,38 @@ func codegen_bind(ctx: *Codegen, name_ptr: *u8, name_len: usize, value_reg: u32,
 }
 
 func codegen_find_local(ctx: *Codegen, name_ptr: *u8, name_len: usize) u32 {
-    var index = ctx.local_count
-    while index > 0 {
-        index -= 1
-        let local = codegen_local(ctx, index)
-        if parser_type_equal(local.name_ptr, local.name_len, name_ptr, name_len) { return index }
-    }
-    return INVALID_INDEX
+    let name_id = compiler_name_find(&ctx.names, name_ptr, name_len, compiler_name_hash(name_ptr, name_len))
+    if name_id == INVALID_INDEX { return INVALID_INDEX }
+    return compiler_name_record(&ctx.names, name_id).binding
 }
 
-func codegen_type_signed(ptr: *u8, len: usize) bool {
-    if len == 0 as usize { return false }
-    unsafe {
-        return volatile_read(ptr) == ASCII_LOWER_I
+func codegen_restore_locals(ctx: *Codegen, count: u32) {
+    while ctx.local_count > count {
+        ctx.local_count -= 1
+        let local = codegen_local(ctx, ctx.local_count)
+        compiler_name_record(&ctx.names, local.name_id).binding = local.previous_binding
     }
 }
 
-func codegen_scalar_type(ptr: *u8, length: usize) u32 {
-    if compiler_name_is(ptr, length, "u8") || compiler_name_is(ptr, length, "i8") { return 8 }
-    if compiler_name_is(ptr, length, "u16") || compiler_name_is(ptr, length, "i16") { return 16 }
-    if compiler_name_is(ptr, length, "u32") || compiler_name_is(ptr, length, "i32") { return 32 }
-    if compiler_name_is(ptr, length, "u64") || compiler_name_is(ptr, length, "i64") || compiler_name_is(ptr, length, "usize") || compiler_name_is(ptr, length, "isize") { return 64 }
-    if compiler_name_is(ptr, length, "bool") { return 1 }
-    return 0
-}
 
-func codegen_type_void(ptr: *u8, length: usize) bool {
-    return length == 0 as usize || compiler_name_is(ptr, length, "void")
-}
 
-func codegen_type(p: *Parser, ptr: *u8, len: usize) u32 {
-    var offset: usize = 0 as usize
-    var depth: u32 = 0
-    while offset < len {
-        offset = parser_type_skip(ptr, len, offset)
-        if offset >= len { break }
-        var ch: u8 = 0 as u8
-        unsafe { ch = volatile_read(((ptr as usize) + offset) as *u8) }
-        if ch != ASCII_STAR { break }
-        depth += 1
-        offset += 1 as usize
-    }
-    if depth > CODEGEN_MAX_POINTER_DEPTH || offset == len { return 0 }
-    var base: *u8
-    unsafe { base = ((ptr as usize) + offset) as *u8 }
-    let base_len = len - offset
-    var type_id = codegen_scalar_type(base, base_len)
-    if compiler_name_is(base, base_len, "string") { type_id = CODEGEN_STRING }
-    if type_id == 0 {
-        var index: u32 = 0
-        while index < p.struct_count {
-            let structure = parser_struct(p, index)
-            if parser_type_equal(base, base_len, structure.name_ptr, structure.name_len) {
-                type_id = CODEGEN_STRUCT_BASE + index
-                break
-            }
-            index += 1
-        }
-    }
-    if type_id == 0 { return 0 }
-    if depth > 0 && type_id < CODEGEN_SIGNED_BASE && codegen_type_signed(base, base_len) { type_id += CODEGEN_SIGNED_BASE }
-    return type_id + depth * CODEGEN_POINTER_STEP
-}
 
-func codegen_deref_type(type_id: u32) u32 {
-    let result = type_id - CODEGEN_POINTER_STEP
-    if result >= CODEGEN_SIGNED_BASE && result <= CODEGEN_SIGNED_BASE + 64 { return result - CODEGEN_SIGNED_BASE }
-    return result
-}
 
-// Preflight allocates one state byte per parser struct; recursive indices come
-// from resolved types. No state pointer escapes that preflight invocation.
-func codegen_struct_valid(p: *Parser, index: u32, states: *u8) bool {
-    var state_ptr: *u8
-    var state: u8
-    unsafe {
-        state_ptr = ((states as usize) + (index as usize)) as *u8
-        state = volatile_read(state_ptr)
-    }
-    if state == LAYOUT_VISITING { return false }
-    if state == LAYOUT_COMPLETE { return true }
-    unsafe { volatile_write(state_ptr, LAYOUT_VISITING); }
-    let structure = parser_struct(p, index)
-    if structure.is_array {
-        let element = codegen_type(p, structure.element_ptr, structure.element_len)
-        if element == 0 || codegen_is_array(p, element) { return false }
-        if element >= CODEGEN_STRUCT_BASE && element < CODEGEN_POINTER_STEP && element != CODEGEN_STRING {
-            if codegen_struct_valid(p, element - CODEGEN_STRUCT_BASE, states) == false { return false }
-        }
-        let element_size = codegen_type_size(p, element)
-        if element_size > CODEGEN_MAX_LAYOUT / structure.array_count { return false }
-        structure.alignment = codegen_type_align(p, element)
-        structure.size = structure.array_count * element_size
-        unsafe { volatile_write(state_ptr, LAYOUT_COMPLETE); }
-        return true
-    }
-    var size: u32 = 0
-    var alignment: u32 = 1
-    var field_idx = structure.field_start
-    while field_idx < structure.field_start + structure.field_count {
-        let field = parser_field(p, field_idx)
-        let type_id = codegen_type(p, field.type_ptr, field.type_len)
-        if type_id == 0 { return false }
-        if codegen_is_array(p, type_id) { return false }
-        if type_id >= CODEGEN_STRUCT_BASE && type_id < CODEGEN_POINTER_STEP {
-            if codegen_struct_valid(p, type_id - CODEGEN_STRUCT_BASE, states) == false { return false }
-        }
-        var field_align = codegen_type_align(p, type_id)
-        if structure.is_packed { field_align = 1 }
-        let field_size = codegen_type_size(p, type_id)
-        if size > CODEGEN_MAX_LAYOUT - (field_align - 1) { return false }
-        size = ((size + field_align - 1) / field_align) * field_align
-        if field_size > CODEGEN_MAX_LAYOUT - size { return false }
-        size += field_size
-        if field_align > alignment { alignment = field_align }
-        field_idx += 1
-    }
-    if size > CODEGEN_MAX_LAYOUT - (alignment - 1) { return false }
-    structure.size = ((size + alignment - 1) / alignment) * alignment
-    structure.alignment = alignment
-    unsafe { volatile_write(state_ptr, LAYOUT_COMPLETE); }
-    return true
-}
 
-func codegen_is_pointer(type_id: u32) bool {
-    return type_id == CODEGEN_STRING || type_id >= CODEGEN_POINTER_STEP
-}
 
-func codegen_is_array(p: *Parser, type_id: u32) bool {
-    if type_id < CODEGEN_STRUCT_BASE || type_id >= CODEGEN_POINTER_STEP || type_id == CODEGEN_STRING || type_id == CODEGEN_ARENA { return false }
-    return parser_struct(p, type_id - CODEGEN_STRUCT_BASE).is_array
-}
+
 
 func codegen_index_array(p: *Parser, expr_idx: u32, ctx: *Codegen) u32 {
     let node = parser_expr(p, expr_idx)
     var base = codegen_expr_type(p, node.binary.left_idx, ctx, 0)
-    if base >= CODEGEN_POINTER_STEP { base = codegen_deref_type(base) }
-    if codegen_is_array(p, base) { return base }
+    if type_kind(p, base) == TYPE_POINTER { base = type_dereference(p, base) }
+    if type_is_array(p, base) { return base }
     return 0
 }
 
-func codegen_type_align(p: *Parser, type_id: u32) u32 {
-    if codegen_is_pointer(type_id) { return 8 }
-    if type_id >= CODEGEN_STRUCT_BASE { return parser_struct(p, type_id - CODEGEN_STRUCT_BASE).alignment }
-    if type_id == 1 { return 1 }
-    return type_id / 8
-}
 
-func codegen_type_size(p: *Parser, type_id: u32) u32 {
-    if codegen_is_pointer(type_id) { return 8 }
-    if type_id >= CODEGEN_STRUCT_BASE { return parser_struct(p, type_id - CODEGEN_STRUCT_BASE).size }
-    if type_id == 1 { return 1 }
-    return type_id / 8
-}
+
+
 
 func codegen_builtin(p: *Parser, expr_idx: u32) u32 {
     let node = parser_expr(p, expr_idx)
@@ -271,7 +151,7 @@ func codegen_capacity(p: *Parser, expr_idx: u32) u32 {
         return value.value as u32
     }
     if node.kind == EXPR_IDENT {
-        let index = codegen_find_constant(p, node.ident.name_ptr, node.ident.name_len)
+        let index = codegen_expr_constant(p, expr_idx)
         if index != INVALID_INDEX {
             let constant = parser_const(p, index)
             if constant.is_global == false { return codegen_capacity(p, constant.value_idx) }
@@ -282,14 +162,15 @@ func codegen_capacity(p: *Parser, expr_idx: u32) u32 {
 
 func codegen_member_field(p: *Parser, expr_idx: u32, ctx: *Codegen) u32 {
     let node = parser_expr(p, expr_idx)
+    if node.resolved.field != INVALID_INDEX { return node.resolved.field }
     var type_id = codegen_expr_type(p, node.member.base_idx, ctx, 0)
-    if type_id >= CODEGEN_POINTER_STEP { type_id -= CODEGEN_POINTER_STEP }
-    if type_id < CODEGEN_STRUCT_BASE || type_id >= CODEGEN_STRUCT_BASE + p.struct_count { return INVALID_INDEX }
-    let structure = parser_struct(p, type_id - CODEGEN_STRUCT_BASE)
+    if type_kind(p, type_id) == TYPE_POINTER { type_id = type_dereference(p, type_id) }
+    if type_kind(p, type_id) != TYPE_AGGREGATE { return INVALID_INDEX }
+    let structure = parser_struct(p, type_declaration(p, type_id))
     var index = structure.field_start
     while index < structure.field_start + structure.field_count {
         let field = parser_field(p, index)
-        if parser_type_equal(field.name_ptr, field.name_len, node.member.name_ptr, node.member.name_len) { return index }
+        if parser_type_equal(field.name_ptr, field.name_len, node.member.name_ptr, node.member.name_len) { node.resolved.field = index; return index }
         index += 1
     }
     return INVALID_INDEX
@@ -297,14 +178,14 @@ func codegen_member_field(p: *Parser, expr_idx: u32, ctx: *Codegen) u32 {
 
 func codegen_write_type(p: *Parser, output: *CompilerOutput, type_id: u32) {
     if type_id == 0 { compiler_output_string(output, "void"); return }
-    if codegen_is_pointer(type_id) { compiler_output_string(output, "ptr"); return }
-    if type_id >= CODEGEN_STRUCT_BASE {
-        let structure = parser_struct(p, type_id - CODEGEN_STRUCT_BASE)
+    if type_is_pointer(p, type_id) { compiler_output_string(output, "ptr"); return }
+    if type_kind(p, type_id) == TYPE_AGGREGATE {
+        let structure = parser_struct(p, type_declaration(p, type_id))
         if structure.is_array {
             compiler_output_string(output, "[")
             codegen_write_u32(output, structure.array_count)
             compiler_output_string(output, " x ")
-            codegen_write_type(p, output, codegen_type(p, structure.element_ptr, structure.element_len))
+            codegen_write_type(p, output, resolved_type(p, structure.element_ptr, structure.element_len))
             compiler_output_string(output, "]")
         } else {
             compiler_output_string(output, "%struct.")
@@ -326,26 +207,70 @@ func codegen_find_decl(p: *Parser, name_ptr: *u8, name_len: usize) u32 {
     return INVALID_INDEX
 }
 
+func codegen_expr_local(p: *Parser, expr_idx: u32, ctx: *Codegen) u32 {
+    let node = parser_expr(p, expr_idx)
+    if node.resolved.binding_kind == BINDING_LOCAL { return parser_stmt(p, node.resolved.binding_index).resolved_local }
+    if node.resolved.binding_kind == BINDING_PARAMETER { return node.resolved.binding_index - ctx.param_start }
+    if node.resolved.binding_kind == BINDING_GLOBAL { return INVALID_INDEX }
+    if node.resolved.local_index == INVALID_INDEX {
+        let index = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
+        node.resolved.local_index = index
+        if index == INVALID_INDEX { node.resolved.local_index = RESOLUTION_MISSING_LOCAL }
+    }
+    if node.resolved.local_index == RESOLUTION_MISSING_LOCAL { return INVALID_INDEX }
+    return node.resolved.local_index
+}
+
+func codegen_expr_constant(p: *Parser, expr_idx: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    if node.resolved.binding_kind == BINDING_GLOBAL { return node.resolved.binding_index }
+    return codegen_find_constant(p, node.ident.name_ptr, node.ident.name_len)
+}
+
+func codegen_expr_global(p: *Parser, expr_idx: u32) u32 {
+    let index = codegen_expr_constant(p, expr_idx)
+    if index != INVALID_INDEX && parser_const(p, index).is_global { return index }
+    return INVALID_INDEX
+}
+
+func codegen_call_decl(p: *Parser, expr_idx: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    if node.resolved.declaration == INVALID_INDEX {
+        node.resolved.declaration = codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len)
+    }
+    return node.resolved.declaration
+}
+
 func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    // Literals and unary operators retain the existing contextual conversion rules.
+    if node.kind == EXPR_INT || node.kind == EXPR_UNARY { return codegen_resolve_expr_type(p, expr_idx, ctx, expected) }
+    if node.resolved.natural_type == INVALID_INDEX {
+        node.resolved.natural_type = codegen_resolve_expr_type(p, expr_idx, ctx, 0)
+    }
+    if node.kind == EXPR_BINARY && node.resolved.natural_type == 0 { return expected }
+    return node.resolved.natural_type
+}
+
+func codegen_resolve_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) u32 {
     let node = parser_expr(p, expr_idx)
     if node.kind == EXPR_BOOL { return 1 }
     if node.kind == EXPR_STRING { return CODEGEN_STRING }
     if node.kind == EXPR_INDEX {
         let array_id = codegen_index_array(p, expr_idx, ctx)
         if array_id == 0 { return 0 }
-        let array_type = parser_struct(p, array_id - CODEGEN_STRUCT_BASE)
-        return codegen_type(p, array_type.element_ptr, array_type.element_len)
+        let array_type = parser_struct(p, type_declaration(p, array_id))
+        return resolved_type(p, array_type.element_ptr, array_type.element_len)
     }
     if node.kind == EXPR_UNARY {
         if node.unary.op == TOKEN_NOT { return 1 }
         let operand_type = codegen_expr_type(p, node.unary.operand_idx, ctx, expected)
         if node.unary.op == TOKEN_AMP {
-            if operand_type < CODEGEN_SIGNED_BASE && codegen_expr_signed(p, node.unary.operand_idx, ctx, false) { return operand_type + CODEGEN_SIGNED_BASE + CODEGEN_POINTER_STEP }
-            return operand_type + CODEGEN_POINTER_STEP
+            return type_pointer_from_lowering(p, operand_type, codegen_expr_signed(p, node.unary.operand_idx, ctx, false))
         }
         if node.unary.op == TOKEN_STAR {
-            if operand_type < CODEGEN_POINTER_STEP { return 0 }
-            return codegen_deref_type(operand_type)
+            if type_kind(p, operand_type) != TYPE_POINTER { return 0 }
+            return type_dereference(p, operand_type)
         }
         return operand_type
     }
@@ -353,13 +278,13 @@ func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) 
         let field_idx = codegen_member_field(p, expr_idx, ctx)
         if field_idx == INVALID_INDEX { return 0 }
         let field = parser_field(p, field_idx)
-        return codegen_type(p, field.type_ptr, field.type_len)
+        return resolved_type(p, field.type_ptr, field.type_len)
     }
     if node.kind == EXPR_INT {
         if expected == 0 && (node.int_lit.val as u64) > CODEGEN_MAX_LAYOUT as u64 { return 64 }
         return expected
     }
-    if node.kind == EXPR_CAST { return codegen_type(p, node.cast.type_ptr, node.cast.type_len) }
+    if node.kind == EXPR_CAST { return resolved_type(p, node.cast.type_ptr, node.cast.type_len) }
     if node.kind == EXPR_BINARY {
         let op = node.binary.op
         if op == TOKEN_EQ || op == TOKEN_NE || op == TOKEN_LT || op == TOKEN_LE || op == TOKEN_GT || op == TOKEN_GE || op == TOKEN_AND || op == TOKEN_OR { return 1 }
@@ -370,15 +295,15 @@ func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) 
         return right
     }
     if node.kind == EXPR_IDENT {
-        let local_idx = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
+        let local_idx = codegen_expr_local(p, expr_idx, ctx)
         if local_idx != INVALID_INDEX { return codegen_local(ctx, local_idx).type_id }
         var param_idx = ctx.param_start
         while param_idx < ctx.param_start + ctx.param_count {
             let param = parser_param(p, param_idx)
-            if parser_type_equal(node.ident.name_ptr, node.ident.name_len, param.name_ptr, param.name_len) { return codegen_type(p, param.type_ptr, param.type_len) }
+            if parser_type_equal(node.ident.name_ptr, node.ident.name_len, param.name_ptr, param.name_len) { return resolved_type(p, param.type_ptr, param.type_len) }
             param_idx += 1
         }
-        let const_idx = codegen_find_constant(p, node.ident.name_ptr, node.ident.name_len)
+        let const_idx = codegen_expr_constant(p, expr_idx)
         if const_idx != INVALID_INDEX {
             let constant = parser_const(p, const_idx)
             if constant.type_len == 0 as usize {
@@ -387,7 +312,7 @@ func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) 
                 if (value.int_lit.val as u64) > CODEGEN_MAX_LAYOUT as u64 { return 64 }
                 return 32
             }
-            return codegen_type(p, constant.type_ptr, constant.type_len)
+            return resolved_type(p, constant.type_ptr, constant.type_len)
         }
         return 0
     }
@@ -400,12 +325,12 @@ func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) 
         if builtin == BUILTIN_SIZE_OF || builtin == BUILTIN_ALIGN_OF { return 64 }
         if builtin == BUILTIN_VOLATILE_READ { return 8 }
         if builtin == BUILTIN_VOLATILE_WRITE { return 0 }
-        if builtin == BUILTIN_ARENA_ALLOC { return CODEGEN_POINTER_STEP + 8 }
+        if builtin == BUILTIN_ARENA_ALLOC { return type_pointer_from_lowering(p, 8, false) }
         if builtin == BUILTIN_SYSCALL || builtin == BUILTIN_SYSCALL_WRITE { return 64 }
-        let decl_idx = codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len)
+        let decl_idx = codegen_call_decl(p, expr_idx)
         if decl_idx != INVALID_INDEX {
             let decl = parser_decl(p, decl_idx)
-            return codegen_type(p, decl.ret_type_ptr, decl.ret_type_len)
+            return resolved_type(p, decl.ret_type_ptr, decl.ret_type_len)
         }
     }
     return expected
@@ -413,27 +338,39 @@ func codegen_expr_type(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: u32) 
 
 func codegen_expr_signed(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: bool) bool {
     let node = parser_expr(p, expr_idx)
+    var valid = RESOLUTION_SIGNED_FALSE_VALID
+    var value = RESOLUTION_SIGNED_FALSE_VALUE
+    if expected { valid = RESOLUTION_SIGNED_TRUE_VALID; value = RESOLUTION_SIGNED_TRUE_VALUE }
+    if (node.resolved.signedness & valid) == 0 {
+        let result = codegen_resolve_expr_signed(p, expr_idx, ctx, expected)
+        node.resolved.signedness = node.resolved.signedness | valid
+        if result { node.resolved.signedness = node.resolved.signedness | value }
+    }
+    return (node.resolved.signedness & value) != 0
+}
+
+func codegen_resolve_expr_signed(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: bool) bool {
+    let node = parser_expr(p, expr_idx)
     if node.kind == EXPR_INT { return expected }
     if node.kind == EXPR_BOOL || node.kind == EXPR_STRING { return false }
     if node.kind == EXPR_INDEX {
         let array_id = codegen_index_array(p, expr_idx, ctx)
         if array_id == 0 { return false }
-        let array_type = parser_struct(p, array_id - CODEGEN_STRUCT_BASE)
-        return codegen_type_signed(array_type.element_ptr, array_type.element_len)
+        let array_type = parser_struct(p, type_declaration(p, array_id))
+        return type_is_signed(array_type.element_ptr, array_type.element_len)
     }
     if node.kind == EXPR_MEMBER {
         let field_idx = codegen_member_field(p, expr_idx, ctx)
         if field_idx == INVALID_INDEX { return false }
         let field = parser_field(p, field_idx)
-        return codegen_type_signed(field.type_ptr, field.type_len)
+        return type_is_signed(field.type_ptr, field.type_len)
     }
-    if node.kind == EXPR_CAST { return codegen_type_signed(node.cast.type_ptr, node.cast.type_len) }
+    if node.kind == EXPR_CAST { return type_is_signed(node.cast.type_ptr, node.cast.type_len) }
     if node.kind == EXPR_UNARY {
         if node.unary.op == TOKEN_NOT { return false }
         if node.unary.op == TOKEN_AMP { return false }
         if node.unary.op == TOKEN_STAR {
-            let base = codegen_expr_type(p, node.unary.operand_idx, ctx, 0) % CODEGEN_POINTER_STEP
-            return base >= CODEGEN_SIGNED_BASE && base <= CODEGEN_SIGNED_BASE + 64
+            return type_pointer_signed(p, codegen_expr_type(p, node.unary.operand_idx, ctx, 0))
         }
         return codegen_expr_signed(p, node.unary.operand_idx, ctx, expected)
     }
@@ -443,26 +380,26 @@ func codegen_expr_signed(p: *Parser, expr_idx: u32, ctx: *Codegen, expected: boo
         return codegen_operand_signed(p, node.binary.left_idx, node.binary.right_idx, ctx, expected)
     }
     if node.kind == EXPR_IDENT {
-        let local_idx = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
+        let local_idx = codegen_expr_local(p, expr_idx, ctx)
         if local_idx != INVALID_INDEX { return codegen_local(ctx, local_idx).is_signed }
         var param_idx = ctx.param_start
         while param_idx < ctx.param_start + ctx.param_count {
             let param = parser_param(p, param_idx)
-            if parser_type_equal(node.ident.name_ptr, node.ident.name_len, param.name_ptr, param.name_len) { return codegen_type_signed(param.type_ptr, param.type_len) }
+            if parser_type_equal(node.ident.name_ptr, node.ident.name_len, param.name_ptr, param.name_len) { return type_is_signed(param.type_ptr, param.type_len) }
             param_idx += 1
         }
-        let const_idx = codegen_find_constant(p, node.ident.name_ptr, node.ident.name_len)
+        let const_idx = codegen_expr_constant(p, expr_idx)
         if const_idx != INVALID_INDEX {
             let constant = parser_const(p, const_idx)
-            return codegen_type_signed(constant.type_ptr, constant.type_len)
+            return type_is_signed(constant.type_ptr, constant.type_len)
         }
     }
     if node.kind == EXPR_CALL {
         let builtin = codegen_builtin(p, expr_idx)
         if builtin == BUILTIN_SYSCALL || builtin == BUILTIN_SYSCALL_WRITE { return true }
         if builtin != BUILTIN_NONE { return false }
-        let decl = parser_decl(p, codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len))
-        return codegen_type_signed(decl.ret_type_ptr, decl.ret_type_len)
+        let decl = parser_decl(p, codegen_call_decl(p, expr_idx))
+        return type_is_signed(decl.ret_type_ptr, decl.ret_type_len)
     }
     return expected
 }
@@ -483,11 +420,11 @@ func codegen_operand_signed(p: *Parser, left_idx: u32, right_idx: u32, ctx: *Cod
 
 func codegen_addressable(p: *Parser, expr_idx: u32, ctx: *Codegen) bool {
     let node = parser_expr(p, expr_idx)
-    if node.kind == EXPR_IDENT { return codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len) != INVALID_INDEX || codegen_find_global(p, node.ident.name_ptr, node.ident.name_len) != INVALID_INDEX }
+    if node.kind == EXPR_IDENT { return codegen_expr_local(p, expr_idx, ctx) != INVALID_INDEX || codegen_expr_global(p, expr_idx) != INVALID_INDEX }
     if node.kind == EXPR_INDEX { return true }
     if node.kind == EXPR_UNARY { return node.unary.op == TOKEN_STAR }
     if node.kind == EXPR_MEMBER {
-        if codegen_expr_type(p, node.member.base_idx, ctx, 0) >= CODEGEN_POINTER_STEP { return true }
+        if type_kind(p, codegen_expr_type(p, node.member.base_idx, ctx, 0)) == TYPE_POINTER { return true }
         return codegen_addressable(p, node.member.base_idx, ctx)
     }
     return false
@@ -496,17 +433,17 @@ func codegen_addressable(p: *Parser, expr_idx: u32, ctx: *Codegen) bool {
 func codegen_writable(p: *Parser, expr_idx: u32, ctx: *Codegen) bool {
     let node = parser_expr(p, expr_idx)
     if node.kind == EXPR_IDENT {
-        let index = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
-        if index == INVALID_INDEX { return codegen_find_global(p, node.ident.name_ptr, node.ident.name_len) != INVALID_INDEX }
+        let index = codegen_expr_local(p, expr_idx, ctx)
+        if index == INVALID_INDEX { return codegen_expr_global(p, expr_idx) != INVALID_INDEX }
         return codegen_local(ctx, index).is_mut
     }
-    if node.kind == EXPR_UNARY { return node.unary.op == TOKEN_STAR && codegen_is_pointer(codegen_expr_type(p, node.unary.operand_idx, ctx, 0)) }
+    if node.kind == EXPR_UNARY { return node.unary.op == TOKEN_STAR && type_is_pointer(p, codegen_expr_type(p, node.unary.operand_idx, ctx, 0)) }
     if node.kind == EXPR_INDEX {
-        if codegen_expr_type(p, node.binary.left_idx, ctx, 0) >= CODEGEN_POINTER_STEP { return true }
+        if type_kind(p, codegen_expr_type(p, node.binary.left_idx, ctx, 0)) == TYPE_POINTER { return true }
         return codegen_writable(p, node.binary.left_idx, ctx)
     }
     if node.kind == EXPR_MEMBER {
-        if codegen_expr_type(p, node.member.base_idx, ctx, 0) >= CODEGEN_POINTER_STEP { return true }
+        if type_kind(p, codegen_expr_type(p, node.member.base_idx, ctx, 0)) == TYPE_POINTER { return true }
         return codegen_writable(p, node.member.base_idx, ctx)
     }
     return false
@@ -519,43 +456,43 @@ func codegen_begin_result(output: *CompilerOutput, ctx: *Codegen) u32 {
     return ctx.next_reg
 }
 
-func codegen_binary_opcode(op: u32, is_signed: bool) string {
-    if op == TOKEN_PLUS { return " = add " }
-    if op == TOKEN_MINUS { return " = sub " }
-    if op == TOKEN_STAR { return " = mul " }
+func codegen_binary_kind(op: u32, is_signed: bool) u32 {
+    if op == TOKEN_PLUS { return IR_ADD }
+    if op == TOKEN_MINUS { return IR_SUB }
+    if op == TOKEN_STAR { return IR_MUL }
     if op == TOKEN_SLASH {
-        if is_signed { return " = sdiv " }
-        return " = udiv "
+        if is_signed { return IR_SDIV }
+        return IR_UDIV
     }
     if op == TOKEN_PERCENT {
-        if is_signed { return " = srem " }
-        return " = urem "
+        if is_signed { return IR_SREM }
+        return IR_UREM
     }
-    if op == TOKEN_SHIFT_LEFT { return " = shl " }
+    if op == TOKEN_SHIFT_LEFT { return IR_SHL }
     if op == TOKEN_SHIFT_RIGHT {
-        if is_signed { return " = ashr " }
-        return " = lshr "
+        if is_signed { return IR_ASHR }
+        return IR_LSHR
     }
-    if op == TOKEN_AMP { return " = and " }
-    if op == TOKEN_BIT_OR { return " = or " }
-    if op == TOKEN_BIT_XOR { return " = xor " }
-    if op == TOKEN_EQ { return " = icmp eq " }
-    if op == TOKEN_NE { return " = icmp ne " }
+    if op == TOKEN_AMP { return IR_AND }
+    if op == TOKEN_BIT_OR { return IR_OR }
+    if op == TOKEN_BIT_XOR { return IR_XOR }
+    if op == TOKEN_EQ { return IR_EQ }
+    if op == TOKEN_NE { return IR_NE }
     if op == TOKEN_LT {
-        if is_signed { return " = icmp slt " }
-        return " = icmp ult "
+        if is_signed { return IR_SLT }
+        return IR_ULT
     }
     if op == TOKEN_LE {
-        if is_signed { return " = icmp sle " }
-        return " = icmp ule "
+        if is_signed { return IR_SLE }
+        return IR_ULE
     }
     if op == TOKEN_GT {
-        if is_signed { return " = icmp sgt " }
-        return " = icmp ugt "
+        if is_signed { return IR_SGT }
+        return IR_UGT
     }
     if op == TOKEN_GE {
-        if is_signed { return " = icmp sge " }
-        return " = icmp uge "
+        if is_signed { return IR_SGE }
+        return IR_UGE
     }
-    return ""
+    return IR_INVALID
 }

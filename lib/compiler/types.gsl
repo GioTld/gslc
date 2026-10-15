@@ -1,0 +1,218 @@
+import "compiler/intrinsics"
+
+// Scalar lowering tokens remain LLVM widths; composed types use opaque table IDs.
+const TYPE_DESCRIPTOR_FIRST: u32 = 256
+const TYPE_UNKNOWN: u32 = 0
+const TYPE_INTEGER: u32 = 1
+const TYPE_AGGREGATE: u32 = 2
+const TYPE_POINTER: u32 = 3
+const TYPE_STRING: u32 = 4
+const CODEGEN_ARENA: u32 = 255
+const CODEGEN_STRING: u32 = 254
+const CODEGEN_MAX_LAYOUT: u32 = 4294967295
+const CODEGEN_MAX_POINTER_DEPTH: u32 = 8
+const TYPE_SIGNED_PREFIX: u8 = 105
+const TYPE_POINTER_PREFIX: u8 = 42
+
+func type_is_signed(ptr: *u8, len: usize) bool {
+    if len == 0 as usize { return false }
+    unsafe {
+        return volatile_read(ptr) == TYPE_SIGNED_PREFIX
+    }
+}
+
+func resolve_scalar_type(ptr: *u8, length: usize) u32 {
+    if compiler_name_is(ptr, length, "u8") || compiler_name_is(ptr, length, "i8") { return 8 }
+    if compiler_name_is(ptr, length, "u16") || compiler_name_is(ptr, length, "i16") { return 16 }
+    if compiler_name_is(ptr, length, "u32") || compiler_name_is(ptr, length, "i32") { return 32 }
+    if compiler_name_is(ptr, length, "u64") || compiler_name_is(ptr, length, "i64") || compiler_name_is(ptr, length, "usize") || compiler_name_is(ptr, length, "isize") { return 64 }
+    if compiler_name_is(ptr, length, "bool") { return 1 }
+    return 0
+}
+
+func type_is_void(ptr: *u8, length: usize) bool {
+    return length == 0 as usize || compiler_name_is(ptr, length, "void")
+}
+
+func resolved_type_record(p: *Parser, index: u32) *ResolvedType {
+    unsafe { return compiler_pool_item_ptr(&p.resolved_type_records, index, size_of(ResolvedType)) as *ResolvedType }
+}
+
+func resolved_type_info(p: *Parser, ptr: *u8, length: usize) *ResolvedType {
+    let index = compiler_name_intern(&p.resolved_types, ptr, length)
+    unsafe { if index == INVALID_INDEX { return 0 as *ResolvedType } }
+    let entry = compiler_name_record(&p.resolved_types, index)
+    if entry.binding == INVALID_INDEX {
+        if compiler_pool_ensure(&p.resolved_type_records, index, size_of(ResolvedType), 4096 as usize) == false { unsafe { return 0 as *ResolvedType } }
+        let record = resolved_type_record(p, index)
+        resolve_type_record(p, ptr, length, record)
+        entry.binding = index
+    }
+    return resolved_type_record(p, index)
+}
+
+func resolved_type(p: *Parser, ptr: *u8, len: usize) u32 {
+    let record = resolved_type_info(p, ptr, len)
+    if (record as usize) == 0 as usize { return 0 }
+    return record.type_id
+}
+
+func resolve_type_record(p: *Parser, ptr: *u8, len: usize, record: *ResolvedType) {
+    var offset: usize = 0 as usize
+    var depth: u32 = 0
+    while offset < len {
+        offset = parser_type_skip(ptr, len, offset)
+        if offset >= len { break }
+        var ch: u8 = 0 as u8
+        unsafe { ch = volatile_read(((ptr as usize) + offset) as *u8) }
+        if ch != TYPE_POINTER_PREFIX { break }
+        depth += 1
+        offset += 1 as usize
+    }
+    var base: *u8
+    unsafe { base = ((ptr as usize) + offset) as *u8 }
+    let base_len = len - offset
+    unsafe { record.base_ptr = base }
+    record.base_len = base_len
+    record.pointer_depth = depth
+    record.type_id = 0
+    record.canonical_id = canonical_type(p, base, base_len, depth)
+    if depth > CODEGEN_MAX_POINTER_DEPTH || offset == len { return }
+    record.type_id = type_lowering(p, record.canonical_id)
+}
+
+func type_descriptor(p: *Parser, id: u32) *TypeDescriptor {
+    unsafe { return compiler_pool_item_ptr(&p.canonical_types, id - TYPE_DESCRIPTOR_FIRST, size_of(TypeDescriptor)) as *TypeDescriptor }
+}
+
+func type_create(p: *Parser, kind: u32) u32 {
+    if p.canonical_count >= 4294967039 { p.context.error = true; return 0 }
+    if compiler_pool_ensure(&p.canonical_types, p.canonical_count, size_of(TypeDescriptor), 4096 as usize) == false { return 0 }
+    let id = TYPE_DESCRIPTOR_FIRST + p.canonical_count
+    p.canonical_count += 1
+    let record = type_descriptor(p, id)
+    record.kind = kind
+    record.bits = 0
+    record.is_signed = false
+    record.declaration = INVALID_INDEX
+    record.pointee = 0
+    record.pointer_type = 0
+    return id
+}
+
+func canonical_named_type(p: *Parser, name: *u8, length: usize) u32 {
+    let cached = compiler_name_find(&p.canonical_names, name, length, compiler_name_hash(name, length))
+    if cached != INVALID_INDEX {
+        let binding = compiler_name_record(&p.canonical_names, cached).binding
+        if binding != INVALID_INDEX { return binding }
+    }
+    var base = name
+    var base_length = length
+    var declaration = INVALID_INDEX
+    var index: u32 = 0
+    while index < p.struct_count {
+        let structure = parser_struct(p, index)
+        if parser_type_equal(name, length, structure.name_ptr, structure.name_len) {
+            declaration = index
+            unsafe { base = structure.name_ptr }
+            base_length = structure.name_len
+            break
+        }
+        index += 1
+    }
+    let name_id = compiler_name_intern(&p.canonical_names, base, base_length)
+    if name_id == INVALID_INDEX { return 0 }
+    let entry = compiler_name_record(&p.canonical_names, name_id)
+    if entry.binding != INVALID_INDEX { return entry.binding }
+    let id = type_create(p, TYPE_UNKNOWN)
+    if id == 0 { return 0 }
+    entry.binding = id
+    let record = type_descriptor(p, id)
+    record.bits = resolve_scalar_type(base, base_length)
+    record.is_signed = record.bits != 0 && type_is_signed(base, base_length)
+    if record.bits != 0 { record.kind = TYPE_INTEGER }
+    if compiler_name_is(base, base_length, "string") { record.kind = TYPE_STRING }
+    if declaration != INVALID_INDEX { record.kind = TYPE_AGGREGATE; record.declaration = declaration; record.is_signed = false }
+    return id
+}
+
+func type_pointer(p: *Parser, pointee: u32) u32 {
+    if pointee == 0 { return 0 }
+    let record = type_descriptor(p, pointee)
+    if record.pointer_type != 0 { return record.pointer_type }
+    let id = type_create(p, TYPE_POINTER)
+    if id == 0 { return 0 }
+    type_descriptor(p, id).pointee = pointee
+    record.pointer_type = id
+    return id
+}
+
+func canonical_type(p: *Parser, name: *u8, length: usize, depth: u32) u32 {
+    let base = canonical_named_type(p, name, length)
+    var id = base
+    var level: u32 = 0
+    while level < depth { id = type_pointer(p, id); level += 1 }
+    return id
+}
+
+func type_lowering(p: *Parser, id: u32) u32 {
+    if id == 0 { return 0 }
+    let record = type_descriptor(p, id)
+    if record.kind == TYPE_INTEGER { return record.bits }
+    if record.kind == TYPE_STRING { return CODEGEN_STRING }
+    if record.kind == TYPE_UNKNOWN { return 0 }
+    if record.kind == TYPE_POINTER && type_lowering(p, record.pointee) == 0 { return 0 }
+    return id
+}
+
+func type_kind(p: *Parser, id: u32) u32 {
+    if id < TYPE_DESCRIPTOR_FIRST { return TYPE_UNKNOWN }
+    return type_descriptor(p, id).kind
+}
+
+func type_declaration(p: *Parser, id: u32) u32 {
+    return type_descriptor(p, id).declaration
+}
+
+func type_for_declaration(p: *Parser, index: u32) u32 {
+    let structure = parser_struct(p, index)
+    return canonical_named_type(p, structure.name_ptr, structure.name_len)
+}
+
+func type_pointer_from_lowering(p: *Parser, lowered: u32, signed: bool) u32 {
+    if lowered >= TYPE_DESCRIPTOR_FIRST { return type_pointer(p, lowered) }
+    var name = "u8"
+    if lowered == 16 { name = "u16" }
+    if lowered == 32 { name = "u32" }
+    if lowered == 64 { name = "u64" }
+    if signed {
+        if lowered == 8 { name = "i8" }
+        if lowered == 16 { name = "i16" }
+        if lowered == 32 { name = "i32" }
+        if lowered == 64 { name = "i64" }
+    }
+    if lowered == 1 { name = "bool" }
+    if lowered == CODEGEN_STRING { name = "string" }
+    unsafe { return type_pointer(p, canonical_named_type(p, name as *u8, strlen(name) as usize)) }
+}
+
+func type_pointer_signed(p: *Parser, id: u32) bool {
+    if type_kind(p, id) != TYPE_POINTER { return false }
+    var base = type_descriptor(p, id).pointee
+    while type_kind(p, base) == TYPE_POINTER { base = type_descriptor(p, base).pointee }
+    return type_descriptor(p, base).is_signed
+}
+
+
+func type_dereference(p: *Parser, type_id: u32) u32 {
+    return type_lowering(p, type_descriptor(p, type_id).pointee)
+}
+
+func type_is_pointer(p: *Parser, type_id: u32) bool {
+    return type_id == CODEGEN_STRING || type_kind(p, type_id) == TYPE_POINTER
+}
+
+func type_is_array(p: *Parser, type_id: u32) bool {
+    if type_kind(p, type_id) != TYPE_AGGREGATE || type_id == CODEGEN_STRING || type_id == CODEGEN_ARENA { return false }
+    return parser_struct(p, type_declaration(p, type_id)).is_array
+}

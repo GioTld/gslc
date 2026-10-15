@@ -52,6 +52,19 @@ def check(output, clang, linker):
     flags = ["--clang", clang, "--linker", linker]
     run(["gslc", "build", "main.gsl", "--output", "hosted", *flags])
     run([project / "hosted/program"], stdout="installed GSL\n")
+    source_dir = project / "physical"
+    alias_dir = project / "alias"
+    source_dir.mkdir()
+    alias_dir.mkdir()
+    (source_dir / "local.gsl").write_text("func answer() u32 { return 7 }\n")
+    (source_dir / "main.gsl").write_text('import "local"\nfunc main() u32 { return answer() - 7 }\n')
+    (alias_dir / "local.gsl").write_text("func answer() u32 { return 99 }\n")
+    (alias_dir / "main.gsl").symlink_to("../physical/main.gsl")
+    run(["gslc", "build", "alias/main.gsl", "--output", "alias-build", *flags])
+    run([project / "alias-build/program"])
+    alias_report = json.loads((project / "alias-build/report.json").read_text())
+    if set(alias_report["input_sources"]) != {str(source_dir / "main.gsl"), str(source_dir / "local.gsl")}:
+        raise RuntimeError("installed compiler did not report physical source identities")
     (project / "kernel.gsl").write_text('func kernel_main() { unsafe { hlt() } }\n')
     run(["gslc", "build", "kernel.gsl", "--target", "kernel", "--emit", "object", "--output", "kernel", *flags])
     if not (project / "kernel/program.o").is_file():

@@ -1,0 +1,62 @@
+import "compiler/host_storage"
+
+const SOURCE_NO_SEGMENT: u32 = 4294967295
+
+struct CompilerSourceSegment {
+    start: usize,
+    end: usize,
+    original_start: usize,
+    module_id: u32,
+    text: *u8
+}
+
+struct CompilerSourceView {
+    segments: *CompilerPool,
+    count: u32,
+    cached: u32,
+    length: usize
+}
+
+func source_view_init(view: *CompilerSourceView) {
+    unsafe { view.segments = 0 as *CompilerPool }
+    view.count = 0
+    view.cached = SOURCE_NO_SEGMENT
+    view.length = 0 as usize
+}
+
+func source_segment(pool: *CompilerPool, index: u32) *CompilerSourceSegment {
+    unsafe { return compiler_pool_item_ptr(pool, index, size_of(CompilerSourceSegment)) as *CompilerSourceSegment }
+}
+
+func source_segment_find(pool: *CompilerPool, count: u32, offset: usize) u32 {
+    var low: u32 = 0
+    var high = count
+    while low < high {
+        let middle = low + (high - low) / 2
+        let segment = source_segment(pool, middle)
+        if offset < segment.start { high = middle } else { if offset >= segment.end { low = middle + 1 } else { return middle } }
+    }
+    return SOURCE_NO_SEGMENT
+}
+
+// Segments borrow immutable source bytes until the compilation context is released.
+func source_view_ptr(view: *CompilerSourceView, offset: usize) *u8 {
+    var index = view.cached
+    if index < view.count {
+        let segment = source_segment(view.segments, index)
+        if offset < segment.start || offset >= segment.end { index = SOURCE_NO_SEGMENT }
+    }
+    if index == SOURCE_NO_SEGMENT {
+        index = source_segment_find(view.segments, view.count, offset)
+        view.cached = index
+    }
+    if index != SOURCE_NO_SEGMENT {
+        let segment = source_segment(view.segments, index)
+        unsafe { return ((segment.text as usize) + offset - segment.start) as *u8 }
+    }
+    // Virtual separators and EOF have no originating file.
+    unsafe {
+        if offset < view.length { return "\n" as *u8 }
+        return "" as *u8
+    }
+}

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import signal
 import struct
 import subprocess
@@ -78,7 +79,7 @@ class Runner:
         if self.platform is not None:
             options += ["--platform", self.platform]
         if self.platform_root is not None:
-            options += ["--platform-root", self.platform_root.resolve()]
+            options += ["--platform-root", self.platform_root.absolute()]
         return options
 
     def emit(self, source, output, target="hosted"):
@@ -157,7 +158,7 @@ class Runner:
                     if present:
                         output.write_bytes(b"preserved")
                     human = self.run([compiler, "--target=" + TARGETS[case.get("target", "hosted")], source, output], case["status"])
-                    require(human.stdout == case["human"].encode() and not human.stderr, f"human diagnostic mismatch: {name}: {human.stdout!r}")
+                    require(human.stdout == case["human"].replace("{source}", str(source.resolve())).encode() and not human.stderr, f"human diagnostic mismatch: {name}: {human.stdout!r}")
                     require(output.read_bytes() == b"preserved" if present else not output.exists(), f"human diagnostic changed output: {name}")
             diagnostics.append(record)
         require(all(record == diagnostics[0] for record in diagnostics), f"candidate diagnostics differ: {name}")
@@ -205,6 +206,155 @@ class Runner:
         self.report.update(compiler_sha256=seed.sha(self.compiler.read_bytes()), source_files=ordered,
                            source_sha256=hashes, native_flags=flags)
         self.passed("compiler-fixed-point")
+
+    def check_source_storage(self):
+        directory = self.work / "source-growth"
+        directory.mkdir()
+        source = directory / "main.gsl"
+        source.write_text("".join(f'import "part{i}"\n' for i in range(70)) +
+                          "func main() u32 { return part69() - 69 }\n")
+        for i in range(70):
+            (directory / f"part{i}.gsl").write_text(f"func part{i}() u32 {{ return {i} }}\n")
+        original = self.work / "source-growth-original.ll"
+        self.emit(source, original)
+        for i in range(70):
+            path = directory / f"part{i}.gsl"
+            path.write_text("//" + " padding" * 700 + "\n" + path.read_text())
+        source.write_text("//" + " padding" * 45000 + "\n" + source.read_text())
+        for optimization in ["-O0", "-O2"]:
+            binary = self.build(source, "source-growth" + optimization, "hosted", optimization)
+            require(binary.with_suffix(".ll").read_bytes() == original.read_bytes(),
+                    "source buffer growth changed IR")
+            self.run([binary])
+            self.passed("source-growth" + optimization)
+        def small_stack():
+            resource.setrlimit(resource.RLIMIT_STACK, (1024 * 1024, 1024 * 1024))
+        self.run([self.compiler, source, self.work / "source-small-stack.ll"], preexec_fn=small_stack)
+        require((self.work / "source-small-stack.ll").read_bytes() == original.read_bytes(),
+                "source collection with smaller stack changed IR")
+        mapped = self.work / "compiler_sources-O2"
+        self.run([mapped, source], preexec_fn=small_stack)
+        self.passed("source-mapping-growth-small-stack")
+        graph = directory / "graph"
+        graph.mkdir()
+        (graph / "main.gsl").write_text('import "left"\nimport "right"\nimport "left"\nfunc main() u32 { return shared() - 7 }\n')
+        (graph / "left.gsl").write_text('import "shared"\n')
+        (graph / "right.gsl").write_text('import "shared"\nimport "main"\n')
+        (graph / "shared.gsl").write_text('func shared() u32 { return 7 }\n')
+        for optimization in ["-O0", "-O2"]:
+            self.run([self.work / ("compiler_sources" + optimization), graph / "main.gsl", "graph"],
+                     preexec_fn=small_stack)
+            binary = self.build(graph / "main.gsl", "source-graph" + optimization, "hosted", optimization)
+            self.run([binary])
+            self.passed("source-dependencies" + optimization)
+        output = self.work / "source-depth.ll"
+        output.write_bytes(b"previous output")
+        for i in range(17):
+            (directory / f"depth{i}.gsl").write_text(f'import "depth{i+1}"\n' if i < 16 else "")
+        rejected = self.run([self.compiler, "--diagnostics=json", directory / "depth0.gsl", output], 9,
+                            preexec_fn=small_stack)
+        require(json.loads(rejected.stdout)["code"] == "E3000", "import depth diagnostic differs")
+        require(output.read_bytes() == b"previous output", "import depth failure replaced output")
+        self.passed("source-depth-preserves-output")
+
+        diagnostics = directory / "diagnostics"
+        diagnostics.mkdir()
+        entry = diagnostics / "main.gsl"
+        middle = diagnostics / "middle.gsl"
+        leaf = diagnostics / "leaf.gsl"
+        entry.write_text('import "middle"\nfunc main() u32 { return middle() }\n')
+        middle.write_text('import "leaf"\nfunc middle() u32 { return leaf() }\n')
+        leaf_text = "// leaf\nfunc leaf() u32 {\n    return missing;\n}\n"
+        leaf.write_text(leaf_text)
+        alias = diagnostics / "alias.gsl"
+        alias.symlink_to("main.gsl")
+        expected = f"gslc-self: E2001: undefined identifier at {leaf}:3:12\n".encode()
+        start = leaf_text.index("missing")
+        record = {"code": "E2001", "span": {"start": start, "end": start + 7},
+                  "message": "undefined identifier"}
+        for compiler in [self.compiler] + ([self.compare] if self.compare else []):
+            for source in [entry, alias]:
+                for present in [False, True]:
+                    output.unlink(missing_ok=True)
+                    if present:
+                        output.write_bytes(b"preserved")
+                    result = self.run([compiler, source, output], 2)
+                    require(result.stdout == expected and not result.stderr, "imported diagnostic location differs")
+                    machine = self.run([compiler, "--diagnostics=json", source, output], 2)
+                    require(json.loads(machine.stdout) == record, "source mapping changed JSON diagnostic")
+                    require(output.read_bytes() == b"preserved" if present else not output.exists(),
+                            "imported diagnostic changed output")
+        self.passed("source-original-diagnostics")
+
+        split_cases = [
+            ("function", "func answer() u32 { return 7\n", "}\nfunc main() u32 { return answer() - 7 }\n"),
+            ("struct", "struct Data { value:u32\n", "}\nfunc main() u32 { return 0 }\n"),
+            ("expression", "const VALUE:u32 = 1 +\n", "2\nfunc main() u32 { return VALUE - 3 }\n"),
+        ]
+        for name, head, tail in split_cases:
+            leaf.write_text(head)
+            entry.write_text('import "leaf"\n' + tail)
+            for compiler in [self.compiler] + ([self.compare] if self.compare else []):
+                for present in [False, True]:
+                    output.unlink(missing_ok=True)
+                    if present:
+                        output.write_bytes(b"preserved")
+                    result = self.run([compiler, "--diagnostics=json", entry, output], 1)
+                    require(json.loads(result.stdout)["code"] == "E1000", "split declaration diagnostic differs")
+                    require(output.read_bytes() == b"preserved" if present else not output.exists(),
+                            "split declaration changed output")
+            self.passed("source-boundary-" + name)
+
+        leaf.write_text("// no declarations\n")
+        entry.write_text('import "leaf"\nfunc main() u32 { let text = "separate files"; return 0 }\n')
+        for optimization in ["-O0", "-O2"]:
+            binary = self.build(entry, "source-empty-file" + optimization, "hosted", optimization)
+            self.run([binary])
+            self.passed("source-empty-file" + optimization)
+
+    def check_module_identity(self):
+        directory = self.work / "module-identity"
+        directory.mkdir()
+        original, alias = directory / "original", directory / "alias"
+        original.mkdir()
+        alias.mkdir()
+        entry = original / "main.gsl"
+        entry.write_text('import "local"\nimport "same"\nfunc main() u32 { return answer() - 7 }\n')
+        (original / "local.gsl").write_text('func answer() u32 { return 7 }\n')
+        (original / "same.gsl").symlink_to("local.gsl")
+        (alias / "main.gsl").symlink_to("../original/main.gsl")
+        (alias / "local.gsl").write_text('func answer() u32 { return 99 }\n')
+        (directory / "folder").symlink_to("original", target_is_directory=True)
+        paths = [entry, alias / "main.gsl", directory / "folder/main.gsl",
+                 original / "../original/main.gsl"]
+        reference = None
+        for index, path in enumerate(paths):
+            listed = self.run([self.compiler, "--list-sources", path, directory / "unused.ll"])
+            require(listed.stdout.decode().splitlines() == [str(entry), str(original / "local.gsl")],
+                    "module aliases did not share canonical identity")
+            ir = directory / f"identity{index}.ll"
+            self.emit(path, ir)
+            if reference is None:
+                reference = ir.read_bytes()
+            require(ir.read_bytes() == reference, "symlink spelling changed emitted IR")
+        for optimization in ["-O0", "-O2"]:
+            binary = self.build(alias / "main.gsl", "module-identity" + optimization, "hosted", optimization)
+            self.run([binary])
+            self.passed("module-identity" + optimization)
+        # A symlink must be expanded before processing the following '..'.
+        (original / "nested").mkdir()
+        (directory / "deep").symlink_to("original/nested", target_is_directory=True)
+        self.emit(directory / "deep/../main.gsl", directory / "parent.ll")
+        require((directory / "parent.ll").read_bytes() == reference, "parent resolved before symlink")
+        (directory / "loop.gsl").symlink_to("loop.gsl")
+        (directory / "dangling.gsl").symlink_to("absent.gsl")
+        for path in [directory / "loop.gsl", directory / "dangling.gsl", original / "local.gsl/../main.gsl"]:
+            output = directory / "preserved.ll"
+            output.write_bytes(b"previous output")
+            result = self.run([self.compiler, "--diagnostics=json", path, output], 5)
+            require(json.loads(result.stdout)["code"] == "E3000", "path failure diagnostic differs")
+            require(output.read_bytes() == b"previous output", "path failure replaced output")
+        self.passed("module-identity-rejections")
 
     def accept(self, args):
         from output_checks import check_output
@@ -302,6 +452,22 @@ class Runner:
             require(result.stdout == case["stdout"].encode() and not result.stderr, f"QEMU output mismatch: {case['name']}")
             self.passed(case["name"])
         check_std(self)
+        self.check_source_storage()
+        self.check_module_identity()
+        source = self.work / "storage-exhaustion.gsl"
+        source.write_text("func main() u32 { return 0 }\n")
+        output = self.work / "storage-exhaustion.ll"
+        output.write_bytes(b"previous output")
+        def exhaust_data():
+            resource.setrlimit(resource.RLIMIT_DATA, (1024 * 1024, 1024 * 1024))
+        self.run([self.compiler, "--diagnostics=json", source, output], preexec_fn=exhaust_data)
+        self.passed("compiler-small-data-budget")
+        source.write_text("func main() u32 {\n" + "".join(f"let value{i}: u32 = {i}\n" for i in range(10000)) + "return 0\n}\n")
+        output.write_bytes(b"previous output")
+        failed = self.run([self.compiler, "--diagnostics=json", source, output], 3, preexec_fn=exhaust_data)
+        require(json.loads(failed.stdout)["code"] == "E3002", "missing storage exhaustion diagnostic")
+        require(output.read_bytes() == b"previous output", "storage exhaustion replaced output")
+        self.passed("compiler-storage-exhaustion")
         check_output(self)
         check_mutations(self)
         check_semantics(self)
@@ -312,10 +478,12 @@ class Runner:
 def storage_report(measured, manifest):
     for name, maximum in manifest["storage"]["limits"].items():
         require(isinstance(measured.get(name), int) and 0 <= measured[name] <= maximum, f"compiler exceeds {name} storage limit")
-        require(measured.get("max_" + name) == maximum, f"manifest/compiler {name} capacity differs")
+        if manifest["storage"].get("allocation") != "dynamic":
+            require(measured.get("max_" + name) == maximum, f"manifest/compiler {name} capacity differs")
     require(measured.get("source_bytes", manifest["input_max_bytes"]+1) <= manifest["input_max_bytes"], "compiler exceeds source limit")
-    require(measured["storage_bytes"] <= manifest["storage"]["work_arena_bytes"], "compiler storage exceeds work arena")
-    require(measured.get("max_locals") == manifest["storage"]["limits"]["symbols"], "codegen local capacity differs from manifest")
+    require(measured["storage_bytes"] <= manifest["storage"]["work_arena_bytes"], "compiler storage exceeds measured budget")
+    if manifest["storage"].get("allocation") != "dynamic":
+        require(measured.get("max_locals") == manifest["storage"]["limits"]["symbols"], "codegen local capacity differs from manifest")
     require(measured["local_bytes"] <= measured["local_arena_bytes"], "compiler local storage exceeds arena")
 
 
@@ -494,7 +662,7 @@ def main(argv=None, installed=False):
             runner.accept(args)
         else:
             require(args.source is not None, "build requires a source")
-            result = runner.build(args.source.resolve(), "program", args.target, object_only=args.emit == "object",
+            result = runner.build(args.source.absolute(), "program", args.target, object_only=args.emit == "object",
                                   boot_source=args.boot.resolve() if args.boot else None,
                                   linker_script=args.linker_script.resolve() if args.linker_script else None,
                                   objects=[path.resolve() for path in args.objects], entry=args.entry)

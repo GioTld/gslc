@@ -1,0 +1,453 @@
+import "compiler/codegen_types"
+
+func codegen_ir_opcode(op: u32) string {
+    if op == IR_ADD { return " = add " }
+    if op == IR_SUB { return " = sub " }
+    if op == IR_MUL { return " = mul " }
+    if op == IR_SDIV { return " = sdiv " }
+    if op == IR_UDIV { return " = udiv " }
+    if op == IR_SREM { return " = srem " }
+    if op == IR_UREM { return " = urem " }
+    if op == IR_SHL { return " = shl " }
+    if op == IR_ASHR { return " = ashr " }
+    if op == IR_LSHR { return " = lshr " }
+    if op == IR_AND { return " = and " }
+    if op == IR_OR { return " = or " }
+    if op == IR_XOR { return " = xor " }
+    if op == IR_EQ { return " = icmp eq " }
+    if op == IR_NE { return " = icmp ne " }
+    if op == IR_SLT { return " = icmp slt " }
+    if op == IR_ULT { return " = icmp ult " }
+    if op == IR_SLE { return " = icmp sle " }
+    if op == IR_ULE { return " = icmp ule " }
+    if op == IR_SGT { return " = icmp sgt " }
+    if op == IR_UGT { return " = icmp ugt " }
+    if op == IR_SGE { return " = icmp sge " }
+    if op == IR_UGE { return " = icmp uge " }
+    if op == IR_SEXT { return " = sext " }
+    if op == IR_ZEXT { return " = zext " }
+    if op == IR_TRUNC { return " = trunc " }
+    if op == IR_PTR_TO_INT { return " = ptrtoint " }
+    if op == IR_INT_TO_PTR { return " = inttoptr " }
+    return ""
+}
+
+func codegen_partial_guard(p: *Parser, output: *CompilerOutput, operation: *IrBinary) {
+    let id = operation.result
+    let op = operation.opcode
+    let type_id = operation.type_id
+    let left = operation.left
+    let right = operation.right
+    let is_signed = op == IR_SDIV || op == IR_SREM
+    let is_shift = op == IR_SHL || op == IR_ASHR || op == IR_LSHR
+    if is_shift == false && op != IR_SDIV && op != IR_UDIV && op != IR_SREM && op != IR_UREM { return }
+    compiler_output_string(output, "  ")
+    codegen_write_label(output, "%partial_invalid_", id)
+    if is_shift { compiler_output_string(output, " = icmp uge ") } else { compiler_output_string(output, " = icmp eq ") }
+    codegen_write_type(p, output, type_id)
+    compiler_output_string(output, " ")
+    codegen_write_reg(output, right)
+    compiler_output_string(output, ", ")
+    if is_shift { codegen_write_u32(output, type_id) } else { compiler_output_string(output, "0") }
+    compiler_output_string(output, "\n")
+    if is_shift == false && is_signed {
+        compiler_output_string(output, "  ")
+        codegen_write_label(output, "%partial_min_", id)
+        compiler_output_string(output, " = icmp eq ")
+        codegen_write_type(p, output, type_id)
+        compiler_output_string(output, " ")
+        codegen_write_reg(output, left)
+        if type_id == 8 { compiler_output_string(output, ", -128\n") }
+        if type_id == 16 { compiler_output_string(output, ", -32768\n") }
+        if type_id == 32 { compiler_output_string(output, ", -2147483648\n") }
+        if type_id == 64 { compiler_output_string(output, ", -9223372036854775808\n") }
+        compiler_output_string(output, "  ")
+        codegen_write_label(output, "%partial_minus_one_", id)
+        compiler_output_string(output, " = icmp eq ")
+        codegen_write_type(p, output, type_id)
+        compiler_output_string(output, " ")
+        codegen_write_reg(output, right)
+        compiler_output_string(output, ", -1\n  ")
+        codegen_write_label(output, "%partial_overflow_", id)
+        compiler_output_string(output, " = and i1 ")
+        codegen_write_label(output, "%partial_min_", id)
+        compiler_output_string(output, ", ")
+        codegen_write_label(output, "%partial_minus_one_", id)
+        compiler_output_string(output, "\n  ")
+        codegen_write_label(output, "%partial_bad_", id)
+        compiler_output_string(output, " = or i1 ")
+        codegen_write_label(output, "%partial_invalid_", id)
+        compiler_output_string(output, ", ")
+        codegen_write_label(output, "%partial_overflow_", id)
+        compiler_output_string(output, "\n")
+    }
+    compiler_output_string(output, "  br i1 ")
+    if is_shift == false && is_signed { codegen_write_label(output, "%partial_bad_", id) } else { codegen_write_label(output, "%partial_invalid_", id) }
+    compiler_output_string(output, ", label %")
+    codegen_write_label(output, "partial_trap_", id)
+    compiler_output_string(output, ", label %")
+    codegen_write_label(output, "partial_ok_", id)
+    compiler_output_string(output, "\n")
+    codegen_write_label(output, "partial_trap_", id)
+    compiler_output_string(output, ":\n  call void @llvm.trap()\n  unreachable\n")
+    codegen_write_label(output, "partial_ok_", id)
+    compiler_output_string(output, ":\n")
+}
+
+func codegen_emit_binary_operation(p: *Parser, output: *CompilerOutput, operation: *IrBinary) {
+    codegen_partial_guard(p, output, operation)
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, codegen_ir_opcode(operation.opcode))
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, " ")
+    codegen_write_reg(output, operation.left)
+    compiler_output_string(output, ", ")
+    codegen_write_reg(output, operation.right)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_cast_operation(p: *Parser, output: *CompilerOutput, operation: *IrCast) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, codegen_ir_opcode(operation.opcode))
+    codegen_write_type(p, output, operation.source_type)
+    compiler_output_string(output, " ")
+    codegen_write_reg(output, operation.operand)
+    compiler_output_string(output, " to ")
+    codegen_write_type(p, output, operation.target_type)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_memory_operation(p: *Parser, output: *CompilerOutput, operation: *IrMemory) {
+    compiler_output_string(output, "  ")
+    if operation.is_load {
+        codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = load ")
+    } else { compiler_output_string(output, "store ") }
+    if operation.is_volatile { compiler_output_string(output, "volatile ") }
+    codegen_write_type(p, output, operation.type_id)
+    if operation.is_load == false {
+        compiler_output_string(output, " ")
+        if operation.initialized { codegen_write_reg(output, operation.value) } else { compiler_output_string(output, "zeroinitializer") }
+    }
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, operation.address)
+    compiler_output_string(output, ", align ")
+    codegen_write_u32(output, operation.alignment)
+    compiler_output_string(output, "\n")
+}
+
+const IR_ARGUMENT_BLOCK_BYTES: usize = 4096
+
+// The pool is filled after argument evaluation and reused after each emitted call.
+func codegen_ir_argument(arguments: *CompilerPool, index: u32) *IrArgument {
+    unsafe { return compiler_pool_item_ptr(arguments, index, size_of(IrArgument)) as *IrArgument }
+}
+
+func codegen_emit_call_operation(p: *Parser, output: *CompilerOutput, arguments: *CompilerPool, operation: *IrCall) {
+    compiler_output_string(output, "  ")
+    if operation.return_type != 0 {
+        codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = ")
+    }
+    compiler_output_string(output, "call ")
+    codegen_write_type(p, output, operation.return_type)
+    compiler_output_string(output, " @")
+    codegen_write_token(p, output, operation.name, operation.name_length)
+    compiler_output_string(output, "(")
+    var index: u32 = 0
+    while index < operation.argument_count {
+        if index > 0 { compiler_output_string(output, ", ") }
+        let argument = codegen_ir_argument(arguments, operation.argument_start + index)
+        codegen_write_type(p, output, argument.type_id)
+        compiler_output_string(output, " ")
+        codegen_write_reg(output, argument.value)
+        index += 1
+    }
+    compiler_output_string(output, ")\n")
+}
+
+func codegen_emit_unary_operation(p: *Parser, output: *CompilerOutput, operation: *IrUnary) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    if operation.opcode == IR_NEGATE { compiler_output_string(output, " = sub ") } else { compiler_output_string(output, " = xor ") }
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, " ")
+    if operation.opcode == IR_NEGATE { compiler_output_string(output, "0, ") }
+    codegen_write_reg(output, operation.operand)
+    if operation.opcode == IR_NOT { compiler_output_string(output, ", 1") }
+    if operation.opcode == IR_BIT_NOT { compiler_output_string(output, ", -1") }
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_array_address(p: *Parser, output: *CompilerOutput, operation: *IrArrayAddress) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.valid)
+    compiler_output_string(output, " = icmp ult i64 ")
+    codegen_write_reg(output, operation.index)
+    compiler_output_string(output, ", ")
+    codegen_write_u32(output, operation.count)
+    compiler_output_string(output, "\n  br i1 ")
+    codegen_write_reg(output, operation.valid)
+    compiler_output_string(output, ", label %array_ok_")
+    codegen_write_u32(output, operation.valid)
+    compiler_output_string(output, ", label %array_trap_")
+    codegen_write_u32(output, operation.valid)
+    compiler_output_string(output, "\narray_trap_")
+    codegen_write_u32(output, operation.valid)
+    compiler_output_string(output, ":\n  call void @llvm.trap()\n  unreachable\narray_ok_")
+    codegen_write_u32(output, operation.valid)
+    compiler_output_string(output, ":\n")
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = getelementptr ")
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, operation.base)
+    compiler_output_string(output, ", i64 0, i64 ")
+    codegen_write_reg(output, operation.index)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_field_address(p: *Parser, output: *CompilerOutput, operation: *IrFieldAddress) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = getelementptr ")
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, ", ptr ")
+    codegen_write_reg(output, operation.base)
+    compiler_output_string(output, ", i32 0, i32 ")
+    codegen_write_u32(output, operation.field)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_block_prefix(kind: u32) string {
+    if kind == IR_BLOCK_IF_TRUE { return "if_true_" }
+    if kind == IR_BLOCK_IF_FALSE { return "if_false_" }
+    if kind == IR_BLOCK_IF_MERGE { return "if_merge_" }
+    if kind == IR_BLOCK_LOOP_CONDITION { return "loop_cond_" }
+    if kind == IR_BLOCK_LOOP_BODY { return "loop_body_" }
+    if kind == IR_BLOCK_LOOP_END { return "loop_end_" }
+    if kind == IR_BLOCK_LOGIC_RHS { return "logic_rhs_" }
+    if kind == IR_BLOCK_LOGIC_DONE { return "logic_rhs_done_" }
+    if kind == IR_BLOCK_LOGIC_SHORT { return "logic_short_" }
+    return "logic_merge_"
+}
+
+func codegen_emit_block(output: *CompilerOutput, kind: u32, label: u32) {
+    codegen_write_label(output, codegen_block_prefix(kind), label)
+    compiler_output_string(output, ":\n")
+}
+
+func codegen_emit_jump(output: *CompilerOutput, kind: u32, label: u32) {
+    compiler_output_string(output, "  br label %")
+    codegen_write_label(output, codegen_block_prefix(kind), label)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_branch(output: *CompilerOutput, operation: *IrBranch) {
+    compiler_output_string(output, "  br i1 ")
+    codegen_write_reg(output, operation.condition)
+    compiler_output_string(output, ", label %")
+    codegen_write_label(output, codegen_block_prefix(operation.true_kind), operation.true_label)
+    compiler_output_string(output, ", label %")
+    codegen_write_label(output, codegen_block_prefix(operation.false_kind), operation.false_label)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_return_operation(p: *Parser, output: *CompilerOutput, operation: *IrReturn) {
+    compiler_output_string(output, "  ret ")
+    codegen_write_type(p, output, operation.type_id)
+    if operation.type_id != 0 { compiler_output_string(output, " "); codegen_write_reg(output, operation.value) }
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_logical_phi(output: *CompilerOutput, operation: *IrLogicalPhi) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = phi i1 [")
+    if operation.short_value { compiler_output_string(output, "1") } else { compiler_output_string(output, "0") }
+    compiler_output_string(output, ", %")
+    codegen_write_label(output, "logic_short_", operation.label)
+    compiler_output_string(output, "], [")
+    codegen_write_reg(output, operation.value)
+    compiler_output_string(output, ", %")
+    codegen_write_label(output, "logic_rhs_done_", operation.label)
+    compiler_output_string(output, "]\n")
+}
+
+func codegen_emit_symbol_address(output: *CompilerOutput, operation: *IrSymbolAddress) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    if operation.as_integer { compiler_output_string(output, " = ptrtoint ptr @") } else { compiler_output_string(output, " = getelementptr i8, ptr @") }
+    if operation.is_string {
+        compiler_output_string(output, "gsl.string.")
+        codegen_write_u32(output, operation.string_index)
+    } else { compiler_output_write(output, operation.name, operation.length) }
+    if operation.as_integer { compiler_output_string(output, " to i64\n") } else { compiler_output_string(output, ", i64 0\n") }
+}
+
+func codegen_emit_extract(p: *Parser, output: *CompilerOutput, operation: *IrExtract) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = extractvalue ")
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, " ")
+    codegen_write_reg(output, operation.aggregate)
+    compiler_output_string(output, ", ")
+    codegen_write_u32(output, operation.field)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_constant(p: *Parser, output: *CompilerOutput, operation: *IrConstant) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = add ")
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, " 0, ")
+    codegen_write_u64(output, operation.value)
+    compiler_output_string(output, "\n")
+}
+
+func codegen_emit_hardware_operation(output: *CompilerOutput, operation: *IrHardware) {
+    if operation.builtin == BUILTIN_READ_CR2 || operation.builtin == BUILTIN_READ_CR3 {
+        compiler_output_string(output, "  ")
+        codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = call i64 asm sideeffect \"mov %cr")
+        if operation.builtin == BUILTIN_READ_CR2 { compiler_output_string(output, "2") } else { compiler_output_string(output, "3") }
+        compiler_output_string(output, ", $0\", \"=r,~{memory}\"()\n")
+        return
+    }
+    if operation.builtin == BUILTIN_CLI || operation.builtin == BUILTIN_HLT || operation.builtin == BUILTIN_STI {
+        compiler_output_string(output, "  call void asm sideeffect \"")
+        if operation.builtin == BUILTIN_CLI { compiler_output_string(output, "cli") }
+        if operation.builtin == BUILTIN_HLT { compiler_output_string(output, "hlt") }
+        if operation.builtin == BUILTIN_STI { compiler_output_string(output, "sti") }
+        compiler_output_string(output, "\", \"~{dirflag},~{fpsr},~{flags},~{memory}\"()\n")
+        return
+    }
+    if operation.builtin == BUILTIN_INB {
+        compiler_output_string(output, "  "); codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = call i8 asm sideeffect \"inb %dx, %al\", \"={al},{dx},~{memory}\"(i16 ")
+    } else if operation.builtin == BUILTIN_INW {
+        compiler_output_string(output, "  "); codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = call i16 asm sideeffect \"inw %dx, %ax\", \"={ax},{dx},~{memory}\"(i16 ")
+    } else if operation.builtin == BUILTIN_OUTW {
+        compiler_output_string(output, "  call void asm sideeffect \"outw %ax, %dx\", \"{dx},{ax},~{memory}\"(i16 ")
+    } else if operation.builtin == BUILTIN_OUTB {
+        compiler_output_string(output, "  call void asm sideeffect \"outb %al, %dx\", \"{dx},{al},~{memory}\"(i16 ")
+    } else {
+        compiler_output_string(output, "  call void asm sideeffect \"")
+        if operation.builtin == BUILTIN_WRITE_CR3 { compiler_output_string(output, "mov $0, %cr3") } else if operation.builtin == BUILTIN_INVLPG { compiler_output_string(output, "invlpg ($0)") } else if operation.builtin == BUILTIN_LGDT { compiler_output_string(output, "lgdt ($0)") } else { compiler_output_string(output, "lidt ($0)") }
+        compiler_output_string(output, "\", \"r,~{memory}\"(i64 ")
+    }
+    codegen_write_reg(output, operation.first)
+    if operation.builtin == BUILTIN_OUTB { compiler_output_string(output, ", i8 "); codegen_write_reg(output, operation.second); }
+    if operation.builtin == BUILTIN_OUTW { compiler_output_string(output, ", i16 "); codegen_write_reg(output, operation.second); }
+    compiler_output_string(output, ")\n")
+}
+
+func codegen_emit_syscall_operation(output: *CompilerOutput, arguments: *CompilerPool, operation: *IrSyscall) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = call i64 asm sideeffect \"syscall\", \"={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}\"(")
+    if operation.write_number { compiler_output_string(output, "i64 1, ") }
+    var index: u32 = 0
+    while index < operation.argument_count {
+        if index > 0 { compiler_output_string(output, ", ") }
+        compiler_output_string(output, "i64 ")
+        codegen_write_reg(output, codegen_ir_argument(arguments, operation.argument_start + index).value)
+        index += 1
+    }
+    compiler_output_string(output, ")\n")
+}
+
+const IR_ASM_DOLLAR: u32 = 36
+
+func codegen_emit_assembly_bytes(p: *Parser, output: *CompilerOutput, start: usize, end: usize, literal_only: bool) {
+    var offset = start
+    while offset < end {
+        let value = codegen_decode_char(p, offset, end)
+        codegen_write_char(output, value)
+        if literal_only && value.value == IR_ASM_DOLLAR { codegen_write_char(output, value) }
+        offset = value.next
+    }
+}
+
+func codegen_emit_assembly_operation(p: *Parser, output: *CompilerOutput, arguments: *CompilerPool, operation: *IrAssembly) {
+    if operation.returns_value {
+        compiler_output_string(output, "  ")
+        codegen_write_reg(output, operation.result)
+        compiler_output_string(output, " = call i64")
+    } else { compiler_output_string(output, "  call void") }
+    compiler_output_string(output, " asm sideeffect \"")
+    codegen_emit_assembly_bytes(p, output, operation.instruction_start, operation.instruction_end, operation.literal_only)
+    compiler_output_string(output, "\", \"")
+    codegen_emit_assembly_bytes(p, output, operation.constraint_start, operation.constraint_end, false)
+    if operation.constraint_end > operation.constraint_start { compiler_output_string(output, ",") }
+    compiler_output_string(output, "~{dirflag},~{fpsr},~{flags},~{memory}\"(")
+    var index: u32 = 0
+    while index < operation.argument_count {
+        if index > 0 { compiler_output_string(output, ", ") }
+        compiler_output_string(output, "i64 ")
+        codegen_write_reg(output, codegen_ir_argument(arguments, operation.argument_start + index).value)
+        index += 1
+    }
+    compiler_output_string(output, ")\n")
+}
+
+func codegen_emit_slot(p: *Parser, output: *CompilerOutput, operation: *IrSlot) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = alloca ")
+    codegen_write_type(p, output, operation.type_id)
+    compiler_output_string(output, "\n")
+    if operation.is_parameter {
+        compiler_output_string(output, "  store ")
+        codegen_write_type(p, output, operation.type_id)
+        compiler_output_string(output, " %arg")
+        codegen_write_u32(output, operation.parameter)
+        compiler_output_string(output, ", ptr ")
+        codegen_write_reg(output, operation.result)
+        compiler_output_string(output, "\n")
+    }
+}
+
+func codegen_emit_arena_slot(output: *CompilerOutput, operation: *IrArenaSlot) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = alloca %gsl.arena, align 8\n  %arena_buf_")
+    codegen_write_u32(output, operation.buffer)
+    compiler_output_string(output, " = alloca [")
+    codegen_write_u32(output, operation.capacity)
+    compiler_output_string(output, " x i8], align 8\n")
+}
+
+func codegen_emit_arena_init(output: *CompilerOutput, operation: *IrArenaInit) {
+    compiler_output_string(output, "  call void @gsl.arena.init(ptr ")
+    codegen_write_reg(output, operation.address)
+    compiler_output_string(output, ", ptr %arena_buf_")
+    codegen_write_u32(output, operation.buffer)
+    compiler_output_string(output, ", i64 ")
+    codegen_write_u32(output, operation.capacity)
+    compiler_output_string(output, ")\n")
+}
+
+func codegen_emit_arena_allocate(output: *CompilerOutput, operation: *IrArenaAllocate) {
+    compiler_output_string(output, "  ")
+    codegen_write_reg(output, operation.result)
+    compiler_output_string(output, " = call ptr @gsl.arena.alloc(ptr ")
+    codegen_write_reg(output, operation.address)
+    compiler_output_string(output, ", i64 ")
+    codegen_write_reg(output, operation.size)
+    compiler_output_string(output, ")\n")
+}
+
+func codegen_emit_zero(output: *CompilerOutput, operation: *IrZero) {
+    compiler_output_string(output, "  call void @gsl.array.zero(ptr ")
+    codegen_write_reg(output, operation.address)
+    compiler_output_string(output, ", i64 ")
+    codegen_write_u32(output, operation.size)
+    compiler_output_string(output, ")\n")
+}

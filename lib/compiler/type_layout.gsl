@@ -1,0 +1,71 @@
+import "compiler/types"
+
+const LAYOUT_UNVISITED: u8 = 0
+const LAYOUT_VISITING: u8 = 1
+const LAYOUT_COMPLETE: u8 = 2
+
+func type_layout_validate(p: *Parser, index: u32, states: *u8) bool {
+    var state_ptr: *u8
+    var state: u8
+    unsafe {
+        state_ptr = ((states as usize) + (index as usize)) as *u8
+        state = volatile_read(state_ptr)
+    }
+    if state == LAYOUT_VISITING { return false }
+    if state == LAYOUT_COMPLETE { return true }
+    unsafe { volatile_write(state_ptr, LAYOUT_VISITING); }
+    let structure = parser_struct(p, index)
+    if structure.is_array {
+        let element = resolved_type(p, structure.element_ptr, structure.element_len)
+        if element == 0 || type_is_array(p, element) { return false }
+        if type_kind(p, element) == TYPE_AGGREGATE && element != CODEGEN_STRING {
+            if type_layout_validate(p, type_declaration(p, element), states) == false { return false }
+        }
+        let element_size = type_layout_size(p, element)
+        if element_size > CODEGEN_MAX_LAYOUT / structure.array_count { return false }
+        structure.alignment = type_layout_align(p, element)
+        structure.size = structure.array_count * element_size
+        unsafe { volatile_write(state_ptr, LAYOUT_COMPLETE); }
+        return true
+    }
+    var size: u32 = 0
+    var alignment: u32 = 1
+    var field_idx = structure.field_start
+    while field_idx < structure.field_start + structure.field_count {
+        let field = parser_field(p, field_idx)
+        let type_id = resolved_type(p, field.type_ptr, field.type_len)
+        if type_id == 0 { return false }
+        if type_is_array(p, type_id) { return false }
+        if type_kind(p, type_id) == TYPE_AGGREGATE {
+            if type_layout_validate(p, type_declaration(p, type_id), states) == false { return false }
+        }
+        var field_align = type_layout_align(p, type_id)
+        if structure.is_packed { field_align = 1 }
+        let field_size = type_layout_size(p, type_id)
+        if size > CODEGEN_MAX_LAYOUT - (field_align - 1) { return false }
+        size = ((size + field_align - 1) / field_align) * field_align
+        if field_size > CODEGEN_MAX_LAYOUT - size { return false }
+        size += field_size
+        if field_align > alignment { alignment = field_align }
+        field_idx += 1
+    }
+    if size > CODEGEN_MAX_LAYOUT - (alignment - 1) { return false }
+    structure.size = ((size + alignment - 1) / alignment) * alignment
+    structure.alignment = alignment
+    unsafe { volatile_write(state_ptr, LAYOUT_COMPLETE); }
+    return true
+}
+
+func type_layout_align(p: *Parser, type_id: u32) u32 {
+    if type_is_pointer(p, type_id) { return 8 }
+    if type_kind(p, type_id) == TYPE_AGGREGATE { return parser_struct(p, type_declaration(p, type_id)).alignment }
+    if type_id == 1 { return 1 }
+    return type_id / 8
+}
+
+func type_layout_size(p: *Parser, type_id: u32) u32 {
+    if type_is_pointer(p, type_id) { return 8 }
+    if type_kind(p, type_id) == TYPE_AGGREGATE { return parser_struct(p, type_declaration(p, type_id)).size }
+    if type_id == 1 { return 1 }
+    return type_id / 8
+}

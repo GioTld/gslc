@@ -1,0 +1,22 @@
+import "compiler/imports"
+
+// Virtual offsets preserve machine diagnostics; the lexer reads one file at a time.
+func compiler_parse_sources(p: *Parser, imports: *ImportState) {
+    if (imports as usize) == 0 as usize { parser_parse(p); return }
+    unsafe { p.source_view.segments = &imports.segments }
+    p.source_view.count = imports.segment_count
+    p.source_view.length = imports.virtual_length
+    var module_id = imports.first_parsed_module
+    while module_id != INVALID_INDEX && p.error == false {
+        let source = compiler_source(imports, module_id)
+        lexer_init(&p.lex, compiler_import_as_string(source.parse_text))
+        p.source_base = source.parse_start
+        p.lex.line = source.parse_line
+        p.lex.col = source.parse_column
+        p.has_peek = false
+        parser_advance(p)
+        parser_parse(p)
+        module_id = source.next_parsed_module
+    }
+}
+

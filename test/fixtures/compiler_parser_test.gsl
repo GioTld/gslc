@@ -6,6 +6,9 @@ import "compiler/sema"
 import "std/io"
 
 func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
     arena work(7471104)
 
     var p: Parser
@@ -13,7 +16,7 @@ func main() u32 {
 
     let src = "func id(x: u32) u32 { return x; }"
 
-    parser_init(&p, src)
+    parser_init(&p, src, &context)
     parser_parse(&p)
 
     if p.error {
@@ -45,7 +48,7 @@ func main() u32 {
 
     io_println("Parser: func decl OK")
 
-    sema_init(&s)
+    sema_init(&s, &context)
     sema_check(&s, &p)
 
     if s.error {

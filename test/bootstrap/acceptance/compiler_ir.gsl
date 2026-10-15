@@ -1,0 +1,66 @@
+import "compiler/codegen_ir"
+import "std/file"
+
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 2 { return 1 }
+    var path: string
+    unsafe { path = (*(((argv as usize) + size_of(usize)) as *usize)) as string }
+    var opened = fs_create_new(path)
+    if opened.error != IO_OK { return 2 }
+    defer fs_close(&opened.file)
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "", &context)
+    var function: IrFunction
+    ir_function_init(&function)
+    defer compiler_context_release(&function.context)
+    var constant: IrConstant
+    constant.type_id = 32
+    constant.result = 1
+    constant.value = 42 as u64
+    ir_append_constant(&function, &constant)
+    var arguments: CompilerPool
+    compiler_pool_init(&arguments, &context)
+    if compiler_pool_ensure(&arguments, 0, size_of(IrArgument), IR_ARGUMENT_BLOCK_BYTES) == false { return 3 }
+    let argument = codegen_ir_argument(&arguments, 0)
+    argument.type_id = 32
+    argument.value = 1
+    var call: IrCall
+    unsafe { call.name = "identity" as *u8 }
+    call.name_length = 8 as usize
+    call.return_type = 32
+    call.result = 2
+    call.argument_start = 0
+    call.argument_count = 1
+    ir_append_call(&function, &arguments, &call)
+    argument.value = 999999
+    constant.value = 0 as u64
+    var index: u32 = 3
+    while index < 3003 {
+        constant.result = index
+        ir_append_constant(&function, &constant)
+        index += 1
+    }
+    var returned: IrReturn
+    returned.type_id = 32
+    returned.value = 2
+    ir_append_return(&function, &returned)
+    if function.context.error || function.count != 3003 || function.argument_count != 1 { return 4 }
+    var output: CompilerOutput
+    output.fd = opened.file.handle
+    output.error = false
+    compiler_output_string(&output, "define i32 @main() {\nentry:\n")
+    codegen_emit_function_ir(&parser, &output, &function)
+    compiler_output_string(&output, "}\ndefine i32 @identity(i32 %value) { ret i32 %value }\n")
+    if output.error { return 5 }
+    compiler_context_release(&function.context)
+    if function.context.mapped_bytes != 0 as usize { return 6 }
+    ir_function_init(&function)
+    function.count = COMPILER_POOL_INVALID_INDEX
+    ir_append_constant(&function, &constant)
+    if function.context.error == false || function.count != COMPILER_POOL_INVALID_INDEX { return 7 }
+    if context.error { return 8 }
+    return 0
+}

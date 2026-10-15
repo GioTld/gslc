@@ -1,43 +1,46 @@
 import "compiler/parser"
 import "compiler/sema"
-import "compiler/imports"
+import "compiler/source_parse"
 
 func sema_status(source: string) u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
     arena work(262144)
     var p: Parser
     var s: Sema
-    parser_init(&p, source)
+    parser_init(&p, source, &context)
     parser_parse(&p)
     if p.error { return 1 }
-    sema_init(&s)
+    sema_init(&s, &context)
     sema_check(&s, &p)
     if s.error { return 2 }
     return 0
 }
 
 func sema_compiler_closure(path: string) u32 {
-    arena input(344072)
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
     var imports: ImportState
-    imports.output = input.alloc(327681 as usize)
-    imports.paths = input.alloc(16384 as usize)
-    imports.used = 0 as usize
-    imports.platform = 0
-    imports.platform_root = ""
-    imports.path_count = 0
+    compiler_import_init(&imports, 0, "", &context)
     let loaded = compiler_collect_file(path, &imports, 0)
     if loaded != 0 { return loaded }
 
-    return sema_loaded_closure(compiler_import_as_string(imports.output));
+    return sema_loaded_closure(&imports);
 }
 
-func sema_loaded_closure(source: string) u32 {
+func sema_loaded_closure(imports: *ImportState) u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
     arena work(262144)
     var p: Parser
     var s: Sema
-    parser_init(&p, source)
-    parser_parse(&p)
+    parser_init(&p, "", &context)
+    compiler_parse_sources(&p, imports)
     if p.error { return 1 }
-    sema_init(&s)
+    sema_init(&s, &context)
     sema_check(&s, &p)
     if s.error { return 2 }
     return 0

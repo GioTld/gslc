@@ -1,0 +1,163 @@
+import "compiler/ir"
+import "compiler/host_storage"
+
+const IR_INSTRUCTION_BLOCK_BYTES: usize = 4096
+
+struct IrInstruction {
+    kind: u32,
+    payload: *u8
+}
+
+struct IrFunction {
+    context: CompilerContext,
+    instructions: CompilerPool,
+    arguments: CompilerPool,
+    count: u32,
+    argument_count: u32
+}
+
+func ir_function_init(function: *IrFunction) {
+    compiler_context_init(&function.context)
+    compiler_pool_init(&function.instructions, &function.context)
+    compiler_pool_init(&function.arguments, &function.context)
+    function.count = 0
+    function.argument_count = 0
+}
+
+// Payloads and argument snapshots stay alive until this function's context is released.
+func ir_store(function: *IrFunction, kind: u32, payload: *u8, bytes: usize) {
+    if function.context.error { return }
+    if function.count == COMPILER_POOL_INVALID_INDEX || compiler_pool_ensure(&function.instructions, function.count, size_of(IrInstruction), IR_INSTRUCTION_BLOCK_BYTES) == false { function.context.error = true; return }
+    let memory = compiler_storage_allocate(&function.context, bytes)
+    if function.context.error { return }
+    unsafe {
+        memcpy(memory, payload, bytes)
+        let instruction = compiler_pool_item_ptr(&function.instructions, function.count, size_of(IrInstruction)) as *IrInstruction
+        instruction.kind = kind
+        instruction.payload = memory
+    }
+    function.count += 1
+}
+
+func ir_copy_arguments(function: *IrFunction, arguments: *CompilerPool, count: u32) u32 {
+    let start = function.argument_count
+    var index: u32 = 0
+    while index < count && function.context.error == false {
+        if function.argument_count == COMPILER_POOL_INVALID_INDEX || compiler_pool_ensure(&function.arguments, function.argument_count, size_of(IrArgument), IR_INSTRUCTION_BLOCK_BYTES) == false { function.context.error = true; return start }
+        unsafe {
+            let source = compiler_pool_item_ptr(arguments, index, size_of(IrArgument))
+            let destination = compiler_pool_item_ptr(&function.arguments, function.argument_count, size_of(IrArgument))
+            memcpy(destination, source, size_of(IrArgument))
+        }
+        function.argument_count += 1
+        index += 1
+    }
+    return start
+}
+
+func ir_append_binary(function: *IrFunction, operation: *IrBinary) {
+    unsafe { ir_store(function, IR_INSTRUCTION_BINARY, operation as *u8, size_of(IrBinary)) }
+}
+
+func ir_append_cast(function: *IrFunction, operation: *IrCast) {
+    unsafe { ir_store(function, IR_INSTRUCTION_CAST, operation as *u8, size_of(IrCast)) }
+}
+
+func ir_append_memory(function: *IrFunction, operation: *IrMemory) {
+    unsafe { ir_store(function, IR_INSTRUCTION_MEMORY, operation as *u8, size_of(IrMemory)) }
+}
+
+func ir_append_call(function: *IrFunction, arguments: *CompilerPool, operation: *IrCall) {
+    var captured: IrCall
+    unsafe { captured = *operation }
+    captured.argument_start = ir_copy_arguments(function, arguments, captured.argument_count)
+    unsafe { ir_store(function, IR_INSTRUCTION_CALL, &captured as *u8, size_of(IrCall)) }
+}
+
+func ir_append_unary(function: *IrFunction, operation: *IrUnary) {
+    unsafe { ir_store(function, IR_INSTRUCTION_UNARY, operation as *u8, size_of(IrUnary)) }
+}
+
+func ir_append_array_address(function: *IrFunction, operation: *IrArrayAddress) {
+    unsafe { ir_store(function, IR_INSTRUCTION_ARRAY_ADDRESS, operation as *u8, size_of(IrArrayAddress)) }
+}
+
+func ir_append_field_address(function: *IrFunction, operation: *IrFieldAddress) {
+    unsafe { ir_store(function, IR_INSTRUCTION_FIELD_ADDRESS, operation as *u8, size_of(IrFieldAddress)) }
+}
+
+func ir_append_branch(function: *IrFunction, operation: *IrBranch) {
+    unsafe { ir_store(function, IR_INSTRUCTION_BRANCH, operation as *u8, size_of(IrBranch)) }
+}
+
+func ir_append_return(function: *IrFunction, operation: *IrReturn) {
+    unsafe { ir_store(function, IR_INSTRUCTION_RETURN, operation as *u8, size_of(IrReturn)) }
+}
+
+func ir_append_logical_phi(function: *IrFunction, operation: *IrLogicalPhi) {
+    unsafe { ir_store(function, IR_INSTRUCTION_LOGICAL_PHI, operation as *u8, size_of(IrLogicalPhi)) }
+}
+
+func ir_append_symbol_address(function: *IrFunction, operation: *IrSymbolAddress) {
+    unsafe { ir_store(function, IR_INSTRUCTION_SYMBOL_ADDRESS, operation as *u8, size_of(IrSymbolAddress)) }
+}
+
+func ir_append_extract(function: *IrFunction, operation: *IrExtract) {
+    unsafe { ir_store(function, IR_INSTRUCTION_EXTRACT, operation as *u8, size_of(IrExtract)) }
+}
+
+func ir_append_constant(function: *IrFunction, operation: *IrConstant) {
+    unsafe { ir_store(function, IR_INSTRUCTION_CONSTANT, operation as *u8, size_of(IrConstant)) }
+}
+
+func ir_append_hardware(function: *IrFunction, operation: *IrHardware) {
+    unsafe { ir_store(function, IR_INSTRUCTION_HARDWARE, operation as *u8, size_of(IrHardware)) }
+}
+
+func ir_append_syscall(function: *IrFunction, arguments: *CompilerPool, operation: *IrSyscall) {
+    var captured: IrSyscall
+    unsafe { captured = *operation }
+    captured.argument_start = ir_copy_arguments(function, arguments, captured.argument_count)
+    unsafe { ir_store(function, IR_INSTRUCTION_SYSCALL, &captured as *u8, size_of(IrSyscall)) }
+}
+
+func ir_append_assembly(function: *IrFunction, arguments: *CompilerPool, operation: *IrAssembly) {
+    var captured: IrAssembly
+    unsafe { captured = *operation }
+    captured.argument_start = ir_copy_arguments(function, arguments, captured.argument_count)
+    unsafe { ir_store(function, IR_INSTRUCTION_ASSEMBLY, &captured as *u8, size_of(IrAssembly)) }
+}
+
+func ir_append_slot(function: *IrFunction, operation: *IrSlot) {
+    unsafe { ir_store(function, IR_INSTRUCTION_SLOT, operation as *u8, size_of(IrSlot)) }
+}
+
+func ir_append_arena_slot(function: *IrFunction, operation: *IrArenaSlot) {
+    unsafe { ir_store(function, IR_INSTRUCTION_ARENA_SLOT, operation as *u8, size_of(IrArenaSlot)) }
+}
+
+func ir_append_arena_init(function: *IrFunction, operation: *IrArenaInit) {
+    unsafe { ir_store(function, IR_INSTRUCTION_ARENA_INIT, operation as *u8, size_of(IrArenaInit)) }
+}
+
+func ir_append_arena_allocate(function: *IrFunction, operation: *IrArenaAllocate) {
+    unsafe { ir_store(function, IR_INSTRUCTION_ARENA_ALLOCATE, operation as *u8, size_of(IrArenaAllocate)) }
+}
+
+func ir_append_zero(function: *IrFunction, operation: *IrZero) {
+    unsafe { ir_store(function, IR_INSTRUCTION_ZERO, operation as *u8, size_of(IrZero)) }
+}
+
+func ir_append_block(function: *IrFunction, kind: u32, label: u32) {
+    var operation: IrBlock
+    operation.kind = kind
+    operation.label = label
+    unsafe { ir_store(function, IR_INSTRUCTION_BLOCK, &operation as *u8, size_of(IrBlock)) }
+}
+
+func ir_append_jump(function: *IrFunction, kind: u32, label: u32) {
+    var operation: IrBlock
+    operation.kind = kind
+    operation.label = label
+    unsafe { ir_store(function, IR_INSTRUCTION_JUMP, &operation as *u8, size_of(IrBlock)) }
+}

@@ -1,17 +1,20 @@
 import "compiler/codegen_validate"
+import "compiler/codegen_ir"
+import "compiler/codegen_module"
 import "compiler/codegen_runtime"
 import "compiler/codegen_memory"
 import "compiler/codegen_hardware"
 
-func codegen_emit_defers(p: *Parser, output: *CompilerOutput, ctx: *Codegen, until: u32) {
-    var i = ctx.defer_count
-    while i > until {
-        i -= 1
-        unsafe {
-            let slot = ((ctx.defers as usize) + (i as usize) * size_of(u32)) as *u32
-            let expr_idx = *slot
-            codegen_emit_expr(p, expr_idx, output, ctx, 32, false)
-        }
+func codegen_emit_cleanup(p: *Parser, output: *CompilerOutput, ctx: *Codegen, exit_index: u32) {
+    if exit_index == INVALID_INDEX { return }
+    let edge = flow_exit(p, exit_index)
+    var index = edge.cleanup_head
+    while index != edge.cleanup_stop {
+        let action = flow_cleanup(p, index)
+        ctx.replay_call = action.expression
+        codegen_emit_expr(p, action.expression, output, ctx, 32, false)
+        ctx.replay_call = INVALID_INDEX
+        index = action.previous
     }
 }
 
@@ -19,11 +22,11 @@ func codegen_emit_return(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx
     let stmt = parser_stmt(p, stmt_idx)
     var value: u32 = 0
     if stmt.ret_s.has_expr { value = codegen_emit_expr(p, stmt.ret_s.expr_idx, output, ctx, ctx.return_type, ctx.return_signed) }
-    codegen_emit_defers(p, output, ctx, 0)
-    compiler_output_string(output, "  ret ")
-    codegen_write_type(p, output, ctx.return_type)
-    if ctx.return_type != 0 { compiler_output_string(output, " "); codegen_write_reg(output, value) }
-    compiler_output_string(output, "\n")
+    codegen_emit_cleanup(p, output, ctx, stmt.flow_exit)
+    var operation: IrReturn
+    operation.type_id = ctx.return_type
+    operation.value = value
+    ir_append_return(ctx.function, &operation)
 }
 
 func codegen_emit_builtin(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen) u32 {
@@ -32,48 +35,83 @@ func codegen_emit_builtin(p: *Parser, expr_idx: u32, output: *CompilerOutput, ct
     if builtin >= BUILTIN_INB { return codegen_emit_hardware(p, expr_idx, output, ctx, builtin) }
     if builtin == BUILTIN_SYSCALL || builtin == BUILTIN_SYSCALL_WRITE { return codegen_emit_syscall(p, expr_idx, output, ctx) }
     if builtin == BUILTIN_SIZE_OF || builtin == BUILTIN_ALIGN_OF {
+        if ctx.capture_call == expr_idx { return 0 }
         let arg = parser_expr(p, node.call.arg_start)
-        let type_id = codegen_type(p, arg.ident.name_ptr, arg.ident.name_len)
-        let reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = add i64 0, ")
-        if builtin == BUILTIN_SIZE_OF { codegen_write_u32(output, codegen_type_size(p, type_id)) } else { codegen_write_u32(output, codegen_type_align(p, type_id)) }
-        compiler_output_string(output, "\n")
-        return reg
+        let type_id = resolved_type(p, arg.ident.name_ptr, arg.ident.name_len)
+        var operation: IrConstant
+        operation.type_id = 64
+        ctx.next_reg += 1
+        operation.result = ctx.next_reg
+        if builtin == BUILTIN_SIZE_OF { operation.value = type_layout_size(p, type_id) as u64 } else { operation.value = type_layout_align(p, type_id) as u64 }
+        ir_append_constant(ctx.function, &operation)
+        return operation.result
     }
     if builtin == BUILTIN_ARENA_ALLOC {
         let callee = parser_expr(p, node.call.callee_expr_idx)
         let receiver = parser_expr(p, callee.member.base_idx)
-        let index = codegen_find_local(ctx, receiver.ident.name_ptr, receiver.ident.name_len)
+        var arena_address = receiver.value_reg
+        if ctx.replay_call != expr_idx {
+            let index = codegen_expr_local(p, callee.member.base_idx, ctx)
+            arena_address = codegen_local(ctx, index).value_reg
+            receiver.value_reg = arena_address
+        }
         let arg_type = codegen_expr_type(p, node.call.arg_start, ctx, 64)
         var size = codegen_emit_expr(p, node.call.arg_start, output, ctx, 64, false)
-        if arg_type != 64 {
-            let extended = codegen_begin_result(output, ctx)
-            if codegen_expr_signed(p, node.call.arg_start, ctx, false) { compiler_output_string(output, " = sext ") } else { compiler_output_string(output, " = zext ") }
-            codegen_write_type(p, output, arg_type)
-            compiler_output_string(output, " ")
-            codegen_write_reg(output, size)
-            compiler_output_string(output, " to i64\n")
+        if arg_type != 64 && ctx.replay_call != expr_idx {
+            ctx.next_reg += 1
+            let extended = ctx.next_reg
+            var cast: IrCast
+            cast.source_type = arg_type
+            cast.target_type = 64
+            cast.result = extended
+            cast.operand = size
+            cast.opcode = IR_ZEXT
+            if codegen_expr_signed(p, node.call.arg_start, ctx, false) { cast.opcode = IR_SEXT }
+            ir_append_cast(ctx.function, &cast)
             size = extended
+            parser_expr(p, node.call.arg_start).value_reg = extended
         }
-        let reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = call ptr @gsl.arena.alloc(ptr ")
-        codegen_write_reg(output, codegen_local(ctx, index).value_reg)
-        compiler_output_string(output, ", i64 ")
-        codegen_write_reg(output, size)
-        compiler_output_string(output, ")\n")
-        return reg
+        if ctx.capture_call == expr_idx { return 0 }
+        ctx.next_reg += 1
+        var operation: IrArenaAllocate
+        operation.result = ctx.next_reg
+        operation.address = arena_address
+        operation.size = size
+        ir_append_arena_allocate(ctx.function, &operation)
+        return operation.result
     }
     return codegen_emit_volatile(p, expr_idx, output, ctx, builtin)
 }
 
+func codegen_binary_value(p: *Parser, output: *CompilerOutput, ctx: *Codegen, op: u32, type_id: u32, is_signed: bool, left: u32, right: u32) u32 {
+    var operation: IrBinary
+    operation.opcode = codegen_binary_kind(op, is_signed)
+    if operation.opcode == IR_INVALID { ctx.error = true; return 0 }
+    ctx.next_reg += 1
+    operation.result = ctx.next_reg
+    operation.type_id = type_id
+    operation.left = left
+    operation.right = right
+    ir_append_binary(ctx.function, &operation)
+    return operation.result
+}
+
 func codegen_emit_expr(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen, expected_type: u32, expected_signed: bool) u32 {
+    if ctx.error || p.context.error || ctx.function.context.error { ctx.error = true; return 0 }
     let node = parser_expr(p, expr_idx)
+    if ctx.replay_call != INVALID_INDEX && expr_idx != ctx.replay_call { return node.value_reg }
     let type_id = codegen_expr_type(p, expr_idx, ctx, expected_type)
     if node.kind == EXPR_STRING {
-        let reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = getelementptr i8, ptr @gsl.string.")
-        codegen_write_u32(output, expr_idx)
-        compiler_output_string(output, ", i64 0\n")
+        ctx.next_reg += 1
+        let reg = ctx.next_reg
+        var operation: IrSymbolAddress
+        unsafe { operation.name = 0 as *u8 }
+        operation.length = 0 as usize
+        operation.result = reg
+        operation.string_index = expr_idx
+        operation.is_string = true
+        operation.as_integer = false
+        ir_append_symbol_address(ctx.function, &operation)
         node.value_reg = reg
         return reg
     }
@@ -96,18 +134,15 @@ func codegen_emit_expr(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: 
         } else {
             let base_type = codegen_expr_type(p, node.member.base_idx, ctx, 0)
             let base = codegen_emit_expr(p, node.member.base_idx, output, ctx, base_type, false)
-            let structure = parser_struct(p, base_type - CODEGEN_STRUCT_BASE)
+            let structure = parser_struct(p, type_declaration(p, base_type))
             ctx.next_reg += 1
             reg = ctx.next_reg
-            compiler_output_string(output, "  ")
-            codegen_write_reg(output, reg)
-            compiler_output_string(output, " = extractvalue ")
-            codegen_write_type(p, output, base_type)
-            compiler_output_string(output, " ")
-            codegen_write_reg(output, base)
-            compiler_output_string(output, ", ")
-            codegen_write_u32(output, codegen_member_field(p, expr_idx, ctx) - structure.field_start)
-            compiler_output_string(output, "\n")
+            var operation: IrExtract
+            operation.type_id = base_type
+            operation.result = reg
+            operation.aggregate = base
+            operation.field = codegen_member_field(p, expr_idx, ctx) - structure.field_start
+            ir_append_extract(ctx.function, &operation)
         }
         node.value_reg = reg
         return reg
@@ -127,34 +162,38 @@ func codegen_emit_expr(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: 
         let source_type = codegen_natural_type(p, node.cast.source_idx, ctx)
         let source_signed = codegen_expr_signed(p, node.cast.source_idx, ctx, false)
         let source = codegen_emit_expr(p, node.cast.source_idx, output, ctx, source_type, source_signed)
-        if source_type == type_id || (codegen_is_pointer(source_type) && codegen_is_pointer(type_id)) {
+        if source_type == type_id || (type_is_pointer(p, source_type) && type_is_pointer(p, type_id)) {
             node.value_reg = source
             return source
         }
-        let casted = codegen_begin_result(output, ctx)
-        if codegen_is_pointer(source_type) { compiler_output_string(output, " = ptrtoint ") } else if codegen_is_pointer(type_id) { compiler_output_string(output, " = inttoptr ") } else if source_type < type_id {
-            if source_signed { compiler_output_string(output, " = sext ") } else { compiler_output_string(output, " = zext ") }
-        } else { compiler_output_string(output, " = trunc ") }
-        codegen_write_type(p, output, source_type)
-        compiler_output_string(output, " ")
-        codegen_write_reg(output, source)
-        compiler_output_string(output, " to ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, "\n")
+        var operation: IrCast
+        operation.opcode = IR_TRUNC
+        if type_is_pointer(p, source_type) { operation.opcode = IR_PTR_TO_INT } else if type_is_pointer(p, type_id) { operation.opcode = IR_INT_TO_PTR } else if source_type < type_id {
+            operation.opcode = IR_ZEXT
+            if source_signed { operation.opcode = IR_SEXT }
+        }
+        ctx.next_reg += 1
+        let casted = ctx.next_reg
+        operation.result = casted
+        operation.source_type = source_type
+        operation.target_type = type_id
+        operation.operand = source
+        ir_append_cast(ctx.function, &operation)
         node.value_reg = casted
         return casted
     }
     if node.kind == EXPR_UNARY {
         let operand = codegen_emit_expr(p, node.unary.operand_idx, output, ctx, type_id, expected_signed)
-        let reg = codegen_begin_result(output, ctx)
-        if node.unary.op == TOKEN_MINUS { compiler_output_string(output, " = sub ") } else { compiler_output_string(output, " = xor ") }
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " ")
-        if node.unary.op == TOKEN_MINUS { compiler_output_string(output, "0, ") }
-        codegen_write_reg(output, operand)
-        if node.unary.op == TOKEN_NOT { compiler_output_string(output, ", 1") }
-        if node.unary.op == TOKEN_BIT_NOT { compiler_output_string(output, ", -1") }
-        compiler_output_string(output, "\n")
+        var operation: IrUnary
+        operation.opcode = IR_NEGATE
+        if node.unary.op == TOKEN_NOT { operation.opcode = IR_NOT }
+        if node.unary.op == TOKEN_BIT_NOT { operation.opcode = IR_BIT_NOT }
+        ctx.next_reg += 1
+        let reg = ctx.next_reg
+        operation.result = reg
+        operation.type_id = type_id
+        operation.operand = operand
+        ir_append_unary(ctx.function, &operation)
         node.value_reg = reg
         return reg
     }
@@ -168,242 +207,106 @@ func codegen_emit_expr(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: 
         if node.binary.op == TOKEN_AND || node.binary.op == TOKEN_OR {
             ctx.next_label += 1
             let label = ctx.next_label
-            compiler_output_string(output, "  br i1 ")
-            codegen_write_reg(output, left)
-            if node.binary.op == TOKEN_AND {
-                compiler_output_string(output, ", label %")
-                codegen_write_label(output, "logic_rhs_", label)
-                compiler_output_string(output, ", label %")
-                codegen_write_label(output, "logic_short_", label)
-            } else {
-                compiler_output_string(output, ", label %")
-                codegen_write_label(output, "logic_short_", label)
-                compiler_output_string(output, ", label %")
-                codegen_write_label(output, "logic_rhs_", label)
-            }
-            compiler_output_string(output, "\n")
-            codegen_write_label(output, "logic_rhs_", label)
-            compiler_output_string(output, ":\n")
+            var branch: IrBranch
+            branch.condition = left
+            branch.true_kind = IR_BLOCK_LOGIC_RHS
+            branch.false_kind = IR_BLOCK_LOGIC_SHORT
+            if node.binary.op == TOKEN_OR { branch.true_kind = IR_BLOCK_LOGIC_SHORT; branch.false_kind = IR_BLOCK_LOGIC_RHS }
+            branch.true_label = label
+            branch.false_label = label
+            ir_append_branch(ctx.function, &branch)
+            ir_append_block(ctx.function, IR_BLOCK_LOGIC_RHS, label)
             let right = codegen_emit_expr(p, node.binary.right_idx, output, ctx, 1, false)
-            compiler_output_string(output, "  br label %")
-            codegen_write_label(output, "logic_rhs_done_", label)
-            compiler_output_string(output, "\n")
-            codegen_write_label(output, "logic_rhs_done_", label)
-            compiler_output_string(output, ":\n  br label %")
-            codegen_write_label(output, "logic_merge_", label)
-            compiler_output_string(output, "\n")
-            codegen_write_label(output, "logic_short_", label)
-            compiler_output_string(output, ":\n  br label %")
-            codegen_write_label(output, "logic_merge_", label)
-            compiler_output_string(output, "\n")
-            codegen_write_label(output, "logic_merge_", label)
-            compiler_output_string(output, ":\n")
-            let result = codegen_begin_result(output, ctx)
-            compiler_output_string(output, " = phi i1 [")
-            if node.binary.op == TOKEN_AND { compiler_output_string(output, "0") } else { compiler_output_string(output, "1") }
-            compiler_output_string(output, ", %")
-            codegen_write_label(output, "logic_short_", label)
-            compiler_output_string(output, "], [")
-            codegen_write_reg(output, right)
-            compiler_output_string(output, ", %")
-            codegen_write_label(output, "logic_rhs_done_", label)
-            compiler_output_string(output, "]\n")
+            ir_append_jump(ctx.function, IR_BLOCK_LOGIC_DONE, label)
+            ir_append_block(ctx.function, IR_BLOCK_LOGIC_DONE, label)
+            ir_append_jump(ctx.function, IR_BLOCK_LOGIC_MERGE, label)
+            ir_append_block(ctx.function, IR_BLOCK_LOGIC_SHORT, label)
+            ir_append_jump(ctx.function, IR_BLOCK_LOGIC_MERGE, label)
+            ir_append_block(ctx.function, IR_BLOCK_LOGIC_MERGE, label)
+            ctx.next_reg += 1
+            let result = ctx.next_reg
+            var phi: IrLogicalPhi
+            phi.result = result
+            phi.value = right
+            phi.label = label
+            phi.short_value = node.binary.op == TOKEN_OR
+            ir_append_logical_phi(ctx.function, &phi)
             node.value_reg = result
             return result
         }
         let right = codegen_emit_expr(p, node.binary.right_idx, output, ctx, operand_type, operand_signed)
-        if node.binary.op == TOKEN_EQ || node.binary.op == TOKEN_NE || node.binary.op == TOKEN_LT || node.binary.op == TOKEN_LE || node.binary.op == TOKEN_GT || node.binary.op == TOKEN_GE {
-            let comparison = codegen_begin_result(output, ctx)
-            compiler_output_string(output, codegen_binary_opcode(node.binary.op, operand_signed))
-            codegen_write_type(p, output, operand_type)
-            compiler_output_string(output, " ")
-            codegen_write_reg(output, left)
-            compiler_output_string(output, ", ")
-            codegen_write_reg(output, right)
-            compiler_output_string(output, "\n")
-            node.value_reg = comparison
-            return comparison
-        }
-        ctx.next_reg += 1
-        let reg = ctx.next_reg
-        codegen_partial_guard(p, output, reg, node.binary.op, operand_type, operand_signed, left, right)
-        compiler_output_string(output, "  ")
-        codegen_write_reg(output, reg)
-        let opcode = codegen_binary_opcode(node.binary.op, operand_signed)
-        if strlen(opcode) == 0 as u64 {
-            ctx.error = true
-            compiler_output_string(output, " = add ")
-        } else { compiler_output_string(output, opcode) }
-        codegen_write_type(p, output, operand_type)
-        compiler_output_string(output, " ")
-        codegen_write_reg(output, left)
-        compiler_output_string(output, ", ")
-        codegen_write_reg(output, right)
-        compiler_output_string(output, "\n")
+        let reg = codegen_binary_value(p, output, ctx, node.binary.op, operand_type, operand_signed, left, right)
         node.value_reg = reg
         return reg
     }
 
     if node.kind == EXPR_CALL {
-        let decl_idx = codegen_find_decl(p, node.call.callee_ptr, node.call.callee_len)
+        let decl_idx = codegen_call_decl(p, expr_idx)
         let decl = parser_decl(p, decl_idx)
         var arg_idx = node.call.arg_start
         var count: u32 = 0
         while count < node.call.arg_count {
             let param = parser_param(p, decl.param_start + count)
-            codegen_emit_expr(p, arg_idx, output, ctx, codegen_type(p, param.type_ptr, param.type_len), codegen_type_signed(param.type_ptr, param.type_len))
+            codegen_emit_expr(p, arg_idx, output, ctx, resolved_type(p, param.type_ptr, param.type_len), type_is_signed(param.type_ptr, param.type_len))
             arg_idx = parser_expr(p, arg_idx).next_arg
             count += 1
         }
-        var reg: u32 = 0
-        compiler_output_string(output, "  ")
-        if type_id != 0 {
-            ctx.next_reg += 1
-            reg = ctx.next_reg
-            codegen_write_reg(output, reg)
-            compiler_output_string(output, " = ")
-        }
-        compiler_output_string(output, "call ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " @")
-        codegen_write_token(p, output, node.call.callee_ptr, node.call.callee_len)
-        compiler_output_string(output, "(")
+        if ctx.capture_call == expr_idx { return 0 }
+        var operation: IrCall
+        unsafe { operation.name = node.call.callee_ptr }
+        operation.name_length = node.call.callee_len
+        operation.return_type = type_id
+        operation.result = 0
+        operation.argument_count = node.call.arg_count
+        if type_id != 0 { ctx.next_reg += 1; operation.result = ctx.next_reg }
         arg_idx = node.call.arg_start
         count = 0
         while count < node.call.arg_count {
-            if count > 0 {
-                compiler_output_string(output, ", ")
-            }
+            if compiler_pool_ensure(ctx.arguments, count, size_of(IrArgument), IR_ARGUMENT_BLOCK_BYTES) == false { ctx.error = true; return 0 }
+            let argument = codegen_ir_argument(ctx.arguments, count)
             let param = parser_param(p, decl.param_start + count)
-            codegen_write_type(p, output, codegen_type(p, param.type_ptr, param.type_len))
-            compiler_output_string(output, " ")
-            codegen_write_reg(output, parser_expr(p, arg_idx).value_reg)
+            argument.type_id = resolved_type(p, param.type_ptr, param.type_len)
+            argument.value = parser_expr(p, arg_idx).value_reg
             arg_idx = parser_expr(p, arg_idx).next_arg
             count += 1
         }
-        compiler_output_string(output, ")\n")
+        ir_append_call(ctx.function, ctx.arguments, &operation)
+        let reg = operation.result
         node.value_reg = reg
         return reg
     }
 
     if node.kind == EXPR_IDENT {
-        let local_idx = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
+        let local_idx = codegen_expr_local(p, expr_idx, ctx)
         if local_idx != INVALID_INDEX {
             let local = codegen_local(ctx, local_idx)
             let loaded = codegen_emit_load(p, output, ctx, local.type_id, local.value_reg)
             node.value_reg = loaded
             return loaded
         }
-        if codegen_find_global(p, node.ident.name_ptr, node.ident.name_len) != INVALID_INDEX {
-            return codegen_emit_load(p, output, ctx, type_id, codegen_emit_address(p, expr_idx, output, ctx))
+        if codegen_expr_global(p, expr_idx) != INVALID_INDEX {
+            let loaded = codegen_emit_load(p, output, ctx, type_id, codegen_emit_address(p, expr_idx, output, ctx))
+            node.value_reg = loaded
+            return loaded
         }
     }
 
-    let reg = codegen_begin_result(output, ctx)
-    compiler_output_string(output, " = add ")
-    codegen_write_type(p, output, type_id)
-    compiler_output_string(output, " 0, ")
-    if node.kind == EXPR_INT {
-        codegen_write_integer(p, output, expr_idx)
-    } else if node.kind == EXPR_BOOL {
-        if node.int_lit.val == 0 { compiler_output_string(output, "0") } else { compiler_output_string(output, "1") }
-    } else if node.kind == EXPR_IDENT {
-        var found = false
-        let local_idx = codegen_find_local(ctx, node.ident.name_ptr, node.ident.name_len)
-        if local_idx != INVALID_INDEX {
-            codegen_write_reg(output, codegen_local(ctx, local_idx).value_reg)
-            found = true
+    ctx.next_reg += 1
+    let reg = ctx.next_reg
+    var operation: IrConstant
+    operation.type_id = type_id
+    operation.result = reg
+    operation.value = node.int_lit.val as u64
+    if node.kind == EXPR_IDENT {
+        let const_idx = codegen_expr_constant(p, expr_idx)
+        if const_idx == INVALID_INDEX { ctx.error = true; operation.value = 0 as u64 } else {
+            let constant = parser_const(p, const_idx)
+            operation.value = parser_expr(p, constant.value_idx).int_lit.val as u64
         }
-        if found == false {
-            var param_idx = ctx.param_start
-            while param_idx < ctx.param_start + ctx.param_count {
-                let param = parser_param(p, param_idx)
-                if parser_type_equal(node.ident.name_ptr, node.ident.name_len, param.name_ptr, param.name_len) {
-                    compiler_output_string(output, "%")
-                    codegen_write_token(p, output, node.ident.name_ptr, node.ident.name_len)
-                    found = true
-                    break
-                }
-                param_idx += 1
-            }
-        }
-        if found == false {
-            let const_idx = codegen_find_constant(p, node.ident.name_ptr, node.ident.name_len)
-            if const_idx != INVALID_INDEX {
-                let constant = parser_const(p, const_idx)
-                if parser_expr(p, constant.value_idx).kind == EXPR_BOOL {
-                    if parser_expr(p, constant.value_idx).int_lit.val == 0 { compiler_output_string(output, "0") } else { compiler_output_string(output, "1") }
-                } else { codegen_write_integer(p, output, constant.value_idx) }
-                found = true
-            }
-        }
-        if found == false {
-            ctx.error = true
-            compiler_output_string(output, "0")
-        }
-    } else {
-        ctx.error = true
-        compiler_output_string(output, "0")
-    }
-    compiler_output_string(output, "\n")
+    } else if node.kind != EXPR_INT && node.kind != EXPR_BOOL { ctx.error = true; operation.value = 0 as u64 }
+    ir_append_constant(ctx.function, &operation)
     node.value_reg = reg
     return reg
-}
-
-func codegen_partial_guard(p: *Parser, output: *CompilerOutput, id: u32, op: u32, type_id: u32, is_signed: bool, left: u32, right: u32) {
-    let is_shift = op == TOKEN_SHIFT_LEFT || op == TOKEN_SHIFT_RIGHT
-    if is_shift == false && op != TOKEN_SLASH && op != TOKEN_PERCENT { return }
-    compiler_output_string(output, "  ")
-    codegen_write_label(output, "%partial_invalid_", id)
-    if is_shift { compiler_output_string(output, " = icmp uge ") } else { compiler_output_string(output, " = icmp eq ") }
-    codegen_write_type(p, output, type_id)
-    compiler_output_string(output, " ")
-    codegen_write_reg(output, right)
-    compiler_output_string(output, ", ")
-    if is_shift { codegen_write_u32(output, type_id) } else { compiler_output_string(output, "0") }
-    compiler_output_string(output, "\n")
-    if is_shift == false && is_signed {
-        compiler_output_string(output, "  ")
-        codegen_write_label(output, "%partial_min_", id)
-        compiler_output_string(output, " = icmp eq ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " ")
-        codegen_write_reg(output, left)
-        if type_id == 8 { compiler_output_string(output, ", -128\n") }
-        if type_id == 16 { compiler_output_string(output, ", -32768\n") }
-        if type_id == 32 { compiler_output_string(output, ", -2147483648\n") }
-        if type_id == 64 { compiler_output_string(output, ", -9223372036854775808\n") }
-        compiler_output_string(output, "  ")
-        codegen_write_label(output, "%partial_minus_one_", id)
-        compiler_output_string(output, " = icmp eq ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " ")
-        codegen_write_reg(output, right)
-        compiler_output_string(output, ", -1\n  ")
-        codegen_write_label(output, "%partial_overflow_", id)
-        compiler_output_string(output, " = and i1 ")
-        codegen_write_label(output, "%partial_min_", id)
-        compiler_output_string(output, ", ")
-        codegen_write_label(output, "%partial_minus_one_", id)
-        compiler_output_string(output, "\n  ")
-        codegen_write_label(output, "%partial_bad_", id)
-        compiler_output_string(output, " = or i1 ")
-        codegen_write_label(output, "%partial_invalid_", id)
-        compiler_output_string(output, ", ")
-        codegen_write_label(output, "%partial_overflow_", id)
-        compiler_output_string(output, "\n")
-    }
-    compiler_output_string(output, "  br i1 ")
-    if is_shift == false && is_signed { codegen_write_label(output, "%partial_bad_", id) } else { codegen_write_label(output, "%partial_invalid_", id) }
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "partial_trap_", id)
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "partial_ok_", id)
-    compiler_output_string(output, "\n")
-    codegen_write_label(output, "partial_trap_", id)
-    compiler_output_string(output, ":\n  call void @llvm.trap()\n  unreachable\n")
-    codegen_write_label(output, "partial_ok_", id)
-    compiler_output_string(output, ":\n")
 }
 
 func codegen_emit_assign(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) bool {
@@ -420,20 +323,9 @@ func codegen_emit_assign(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx
         if stmt.assign.op == TOKEN_DIV_ASSIGN { op = TOKEN_SLASH }
         if stmt.assign.op == TOKEN_REM_ASSIGN { op = TOKEN_PERCENT }
         if stmt.assign.op == TOKEN_SHR_ASSIGN { op = TOKEN_SHIFT_RIGHT }
-        ctx.next_reg += 1
-        value = ctx.next_reg
-        codegen_partial_guard(p, output, value, op, type_id, is_signed, previous, right)
-        compiler_output_string(output, "  ")
-        codegen_write_reg(output, value)
-        compiler_output_string(output, codegen_binary_opcode(op, is_signed))
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " ")
-        codegen_write_reg(output, previous)
-        compiler_output_string(output, ", ")
-        codegen_write_reg(output, right)
-        compiler_output_string(output, "\n")
+        value = codegen_binary_value(p, output, ctx, op, type_id, is_signed, previous, right)
     }
-    codegen_emit_store(p, output, type_id, address, value, true)
+    codegen_emit_store(p, output, ctx, type_id, address, value, true)
     return true
 }
 
@@ -444,28 +336,25 @@ func codegen_alloc_slots(p: *Parser, start: u32, count: u32, output: *CompilerOu
     while stmt_idx != INVALID_INDEX && seen < count {
         let stmt = parser_stmt(p, stmt_idx)
         if stmt.kind == STMT_LET || stmt.kind == STMT_VAR {
-            var type_id = codegen_type(p, stmt.let_s.type_ptr, stmt.let_s.type_len)
-            if type_id == 0 { type_id = codegen_natural_type(p, stmt.let_s.expr_idx, ctx) }
-            var is_signed = codegen_type_signed(stmt.let_s.type_ptr, stmt.let_s.type_len)
-            if stmt.let_s.type_len == 0 as usize { is_signed = codegen_expr_signed(p, stmt.let_s.expr_idx, ctx, false) }
+            let type_id = stmt.resolved_type
+            let is_signed = stmt.resolved_signed
             ctx.next_reg += 1
             stmt.value_reg = ctx.next_reg
-            compiler_output_string(output, "  ")
-            codegen_write_reg(output, stmt.value_reg)
-            compiler_output_string(output, " = alloca ")
-            codegen_write_type(p, output, type_id)
-            compiler_output_string(output, "\n")
+            var operation: IrSlot
+            operation.type_id = type_id
+            operation.result = stmt.value_reg
+            operation.parameter = 0
+            operation.is_parameter = false
+            ir_append_slot(ctx.function, &operation)
             codegen_bind(ctx, stmt.let_s.name_ptr, stmt.let_s.name_len, 0, type_id, is_signed, stmt.kind == STMT_VAR)
         } else if stmt.kind == STMT_ARENA {
             ctx.next_reg += 1
             stmt.value_reg = ctx.next_reg
-            compiler_output_string(output, "  ")
-            codegen_write_reg(output, stmt.value_reg)
-            compiler_output_string(output, " = alloca %gsl.arena, align 8\n  %arena_buf_")
-            codegen_write_u32(output, stmt_idx)
-            compiler_output_string(output, " = alloca [")
-            codegen_write_u32(output, codegen_capacity(p, stmt.arena_s.size_expr_idx))
-            compiler_output_string(output, " x i8], align 8\n")
+            var operation: IrArenaSlot
+            operation.result = stmt.value_reg
+            operation.buffer = stmt_idx
+            operation.capacity = codegen_capacity(p, stmt.arena_s.size_expr_idx)
+            ir_append_arena_slot(ctx.function, &operation)
             codegen_bind(ctx, stmt.arena_s.name_ptr, stmt.arena_s.name_len, stmt.value_reg, CODEGEN_ARENA, false, false)
         } else if stmt.kind == STMT_IF {
             codegen_alloc_slots(p, stmt.block.body_start, stmt.block.body_count, output, ctx)
@@ -476,59 +365,52 @@ func codegen_alloc_slots(p: *Parser, start: u32, count: u32, output: *CompilerOu
         stmt_idx = stmt.next_idx
         seen += 1
     }
-    ctx.local_count = saved_local_count
+    codegen_restore_locals(ctx, saved_local_count)
 }
 
 func codegen_emit_arena(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) {
     let stmt = parser_stmt(p, stmt_idx)
-    compiler_output_string(output, "  call void @gsl.arena.init(ptr ")
-    codegen_write_reg(output, stmt.value_reg)
-    compiler_output_string(output, ", ptr %arena_buf_")
-    codegen_write_u32(output, stmt_idx)
-    compiler_output_string(output, ", i64 ")
-    codegen_write_u32(output, codegen_capacity(p, stmt.arena_s.size_expr_idx))
-    compiler_output_string(output, ")\n")
+    var operation: IrArenaInit
+    operation.address = stmt.value_reg
+    operation.buffer = stmt_idx
+    operation.capacity = codegen_capacity(p, stmt.arena_s.size_expr_idx)
+    ir_append_arena_init(ctx.function, &operation)
     codegen_bind(ctx, stmt.arena_s.name_ptr, stmt.arena_s.name_len, stmt.value_reg, CODEGEN_ARENA, false, false)
 }
 
 func codegen_emit_binding(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *Codegen) {
     let stmt = parser_stmt(p, stmt_idx)
-    var type_id = codegen_type(p, stmt.let_s.type_ptr, stmt.let_s.type_len)
-    if type_id == 0 { type_id = codegen_natural_type(p, stmt.let_s.expr_idx, ctx) }
-    var is_signed = codegen_type_signed(stmt.let_s.type_ptr, stmt.let_s.type_len)
-    if stmt.let_s.type_len == 0 as usize { is_signed = codegen_expr_signed(p, stmt.let_s.expr_idx, ctx, false) }
+    let type_id = stmt.resolved_type
+    let is_signed = stmt.resolved_signed
     var initial: u32 = 0
     if stmt.let_s.has_init { initial = codegen_emit_expr(p, stmt.let_s.expr_idx, output, ctx, type_id, is_signed) }
-    if codegen_is_array(p, type_id) {
-        compiler_output_string(output, "  call void @gsl.array.zero(ptr ")
-        codegen_write_reg(output, stmt.value_reg)
-        compiler_output_string(output, ", i64 ")
-        codegen_write_u32(output, codegen_type_size(p, type_id))
-        compiler_output_string(output, ")\n")
+    if type_is_array(p, type_id) {
+        var operation: IrZero
+        operation.address = stmt.value_reg
+        operation.size = type_layout_size(p, type_id)
+        ir_append_zero(ctx.function, &operation)
     }
-    if stmt.let_s.has_init || type_id < CODEGEN_STRUCT_BASE || type_id >= CODEGEN_POINTER_STEP {
-        codegen_emit_store(p, output, type_id, stmt.value_reg, initial, stmt.let_s.has_init)
+    if stmt.let_s.has_init || type_kind(p, type_id) != TYPE_AGGREGATE {
+        codegen_emit_store(p, output, ctx, type_id, stmt.value_reg, initial, stmt.let_s.has_init)
     }
     codegen_bind(ctx, stmt.let_s.name_ptr, stmt.let_s.name_len, stmt.value_reg, type_id, is_signed, stmt.kind == STMT_VAR)
 }
 
 func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *CompilerOutput, ctx: *Codegen) bool {
     let saved_local_count = ctx.local_count
-    let saved_defer_count = ctx.defer_count
     var stmt_idx = start
     var seen: u32 = 0
     while stmt_idx != INVALID_INDEX && seen < count {
+        if ctx.error || p.context.error || ctx.function.context.error { ctx.error = true; codegen_restore_locals(ctx, saved_local_count); return true }
         let stmt = parser_stmt(p, stmt_idx)
         if stmt.kind == STMT_RETURN {
             codegen_emit_return(p, stmt_idx, output, ctx)
-            ctx.defer_count = saved_defer_count
-            ctx.local_count = saved_local_count
+            codegen_restore_locals(ctx, saved_local_count)
             return true
         }
         if stmt.kind == STMT_IF {
             if codegen_emit_if(p, stmt_idx, output, ctx) {
-                ctx.defer_count = saved_defer_count
-                ctx.local_count = saved_local_count
+                codegen_restore_locals(ctx, saved_local_count)
                 return true
             }
         } else if stmt.kind == STMT_ARENA {
@@ -541,41 +423,30 @@ func codegen_emit_control_block(p: *Parser, start: u32, count: u32, output: *Com
             codegen_emit_binding(p, stmt_idx, output, ctx)
         } else if stmt.kind == STMT_UNSAFE {
             if codegen_emit_control_block(p, stmt.block.body_start, stmt.block.body_count, output, ctx) {
-                ctx.defer_count = saved_defer_count
-                ctx.local_count = saved_local_count
+                codegen_restore_locals(ctx, saved_local_count)
                 return true
             }
         } else if stmt.kind == STMT_EXPR {
             codegen_emit_expr(p, stmt.expr_idx, output, ctx, 32, false)
         } else if stmt.kind == STMT_DEFER {
-            if ctx.defer_count < CODEGEN_MAX_DEFERS {
-                unsafe {
-                    let slot = ((ctx.defers as usize) + (ctx.defer_count as usize) * size_of(u32)) as *u32
-                    *slot = stmt.expr_idx
-                }
-                ctx.defer_count += 1
-            } else {
-                ctx.error = true
-            }
+            ctx.capture_call = stmt.expr_idx
+            codegen_emit_expr(p, stmt.expr_idx, output, ctx, 32, false)
+            ctx.capture_call = INVALID_INDEX
         } else if stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE {
-            codegen_emit_defers(p, output, ctx, saved_defer_count)
-            compiler_output_string(output, "  br label %")
-            if stmt.kind == STMT_BREAK {
-                codegen_write_label(output, "loop_end_", ctx.loop_label)
-            } else {
-                codegen_write_label(output, "loop_cond_", ctx.loop_label)
-            }
-            compiler_output_string(output, "\n")
-            ctx.defer_count = saved_defer_count
-            ctx.local_count = saved_local_count
+            codegen_emit_cleanup(p, output, ctx, stmt.flow_exit)
+            let edge = flow_exit(p, stmt.flow_exit)
+            let loop_label = parser_stmt(p, edge.target).flow_label
+            var kind = IR_BLOCK_LOOP_CONDITION
+            if stmt.kind == STMT_BREAK { kind = IR_BLOCK_LOOP_END }
+            ir_append_jump(ctx.function, kind, loop_label)
+            codegen_restore_locals(ctx, saved_local_count)
             return true
         }
         stmt_idx = stmt.next_idx
         seen += 1
     }
-    codegen_emit_defers(p, output, ctx, saved_defer_count)
-    ctx.defer_count = saved_defer_count
-    ctx.local_count = saved_local_count
+    if start != INVALID_INDEX { codegen_emit_cleanup(p, output, ctx, parser_stmt(p, start).flow_block_exit) }
+    codegen_restore_locals(ctx, saved_local_count)
     return false
 }
 
@@ -584,34 +455,27 @@ func codegen_emit_if(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx: *C
     let condition = codegen_emit_expr(p, stmt.block.condition_idx, output, ctx, 1, false)
     ctx.next_label += 1
     let label = ctx.next_label
-    compiler_output_string(output, "  br i1 ")
-    codegen_write_reg(output, condition)
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "if_true_", label)
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "if_false_", label)
-    compiler_output_string(output, "\n")
+    var branch: IrBranch
+    branch.condition = condition
+    branch.true_kind = IR_BLOCK_IF_TRUE
+    branch.true_label = label
+    branch.false_kind = IR_BLOCK_IF_FALSE
+    branch.false_label = label
+    ir_append_branch(ctx.function, &branch)
 
-    codegen_write_label(output, "if_true_", label)
-    compiler_output_string(output, ":\n")
+    ir_append_block(ctx.function, IR_BLOCK_IF_TRUE, label)
     let then_returns = codegen_emit_control_block(p, stmt.block.body_start, stmt.block.body_count, output, ctx)
     if then_returns == false {
-        compiler_output_string(output, "  br label %")
-        codegen_write_label(output, "if_merge_", label)
-        compiler_output_string(output, "\n")
+        ir_append_jump(ctx.function, IR_BLOCK_IF_MERGE, label)
     }
 
-    codegen_write_label(output, "if_false_", label)
-    compiler_output_string(output, ":\n")
+    ir_append_block(ctx.function, IR_BLOCK_IF_FALSE, label)
     let else_returns = codegen_emit_control_block(p, stmt.block.else_start, stmt.block.else_count, output, ctx)
     if else_returns == false {
-        compiler_output_string(output, "  br label %")
-        codegen_write_label(output, "if_merge_", label)
-        compiler_output_string(output, "\n")
+        ir_append_jump(ctx.function, IR_BLOCK_IF_MERGE, label)
     }
     if then_returns && else_returns { return true }
-    codegen_write_label(output, "if_merge_", label)
-    compiler_output_string(output, ":\n")
+    ir_append_block(ctx.function, IR_BLOCK_IF_MERGE, label)
     return false
 }
 
@@ -619,114 +483,109 @@ func codegen_emit_while(p: *Parser, stmt_idx: u32, output: *CompilerOutput, ctx:
     let stmt = parser_stmt(p, stmt_idx)
     ctx.next_label += 1
     let label = ctx.next_label
-    let old_loop = ctx.loop_label
-    ctx.loop_label = label
-    compiler_output_string(output, "  br label %")
-    codegen_write_label(output, "loop_cond_", label)
-    compiler_output_string(output, "\n")
-    codegen_write_label(output, "loop_cond_", label)
-    compiler_output_string(output, ":\n")
+    stmt.flow_label = label
+    ir_append_jump(ctx.function, IR_BLOCK_LOOP_CONDITION, label)
+    ir_append_block(ctx.function, IR_BLOCK_LOOP_CONDITION, label)
     let condition = codegen_emit_expr(p, stmt.block.condition_idx, output, ctx, 1, false)
-    compiler_output_string(output, "  br i1 ")
-    codegen_write_reg(output, condition)
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "loop_body_", label)
-    compiler_output_string(output, ", label %")
-    codegen_write_label(output, "loop_end_", label)
-    compiler_output_string(output, "\n")
-    codegen_write_label(output, "loop_body_", label)
-    compiler_output_string(output, ":\n")
+    var branch: IrBranch
+    branch.condition = condition
+    branch.true_kind = IR_BLOCK_LOOP_BODY
+    branch.true_label = label
+    branch.false_kind = IR_BLOCK_LOOP_END
+    branch.false_label = label
+    ir_append_branch(ctx.function, &branch)
+    ir_append_block(ctx.function, IR_BLOCK_LOOP_BODY, label)
     let body_ends = codegen_emit_control_block(p, stmt.block.body_start, stmt.block.body_count, output, ctx)
     if body_ends == false {
-        compiler_output_string(output, "  br label %")
-        codegen_write_label(output, "loop_cond_", label)
-        compiler_output_string(output, "\n")
+        ir_append_jump(ctx.function, IR_BLOCK_LOOP_CONDITION, label)
     }
-    codegen_write_label(output, "loop_end_", label)
-    compiler_output_string(output, ":\n")
-    ctx.loop_label = old_loop
+    ir_append_block(ctx.function, IR_BLOCK_LOOP_END, label)
 }
 
-func codegen_emit_func(p: *Parser, decl_idx: u32, output: *CompilerOutput) bool {
+func codegen_emit_func(p: *Parser, decl_idx: u32, output: *CompilerOutput, arguments: *CompilerPool) bool {
     let decl = parser_decl(p, decl_idx)
-    let return_type = codegen_type(p, decl.ret_type_ptr, decl.ret_type_len)
-    if return_type == 0 && codegen_type_void(decl.ret_type_ptr, decl.ret_type_len) == false {
+    let return_type = resolved_type(p, decl.ret_type_ptr, decl.ret_type_len)
+    if return_type == 0 && type_is_void(decl.ret_type_ptr, decl.ret_type_len) == false {
         return false
     }
     var check_param = decl.param_start
     while check_param < decl.param_start + decl.param_count {
         let param = parser_param(p, check_param)
-        if codegen_type(p, param.type_ptr, param.type_len) == 0 {
+        if resolved_type(p, param.type_ptr, param.type_len) == 0 {
             return false
         }
         check_param += 1
     }
-    compiler_output_string(output, "define ")
-    codegen_write_type(p, output, return_type)
-    compiler_output_string(output, " @")
-    codegen_write_token(p, output, decl.name_ptr, decl.name_len)
-    compiler_output_string(output, "(")
+    var header: IrFunctionHeader
+    unsafe { header.name = decl.name_ptr }
+    header.name_length = decl.name_len
+    header.return_type = return_type
+    header.parameter_count = decl.param_count
+    header.section_start = 0 as usize
+    header.section_end = 0 as usize
+    if decl.section_idx != INVALID_INDEX {
+        let section = parser_expr(p, decl.section_idx)
+        header.section_start = section.span.start + 1 as usize
+        header.section_end = section.span.end - 1 as usize
+    }
     var param_idx = decl.param_start
     let param_end = decl.param_start + decl.param_count
     while param_idx < param_end {
-        if param_idx > decl.param_start {
-            compiler_output_string(output, ", ")
-        }
+        let ordinal = param_idx - decl.param_start
+        if compiler_pool_ensure(arguments, ordinal, size_of(IrArgument), IR_ARGUMENT_BLOCK_BYTES) == false { p.context.error = true; return false }
+        let parameter = codegen_ir_argument(arguments, ordinal)
         let param = parser_param(p, param_idx)
-        codegen_write_type(p, output, codegen_type(p, param.type_ptr, param.type_len))
-        compiler_output_string(output, " %arg")
-        codegen_write_u32(output, param_idx - decl.param_start)
+        parameter.type_id = resolved_type(p, param.type_ptr, param.type_len)
+        parameter.value = 0
         param_idx += 1
     }
-    compiler_output_string(output, ") #0")
-    if decl.section_idx != INVALID_INDEX {
-        compiler_output_string(output, " section \"")
-        codegen_write_assembly_literal(p, output, decl.section_idx)
-        compiler_output_string(output, "\"")
-    }
-    compiler_output_string(output, " {\nentry:\n")
+    codegen_emit_function_header(p, output, arguments, &header)
 
+    var function: IrFunction
+    ir_function_init(&function)
+    defer compiler_context_release(&function.context)
     var ctx: Codegen
+    unsafe { ctx.function = &function }
+    unsafe { ctx.arguments = arguments }
     ctx.next_reg = 0
     ctx.next_label = 0
-    ctx.loop_label = 0
     ctx.param_start = decl.param_start
     ctx.param_count = decl.param_count
     ctx.return_type = return_type
-    ctx.return_signed = codegen_type_signed(decl.ret_type_ptr, decl.ret_type_len)
+    ctx.return_signed = type_is_signed(decl.ret_type_ptr, decl.ret_type_len)
     ctx.error = false
-    arena local_storage(CODEGEN_LOCAL_ARENA_BYTES)
-    unsafe {
-        ctx.locals = local_storage.alloc((CODEGEN_MAX_LOCALS as usize) * size_of(CodegenLocal)) as *CodegenLocal
-        ctx.defers = local_storage.alloc((CODEGEN_MAX_DEFERS as usize) * size_of(u32)) as *u32
-    }
+    compiler_names_init(&ctx.names, p.context)
+    compiler_pool_init(&ctx.locals, p.context)
     ctx.local_count = 0
-    ctx.defer_count = 0
+    ctx.capture_call = INVALID_INDEX
+    ctx.replay_call = INVALID_INDEX
     param_idx = decl.param_start
     while param_idx < param_end {
         let param = parser_param(p, param_idx)
-        let type_id = codegen_type(p, param.type_ptr, param.type_len)
-        let slot = codegen_begin_result(output, &ctx)
-        compiler_output_string(output, " = alloca ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, "\n  store ")
-        codegen_write_type(p, output, type_id)
-        compiler_output_string(output, " %arg")
-        codegen_write_u32(output, param_idx - decl.param_start)
-        compiler_output_string(output, ", ptr ")
-        codegen_write_reg(output, slot)
-        compiler_output_string(output, "\n")
-        codegen_bind(&ctx, param.name_ptr, param.name_len, slot, type_id, codegen_type_signed(param.type_ptr, param.type_len), false)
+        let type_id = resolved_type(p, param.type_ptr, param.type_len)
+        ctx.next_reg += 1
+        let slot = ctx.next_reg
+        var operation: IrSlot
+        operation.type_id = type_id
+        operation.result = slot
+        operation.parameter = param_idx - decl.param_start
+        operation.is_parameter = true
+        ir_append_slot(&function, &operation)
+        codegen_bind(&ctx, param.name_ptr, param.name_len, slot, type_id, type_is_signed(param.type_ptr, param.type_len), false)
         param_idx += 1
     }
     codegen_alloc_slots(p, decl.body_start, decl.body_count, output, &ctx)
     let returned = codegen_emit_control_block(p, decl.body_start, decl.body_count, output, &ctx)
     if returned == false {
-        compiler_output_string(output, "  ret ")
-        codegen_write_type(p, output, ctx.return_type)
-        if ctx.return_type != 0 { compiler_output_string(output, " 0"); ctx.error = true }
-        compiler_output_string(output, "\n")
+        var operation: IrReturn
+        operation.type_id = ctx.return_type
+        operation.value = 0
+        if ctx.return_type != 0 { ctx.error = true } else { ir_append_return(&function, &operation) }
     }
+    if function.context.used_bytes > p.ir_peak_bytes { p.ir_peak_bytes = function.context.used_bytes }
+    if function.count > p.ir_peak_instructions { p.ir_peak_instructions = function.count }
+    if function.context.error { p.context.error = true; ctx.error = true }
+    if ctx.error == false { codegen_emit_function_ir(p, output, &function) }
     compiler_output_string(output, "}\n")
     return ctx.error == false
 }
@@ -736,45 +595,53 @@ func codegen_emit(p: *Parser, output: *CompilerOutput) bool {
 }
 
 func codegen_emit_globals(p: *Parser, output: *CompilerOutput) {
+    var elements: CompilerPool
+    compiler_pool_init(&elements, p.context)
     var index: u32 = 0
     var retained: u32 = 0
     while index < p.const_count {
         let value = parser_const(p, index)
         if value.is_global {
-            let type_id = codegen_type(p, value.type_ptr, value.type_len)
-            compiler_output_string(output, "@")
-            codegen_write_token(p, output, value.name_ptr, value.name_len)
-            compiler_output_string(output, " = global ")
-            codegen_write_type(p, output, type_id)
-            compiler_output_string(output, " ")
-            if value.has_init == false { compiler_output_string(output, "zeroinitializer") } else {
+            let type_id = resolved_type(p, value.type_ptr, value.type_len)
+            var global: IrGlobal
+            unsafe { global.name = value.name_ptr }
+            global.name_length = value.name_len
+            global.type_id = type_id
+            global.alignment = type_layout_align(p, type_id)
+            global.initialized = value.has_init
+            global.is_array = false
+            global.value = 0 as u64
+            global.element_type = 0
+            global.element_count = 0
+            global.section_start = 0 as usize
+            global.section_end = 0 as usize
+            if value.has_init {
                 let init = parser_expr(p, value.value_idx)
-                if init.kind == EXPR_DATA {
-                    let array_type = parser_struct(p, type_id - CODEGEN_STRUCT_BASE)
-                    let element = codegen_type(p, array_type.element_ptr, array_type.element_len)
-                    compiler_output_string(output, "[")
-                    var item = init.call.arg_start
+                global.is_array = init.kind == EXPR_DATA
+                if global.is_array {
+                    let array_type = parser_struct(p, type_declaration(p, type_id))
+                    global.element_type = resolved_type(p, array_type.element_ptr, array_type.element_len)
+                    global.element_count = init.call.arg_count
+                    var expression = init.call.arg_start
                     var count: u32 = 0
-                    while count < init.call.arg_count {
-                        if count > 0 { compiler_output_string(output, ", ") }
-                        codegen_write_type(p, output, element)
-                        compiler_output_string(output, " ")
-                        codegen_write_integer(p, output, item)
-                        item = parser_expr(p, item).next_arg
+                    while count < global.element_count {
+                        if compiler_pool_ensure(&elements, count, size_of(IrGlobalElement), IR_ARGUMENT_BLOCK_BYTES) == false { p.context.error = true; return }
+                        unsafe {
+                            let element = compiler_pool_item_ptr(&elements, count, size_of(IrGlobalElement)) as *IrGlobalElement
+                            element.value = parser_expr(p, expression).int_lit.val as u64
+                        }
+                        expression = parser_expr(p, expression).next_arg
                         count += 1
                     }
-                    compiler_output_string(output, "]")
-                } else { codegen_write_integer(p, output, value.value_idx) }
+                } else { global.value = init.int_lit.val as u64 }
             }
             if value.section_idx != INVALID_INDEX {
-                compiler_output_string(output, ", section \"")
-                codegen_write_assembly_literal(p, output, value.section_idx)
-                compiler_output_string(output, "\"")
+                let section = parser_expr(p, value.section_idx)
+                global.section_start = section.span.start + 1 as usize
+                global.section_end = section.span.end - 1 as usize
                 retained += 1
             }
-            compiler_output_string(output, ", align ")
-            codegen_write_u32(output, codegen_type_align(p, type_id))
-            compiler_output_string(output, "\n")
+            codegen_emit_global(p, output, &elements, &global)
         }
         index += 1
     }
@@ -814,13 +681,13 @@ func codegen_emit_profile(p: *Parser, output: *CompilerOutput, kernel: bool) boo
     while struct_idx < p.struct_count {
         let structure = parser_struct(p, struct_idx)
         if structure.is_array == false {
-        codegen_write_type(p, output, CODEGEN_STRUCT_BASE + struct_idx)
+        codegen_write_type(p, output, type_for_declaration(p, struct_idx))
         if structure.is_packed { compiler_output_string(output, " = type <{ ") } else { compiler_output_string(output, " = type { ") }
         var field_idx = structure.field_start
         while field_idx < structure.field_start + structure.field_count {
             if field_idx > structure.field_start { compiler_output_string(output, ", ") }
             let field = parser_field(p, field_idx)
-            codegen_write_type(p, output, codegen_type(p, field.type_ptr, field.type_len))
+            codegen_write_type(p, output, resolved_type(p, field.type_ptr, field.type_len))
             field_idx += 1
         }
         if structure.is_packed { compiler_output_string(output, " }>\n") } else { compiler_output_string(output, " }\n") }
@@ -829,10 +696,12 @@ func codegen_emit_profile(p: *Parser, output: *CompilerOutput, kernel: bool) boo
     }
     if kernel { codegen_emit_runtime(p, output) }
     codegen_emit_globals(p, output)
+    var arguments: CompilerPool
+    compiler_pool_init(&arguments, p.context)
     var i: u32 = 0
     var valid = p.decl_count > 0
     while i < p.decl_count {
-        if codegen_emit_func(p, i, output) == false {
+        if codegen_emit_func(p, i, output, &arguments) == false {
             valid = false
         }
         i += 1

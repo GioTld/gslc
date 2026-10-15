@@ -1,25 +1,14 @@
 import "compiler/intrinsics"
 import "compiler/ownership"
+import "compiler/state_analysis"
 import "compiler/token"
 import "compiler/ast"
-import "platform/linux_x86_64/native"
+import "compiler/names"
+import "compiler/types"
 import "core/mem"
 import "core/string"
 
-func sema_chunk_grow(a: *ChunkArena, capacity: usize) bool {
-    let header = linux_sbrk(size_of(Chunk))
-    if (header as usize) == 0 { return false }
-    let buffer = linux_sbrk(capacity)
-    if (buffer as usize) == 0 { return false }
-    unsafe {
-        let chunk = header as *Chunk
-        chunk_arena_append(a, chunk, buffer, capacity)
-    }
-    return true
-}
-
 const SEMA_SYMBOL_POOL: usize = 147456
-const SEMA_MAX_SYMBOLS: u32 = 3072
 
 const SYM_LET:  u32 = 1
 const SYM_VAR:  u32 = 2
@@ -40,6 +29,8 @@ copy struct SemType {
 }
 
 struct Symbol {
+    name_id: u32,
+    previous_binding: u32,
     name_ptr:  *u8,
     name_len:  usize,
     kind:      u32,
@@ -47,7 +38,7 @@ struct Symbol {
     type_ptr:  *u8,
     type_len:  usize,
     pointer_depth: u32,
-    func_idx:  u32,
+    declaration_index:  u32,
     is_mut:    bool,
     is_moved: bool,
     is_borrowed: bool,
@@ -55,9 +46,18 @@ struct Symbol {
     is_used:   bool
 }
 
+struct SemaSnapshot {
+    buffer: *u8,
+    capacity: usize
+}
+
 struct Sema {
+    context: *CompilerContext,
+    names: CompilerNames,
+    snapshots: CompilerPool,
+    snapshot_count: u32,
     kernel: bool,
-    syms:       ChunkArena,
+    syms:       CompilerPool,
     sym_count:  u32,
     scope_lvl:  u32,
     loop_depth: u32,
@@ -103,7 +103,7 @@ func sema_check_hardware(s: *Sema, p: *Parser, index: u32, hardware: u32) SemTyp
                 if offset == end { sema_mark_error(s, node.span.line, node.span.col) }
                 while offset < end {
                     var ch: u8 = 0 as u8
-                    unsafe { ch = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+                    ch = parser_source_byte(p, offset)
                     let letter = (ch >= 65 as u8 && ch <= 90 as u8) || (ch >= 97 as u8 && ch <= 122 as u8) || ch == 95 as u8
                     let digit = ch >= 48 as u8 && ch <= 57 as u8 && offset > value.span.start + 1 as usize
                     if !letter && !digit { sema_mark_error(s, node.span.line, node.span.col) }
@@ -117,7 +117,7 @@ func sema_check_hardware(s: *Sema, p: *Parser, index: u32, hardware: u32) SemTyp
                 expected = sema_type_named("u16")
                 if position == 1 && hardware == BUILTIN_OUTB { expected = sema_type_named("u8") }
             }
-            if sema_type_compatible(expected, actual) == false { sema_mark_error(s, node.span.line, node.span.col) }
+            if sema_type_compatible(p, expected, actual) == false { sema_mark_error(s, node.span.line, node.span.col) }
         }
         arg = value.next_arg
         position += 1
@@ -142,7 +142,7 @@ func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType
         let value = parser_expr(p, arg)
         if position < 2 {
             if value.kind != EXPR_STRING { sema_mark_error(s, node.span.line, node.span.col) }
-        } else if sema_type_compatible(sema_type_named("usize"), sema_type_of(s, p, arg)) == false {
+        } else if sema_type_compatible(p, sema_type_named("usize"), sema_type_of(s, p, arg)) == false {
             sema_mark_error(s, node.span.line, node.span.col)
         }
         arg = value.next_arg
@@ -157,7 +157,7 @@ func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType
         var clobbers = false
         while offset < end {
             var first: u8 = 0 as u8
-            unsafe { first = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+            first = parser_source_byte(p, offset)
             if first == 61 as u8 {
                 if outputs != 0 || inputs != 0 || clobbers { sema_mark_error(s, node.span.line, node.span.col) }
                 outputs += 1
@@ -168,7 +168,7 @@ func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType
             var length: usize = 0 as usize
             while offset < end {
                 var ch: u8 = 0 as u8
-                unsafe { ch = volatile_read(((p.lex.src as usize) + offset) as *u8) }
+                ch = parser_source_byte(p, offset)
                 if ch == 44 as u8 { break }
                 if (ch < 65 as u8 || ch > 90 as u8) && (ch < 97 as u8 || ch > 122 as u8) && (ch < 48 as u8 || ch > 57 as u8) && ch != 123 as u8 && ch != 125 as u8 && ch != 61 as u8 && ch != 126 as u8 && ch != 38 as u8 && ch != 95 as u8 { sema_mark_error(s, node.span.line, node.span.col) }
                 length += 1 as usize
@@ -189,7 +189,7 @@ func sema_check_assembly(s: *Sema, p: *Parser, index: u32, result: bool) SemType
 
 func sema_symbol(s: *Sema, idx: u32) *Symbol {
     unsafe {
-        return chunk_arena_item_ptr(&s.syms, idx, size_of(Symbol)) as *Symbol
+        return compiler_pool_item_ptr(&s.syms, idx, size_of(Symbol)) as *Symbol
     }
 }
 
@@ -210,23 +210,6 @@ func sema_mark_diagnostic(s: *Sema, span: *NodeSpan, code: u32) {
     sema_mark_error(s, span.line, span.col)
 }
 
-func bytes_equal(a: *u8, alen: usize, b: *u8, blen: usize) bool {
-    if alen != blen {
-        return false
-    }
-    var i: usize = 0 as usize
-    while i < alen {
-        unsafe {
-            let ca = volatile_read(((a as usize) + i) as *u8)
-            let cb = volatile_read(((b as usize) + i) as *u8)
-            if ca != cb {
-                return false
-            }
-        }
-        i += 1 as usize
-    }
-    return true
-}
 
 func sema_type_named(name: string) SemType {
     var result: SemType
@@ -238,29 +221,16 @@ func sema_type_named(name: string) SemType {
     return result
 }
 
-func sema_type_from_span(ptr: *u8, length: usize) SemType {
+func sema_type_from_span(p: *Parser, ptr: *u8, length: usize) SemType {
+    if length == 0 as usize { return sema_type_named("void") }
+    let record = resolved_type_info(p, ptr, length)
+    if (record as usize) == 0 as usize { return sema_type_named("void") }
     var result: SemType
-    var depth: u32 = 0
-    var offset: usize = 0 as usize
-    while offset < length {
-        offset = parser_type_skip(ptr, length, offset)
-        if offset >= length { break }
-        var ch: u8 = 0 as u8
-        unsafe { ch = volatile_read(((ptr as usize) + offset) as *u8) }
-        if ch != 42 as u8 { break }
-        depth += 1
-        offset += 1 as usize
-    }
-    unsafe {
-        result.name_ptr = ((ptr as usize) + offset) as *u8
-    }
-    result.name_len = length - (offset as usize)
-    result.pointer_depth = depth
+    unsafe { result.name_ptr = record.base_ptr }
+    result.name_len = record.base_len
+    result.pointer_depth = record.pointer_depth
     result.kind = SEM_TYPE_NAMED
     result.ref_scope = 0
-    if length == 0 as usize {
-        return sema_type_named("void")
-    }
     return result
 }
 
@@ -307,7 +277,7 @@ func sema_type_known(p: *Parser, value: SemType) bool {
     while index < p.struct_count {
         let structure = parser_struct(p, index)
         if parser_type_equal(structure.name_ptr, structure.name_len, value.name_ptr, value.name_len) {
-            if structure.is_array { return sema_type_known(p, sema_type_from_span(structure.element_ptr, structure.element_len)) }
+            if structure.is_array { return sema_type_known(p, sema_type_from_span(p, structure.element_ptr, structure.element_len)) }
             return true
         }
         index += 1
@@ -315,15 +285,15 @@ func sema_type_known(p: *Parser, value: SemType) bool {
     return false
 }
 
-func sema_type_equal(left: SemType, right: SemType) bool {
+func sema_type_equal(p: *Parser, left: SemType, right: SemType) bool {
     if left.kind != right.kind || left.pointer_depth != right.pointer_depth { return false }
     if left.kind == SEM_TYPE_INT_LITERAL { return true }
-    return parser_type_equal(left.name_ptr, left.name_len, right.name_ptr, right.name_len)
+    return canonical_type(p, left.name_ptr, left.name_len, left.pointer_depth) == canonical_type(p, right.name_ptr, right.name_len, right.pointer_depth)
 }
 
-func sema_type_compatible(expected: SemType, actual: SemType) bool {
+func sema_type_compatible(p: *Parser, expected: SemType, actual: SemType) bool {
     if actual.kind == SEM_TYPE_INT_LITERAL && sema_type_integer(expected) { return true }
-    return sema_type_equal(expected, actual)
+    return sema_type_equal(p, expected, actual)
 }
 
 func sema_type_default(value: SemType) SemType {
@@ -336,45 +306,46 @@ func sema_name_is(ptr: *u8, length: usize, name: string) bool {
 }
 
 func sema_lookup(s: *Sema, name: *u8, name_len: usize) u32 {
-    var i: u32 = s.sym_count
-    while i > 0 {
-        i -= 1
-        let symbol = sema_symbol(s, i)
-        if bytes_equal(symbol.name_ptr, symbol.name_len, name, name_len) {
-            return i
-        }
-    }
-    return INVALID_INDEX
+    let index = compiler_name_find(&s.names, name, name_len, compiler_name_hash(name, name_len))
+    if index == INVALID_INDEX { return INVALID_INDEX }
+    return compiler_name_record(&s.names, index).binding
+}
+
+func sema_resolve_name(s: *Sema, p: *Parser, expr_idx: u32) u32 {
+    let node = parser_expr(p, expr_idx)
+    if node.resolved.semantic_slot != INVALID_INDEX { return node.resolved.semantic_slot }
+    var index = INVALID_INDEX
+    if node.kind == EXPR_IDENT { index = sema_lookup(s, node.ident.name_ptr, node.ident.name_len) }
+    if node.kind == EXPR_CALL { index = sema_lookup(s, node.call.callee_ptr, node.call.callee_len) }
+    if index == INVALID_INDEX { return index }
+    let symbol = sema_symbol(s, index)
+    node.resolved.semantic_slot = index
+    node.resolved.binding_index = symbol.declaration_index
+    node.resolved.binding_kind = BINDING_LOCAL
+    if symbol.kind == SYM_PARAM { node.resolved.binding_kind = BINDING_PARAMETER }
+    if symbol.scope_lvl == 0 { node.resolved.binding_kind = BINDING_GLOBAL }
+    if symbol.kind == SYM_FUNC { node.resolved.binding_kind = BINDING_FUNCTION }
+    return index
 }
 
 func sema_declare(s: *Sema, name: *u8, name_len: usize, kind: u32, line: u32, col: u32) bool {
-
-    var i: u32 = s.sym_count
-    while i > 0 {
-        i -= 1
-        let symbol = sema_symbol(s, i)
-        if symbol.scope_lvl == s.scope_lvl {
-            if bytes_equal(symbol.name_ptr, symbol.name_len, name, name_len) {
-                sema_mark_error(s, line, col)
-                return false
-            }
-        }
+    let name_id = compiler_name_intern(&s.names, name, name_len)
+    if name_id == INVALID_INDEX { sema_mark_error(s, line, col); return false }
+    let entry = compiler_name_record(&s.names, name_id)
+    if entry.binding != INVALID_INDEX && sema_symbol(s, entry.binding).scope_lvl == s.scope_lvl {
+        sema_mark_error(s, line, col)
+        return false
     }
 
-    let r = chunk_arena_alloc(&s.syms, size_of(Symbol), size_of(Symbol))
-    if r.error != ALLOC_OK {
-        if sema_chunk_grow(&s.syms, SEMA_SYMBOL_POOL) == false {
-            sema_mark_error(s, line, col)
-            return false
-        }
-        let r2 = chunk_arena_alloc(&s.syms, size_of(Symbol), size_of(Symbol))
-        if r2.error != ALLOC_OK {
-            sema_mark_error(s, line, col)
-            return false
-        }
+    if compiler_pool_ensure(&s.syms, s.sym_count, size_of(Symbol), SEMA_SYMBOL_POOL) == false {
+        sema_mark_error(s, line, col)
+        return false
     }
     let idx = s.sym_count
     let symbol = sema_symbol(s, idx)
+    symbol.name_id = name_id
+    symbol.previous_binding = entry.binding
+    entry.binding = idx
     unsafe { symbol.name_ptr = name }
     symbol.name_len = name_len
     symbol.kind = kind
@@ -382,7 +353,7 @@ func sema_declare(s: *Sema, name: *u8, name_len: usize, kind: u32, line: u32, co
     unsafe { symbol.type_ptr = 0 as *u8 }
     symbol.type_len = 0 as usize
     symbol.pointer_depth = 0
-    symbol.func_idx = INVALID_INDEX
+    symbol.declaration_index = INVALID_INDEX
     symbol.is_mut = false
     symbol.is_used = false
     symbol.is_moved = false
@@ -392,13 +363,13 @@ func sema_declare(s: *Sema, name: *u8, name_len: usize, kind: u32, line: u32, co
     return true
 }
 
-func sema_declare_typed(s: *Sema, name: *u8, name_len: usize, kind: u32, value_type: SemType, func_idx: u32, is_mut: bool, line: u32, col: u32) bool {
+func sema_declare_typed(s: *Sema, name: *u8, name_len: usize, kind: u32, value_type: SemType, declaration_index: u32, is_mut: bool, line: u32, col: u32) bool {
     if sema_declare(s, name, name_len, kind, line, col) == false { return false }
     let symbol = sema_symbol(s, s.sym_count - 1)
     unsafe { symbol.type_ptr = value_type.name_ptr }
     symbol.type_len = value_type.name_len
     symbol.pointer_depth = value_type.pointer_depth
-    symbol.func_idx = func_idx
+    symbol.declaration_index = declaration_index
     symbol.is_mut = is_mut
     symbol.ref_scope = value_type.ref_scope
     return true
@@ -412,6 +383,7 @@ func sema_exit_scope(s: *Sema) {
     while s.sym_count > 0 {
         let last = sema_symbol(s, s.sym_count - 1)
         if last.scope_lvl == s.scope_lvl {
+            compiler_name_record(&s.names, last.name_id).binding = last.previous_binding
             s.sym_count -= 1
         } else {
             break
@@ -429,7 +401,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
     let kind = node.kind
 
     if kind == EXPR_IDENT {
-        let result = sema_lookup(s, node.ident.name_ptr, node.ident.name_len)
+        let result = sema_resolve_name(s, p, expr_idx)
         if result == INVALID_INDEX {
             sema_mark_diagnostic(s, &node.span, 2001)
             return sema_type_named("void")
@@ -447,14 +419,14 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
         let base = sema_type_of(s, p, node.binary.left_idx)
         let index = sema_type_of(s, p, node.binary.right_idx)
         let array_idx = parser_find_type(p, base.name_ptr, base.name_len)
-        if sema_type_compatible(sema_type_named("usize"), index) == false || base.pointer_depth > 1 || array_idx == INVALID_INDEX {
+        if sema_type_compatible(p, sema_type_named("usize"), index) == false || base.pointer_depth > 1 || array_idx == INVALID_INDEX {
             sema_mark_error(s, node.span.line, node.span.col)
             return sema_type_named("void")
         }
         let array_type = parser_struct(p, array_idx)
         if array_type.is_array == false { sema_mark_error(s, node.span.line, node.span.col); return sema_type_named("void"); }
         if base.pointer_depth == 1 && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.span, 2004) }
-        var element = sema_type_from_span(array_type.element_ptr, array_type.element_len)
+        var element = sema_type_from_span(p, array_type.element_ptr, array_type.element_len)
         if sema_reference_type(p, element, 0) { element.ref_scope = base.ref_scope }
         return element
     }
@@ -469,7 +441,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
             return sema_type_named("bool")
         }
         if op == TOKEN_EQ || op == TOKEN_NE || op == TOKEN_LT || op == TOKEN_LE || op == TOKEN_GT || op == TOKEN_GE {
-            if sema_type_compatible(left, right) == false && sema_type_compatible(right, left) == false {
+            if sema_type_compatible(p, left, right) == false && sema_type_compatible(p, right, left) == false {
                 sema_mark_error(s, node.span.line, node.span.col)
             }
             return sema_type_named("bool")
@@ -483,7 +455,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
         if right.kind == SEM_TYPE_INT_LITERAL && sema_type_integer(left) {
             return left
         }
-        if sema_type_equal(left, right) == false || sema_type_integer(left) == false {
+        if sema_type_equal(p, left, right) == false || sema_type_integer(left) == false {
             sema_mark_error(s, node.span.line, node.span.col)
             return sema_type_named("void")
         }
@@ -559,7 +531,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
                     if builtin_index == 0 && (arg_type.pointer_depth != 1 || sema_name_is(arg_type.name_ptr, arg_type.name_len, "u8") == false) {
                         sema_mark_error(s, node.span.line, node.span.col)
                     }
-                    if is_write && builtin_index == 1 && sema_type_compatible(sema_type_named("u8"), arg_type) == false {
+                    if is_write && builtin_index == 1 && sema_type_compatible(p, sema_type_named("u8"), arg_type) == false {
                         sema_mark_error(s, node.span.line, node.span.col)
                     }
                 }
@@ -571,7 +543,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
             return sema_type_named("i64")
         }
 
-        let result = sema_lookup(s, node.call.callee_ptr, node.call.callee_len)
+        let result = sema_resolve_name(s, p, expr_idx)
         if result == INVALID_INDEX {
             sema_mark_error(s, node.span.line, node.span.col)
             return sema_type_named("void")
@@ -580,7 +552,8 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
             return sema_type_named("void")
         }
         let function = sema_symbol(s, result)
-        let decl = parser_decl(p, function.func_idx)
+        node.resolved.declaration = function.declaration_index
+        let decl = parser_decl(p, function.declaration_index)
         if decl.param_count != node.call.arg_count { sema_mark_diagnostic(s, &node.span, 2002) }
         var reference_scope: u32 = 0
         var i: u32 = 0
@@ -591,8 +564,8 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
             if arg_type.ref_scope > reference_scope { reference_scope = arg_type.ref_scope }
             if i < decl.param_count {
                 let param = parser_param(p, param_idx)
-                let param_type = sema_type_from_span(param.type_ptr, param.type_len)
-                if sema_type_compatible(param_type, arg_type) == false {
+                let param_type = sema_type_from_span(p, param.type_ptr, param.type_len)
+                if sema_type_compatible(p, param_type, arg_type) == false {
                     sema_mark_error(s, node.span.line, node.span.col)
                 }
             }
@@ -601,7 +574,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
             param_idx += 1
             i += 1
         }
-        var returned = sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+        var returned = sema_type_from_span(p, decl.ret_type_ptr, decl.ret_type_len)
         if sema_reference_type(p, returned, 0) { returned.ref_scope = reference_scope }
         return returned
     }
@@ -609,6 +582,12 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
     if kind == EXPR_MEMBER {
         var base_type = sema_type_of(s, p, node.member.base_idx)
         if base_type.pointer_depth > 0 { base_type.pointer_depth -= 1 }
+        if node.resolved.field != INVALID_INDEX {
+            let field = parser_field(p, node.resolved.field)
+            var selected = sema_type_from_span(p, field.type_ptr, field.type_len)
+            if sema_reference_type(p, selected, 0) { selected.ref_scope = base_type.ref_scope }
+            return selected
+        }
         var struct_idx: u32 = 0
         while struct_idx < p.struct_count {
             let structure = parser_struct(p, struct_idx)
@@ -618,7 +597,8 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
                 while field_idx < field_end {
                     let field = parser_field(p, field_idx)
                     if bytes_equal(field.name_ptr, field.name_len, node.member.name_ptr, node.member.name_len) {
-                        var selected = sema_type_from_span(field.type_ptr, field.type_len)
+                        node.resolved.field = field_idx
+                        var selected = sema_type_from_span(p, field.type_ptr, field.type_len)
                         if sema_reference_type(p, selected, 0) { selected.ref_scope = base_type.ref_scope }
                         return selected
                     }
@@ -635,7 +615,7 @@ func sema_type_of(s: *Sema, p: *Parser, expr_idx: u32) SemType {
 
     if kind == EXPR_CAST {
         let source_type = sema_type_of(s, p, node.cast.source_idx)
-        var target_type = sema_type_from_span(node.cast.type_ptr, node.cast.type_len)
+        var target_type = sema_type_from_span(p, node.cast.type_ptr, node.cast.type_len)
         if sema_type_known(p, target_type) == false {
             sema_mark_error(s, node.cast.line, node.cast.col)
         }
@@ -701,11 +681,11 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         }
         let reference_scope = value_type.ref_scope
         if node.let_s.type_len > 0 as usize {
-            let declared_type = sema_type_from_span(node.let_s.type_ptr, node.let_s.type_len)
+            let declared_type = sema_type_from_span(p, node.let_s.type_ptr, node.let_s.type_len)
             if sema_type_known(p, declared_type) == false {
                 sema_mark_error(s, node.let_s.span.line, node.let_s.span.col)
             }
-            if node.let_s.has_init && sema_type_compatible(declared_type, value_type) == false {
+            if node.let_s.has_init && sema_type_compatible(p, declared_type, value_type) == false {
                 sema_mark_error(s, node.let_s.span.line, node.let_s.span.col)
             }
             value_type = declared_type
@@ -714,7 +694,7 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         }
         value_type.ref_scope = reference_scope
         if node.let_s.has_init { sema_consume(s, p, node.let_s.expr_idx, value_type) }
-        sema_declare_typed(s, node.let_s.name_ptr, node.let_s.name_len, sym_kind, value_type, INVALID_INDEX, is_mut, node.let_s.span.line, node.let_s.span.col)
+        sema_declare_typed(s, node.let_s.name_ptr, node.let_s.name_len, sym_kind, value_type, stmt_idx, is_mut, node.let_s.span.line, node.let_s.span.col)
         return
     }
 
@@ -723,12 +703,12 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
             let actual = sema_type_of(s, p, node.ret_s.expr_idx)
             sema_consume(s, p, node.ret_s.expr_idx, actual)
             if actual.ref_scope > 0 && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.ret_s.span, 2010) }
-            let expected = sema_type_from_span(s.return_type_ptr, s.return_type_len)
-            if sema_type_compatible(expected, actual) == false {
+            let expected = sema_type_from_span(p, s.return_type_ptr, s.return_type_len)
+            if sema_type_compatible(p, expected, actual) == false {
                 sema_mark_error(s, node.ret_s.span.line, node.ret_s.span.col)
             }
         } else {
-            let expected = sema_type_from_span(s.return_type_ptr, s.return_type_len)
+            let expected = sema_type_from_span(p, s.return_type_ptr, s.return_type_len)
             if sema_name_is(expected.name_ptr, expected.name_len, "void") == false || expected.pointer_depth != 0 {
                 sema_mark_error(s, node.ret_s.span.line, node.ret_s.span.col)
             }
@@ -737,6 +717,10 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
     }
 
     if kind == STMT_EXPR || kind == STMT_DEFER {
+        if kind == STMT_DEFER && parser_expr(p, node.expr_idx).kind != EXPR_CALL {
+            sema_mark_error(s, 0, 0)
+            return
+        }
         sema_check_expr(s, p, node.expr_idx)
         return
     }
@@ -749,7 +733,7 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         if target.kind == EXPR_IDENT {
             target_line = target.span.line
             target_col = target.span.col
-            let symbol_idx = sema_lookup(s, target.ident.name_ptr, target.ident.name_len)
+            let symbol_idx = sema_resolve_name(s, p, node.assign.target_idx)
             if symbol_idx == INVALID_INDEX {
                 sema_mark_error(s, target.span.line, target.span.col)
             } else if sema_symbol(s, symbol_idx).kind != SYM_VAR {
@@ -766,7 +750,7 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
             target_type = sema_type_of(s, p, node.assign.target_idx)
         }
         let value_type = sema_type_of(s, p, node.assign.value_idx)
-        if sema_type_compatible(target_type, value_type) == false {
+        if sema_type_compatible(p, target_type, value_type) == false {
             sema_mark_error(s, target_line, target_col)
         }
         if node.assign.op != TOKEN_ASSIGN && sema_type_integer(target_type) == false {
@@ -775,41 +759,14 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         sema_consume(s, p, node.assign.value_idx, value_type)
         sema_store_references(s, p, stmt_idx, value_type)
         if target.kind == EXPR_IDENT && s.error == false {
-            let symbol_idx = sema_lookup(s, target.ident.name_ptr, target.ident.name_len)
+            let symbol_idx = sema_resolve_name(s, p, node.assign.target_idx)
             if symbol_idx != INVALID_INDEX { sema_symbol(s, symbol_idx).is_moved = false }
         }
         return
     }
 
     if kind == STMT_IF || kind == STMT_WHILE || kind == STMT_UNSAFE {
-        let old_loop_scope = s.loop_scope
-        if kind == STMT_WHILE { s.loop_depth += 1; s.loop_scope = s.scope_lvl + 1; }
-        if kind == STMT_UNSAFE {
-            s.unsafe_depth += 1
-        } else {
-            let condition_type = sema_type_of(s, p, node.block.condition_idx)
-            if sema_name_is(condition_type.name_ptr, condition_type.name_len, "bool") == false || condition_type.pointer_depth != 0 { sema_mark_error(s, 0, 0) }
-        }
-        let count = s.sym_count
-        // Literal array bounds must match SEMA_MAX_SYMBOLS.
-        var before: [3072]u16
-        var after: [3072]u16
-        if kind != STMT_UNSAFE { sema_move_state(s, &before[0], count, MOVE_SAVE) }
-        sema_enter_scope(s)
-        sema_check_stmt_list(s, p, node.block.body_start, node.block.body_count)
-        sema_exit_scope(s)
-        if kind == STMT_IF {
-            sema_move_state(s, &after[0], count, MOVE_SAVE)
-            sema_move_state(s, &before[0], count, MOVE_RESTORE)
-            sema_enter_scope(s)
-            sema_check_stmt_list(s, p, node.block.else_start, node.block.else_count)
-            sema_exit_scope(s)
-            let then_ends = sema_block_terminates(p, node.block.body_start, node.block.body_count)
-            let else_ends = sema_block_terminates(p, node.block.else_start, node.block.else_count)
-            if then_ends && else_ends { sema_move_state(s, &before[0], count, MOVE_RESTORE) } else if else_ends { sema_move_state(s, &after[0], count, MOVE_RESTORE) } else if then_ends == false { sema_move_state(s, &after[0], count, MOVE_MERGE) }
-        }
-        if kind == STMT_WHILE { sema_move_state(s, &before[0], count, MOVE_MERGE); s.loop_depth -= 1; s.loop_scope = old_loop_scope; }
-        if kind == STMT_UNSAFE { s.unsafe_depth -= 1 }
+        sema_check_control_block(s, p, stmt_idx)
         return
     }
 
@@ -824,7 +781,7 @@ func sema_check_stmt(s: *Sema, p: *Parser, stmt_idx: u32) {
         let size_type = sema_type_of(s, p, node.arena_s.size_expr_idx)
         if sema_type_integer(size_type) == false { sema_mark_error(s, 0, 0) }
         let arena_type = sema_type_named("arena")
-        sema_declare_typed(s, node.arena_s.name_ptr, node.arena_s.name_len, SYM_ARENA, arena_type, INVALID_INDEX, false, 0, 0)
+        sema_declare_typed(s, node.arena_s.name_ptr, node.arena_s.name_len, SYM_ARENA, arena_type, stmt_idx, false, 0, 0)
         return
     }
 }
@@ -855,7 +812,7 @@ func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
     s.unsafe_depth = 0
     unsafe { s.return_type_ptr = decl.ret_type_ptr }
     s.return_type_len = decl.ret_type_len
-    let function_return_type = sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+    let function_return_type = sema_type_from_span(p, decl.ret_type_ptr, decl.ret_type_len)
     let runtime = sema_runtime_name(decl.name_ptr, decl.name_len)
     if s.kernel && runtime != 0 {
         if decl.param_count != 3 { sema_mark_error(s, decl.span.line, 0) }
@@ -865,11 +822,11 @@ func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
         var parameter = decl.param_start
         while parameter < decl.param_start + decl.param_count {
             let param = parser_param(p, parameter)
-            let actual = sema_type_from_span(param.type_ptr, param.type_len)
+            let actual = sema_type_from_span(p, param.type_ptr, param.type_len)
             if parameter == decl.param_start + 2 {
-                if sema_type_compatible(sema_type_named("usize"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
+                if sema_type_compatible(p, sema_type_named("usize"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
             } else if runtime == 2 && parameter == decl.param_start + 1 {
-                if sema_type_compatible(sema_type_named("u8"), actual) == false && sema_type_compatible(sema_type_named("i32"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
+                if sema_type_compatible(p, sema_type_named("u8"), actual) == false && sema_type_compatible(p, sema_type_named("i32"), actual) == false { sema_mark_error(s, decl.span.line, 0) }
             } else if actual.pointer_depth != 1 || sema_name_is(actual.name_ptr, actual.name_len, "u8") == false { sema_mark_error(s, decl.span.line, 0) }
             parameter += 1
         }
@@ -882,9 +839,9 @@ func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
     var param_end = decl.param_start + decl.param_count
     while param_idx < param_end {
         let param = parser_param(p, param_idx)
-        let param_type = sema_type_from_span(param.type_ptr, param.type_len)
+        let param_type = sema_type_from_span(p, param.type_ptr, param.type_len)
         if sema_type_known(p, param_type) == false { sema_mark_error(s, decl.span.line, 0) }
-        sema_declare_typed(s, param.name_ptr, param.name_len, SYM_PARAM, param_type, INVALID_INDEX, false, 0, 0)
+        sema_declare_typed(s, param.name_ptr, param.name_len, SYM_PARAM, param_type, param_idx, false, 0, 0)
         param_idx += 1
     }
 
@@ -894,10 +851,14 @@ func sema_check_func(s: *Sema, p: *Parser, decl_idx: u32) {
     s.return_type_len = 0 as usize
 }
 
-func sema_init(s: *Sema) {
+func sema_init(s: *Sema, context: *CompilerContext) {
+    unsafe { s.context = context }
     s.kernel = false
-    chunk_arena_init_empty(&s.syms)
-    if sema_chunk_grow(&s.syms, SEMA_SYMBOL_POOL) == false { s.error = true }
+    compiler_names_init(&s.names, context)
+    compiler_pool_init(&s.syms, context)
+    compiler_pool_init(&s.snapshots, context)
+    s.snapshot_count = 0
+
     s.sym_count = 0
     s.scope_lvl = 0
     s.loop_depth = 0
@@ -914,26 +875,27 @@ func sema_init(s: *Sema) {
 }
 
 func sema_check(s: *Sema, p: *Parser) {
+    if flow_graph_build(p) == false { sema_mark_error(s, 0, 0); return }
     var i: u32 = 0
     while i < p.const_count {
         let constant = parser_const(p, i)
         var constant_type = sema_type_named("u32")
         if constant.has_init && parser_expr(p, constant.value_idx).kind == EXPR_BOOL { constant_type = sema_type_named("bool") }
         if constant.type_len > 0 as usize {
-            constant_type = sema_type_from_span(constant.type_ptr, constant.type_len)
+            constant_type = sema_type_from_span(p, constant.type_ptr, constant.type_len)
         }
         var kind: u32 = SYM_CONST
         if constant.is_global {
             kind = SYM_VAR
             if s.kernel && sema_runtime_name(constant.name_ptr, constant.name_len) != 0 { sema_mark_error(s, constant.span.line, constant.span.col) }
         }
-        sema_declare_typed(s, constant.name_ptr, constant.name_len, kind, constant_type, INVALID_INDEX, constant.is_global, constant.span.line, constant.span.col)
+        sema_declare_typed(s, constant.name_ptr, constant.name_len, kind, constant_type, i, constant.is_global, constant.span.line, constant.span.col)
         i += 1
     }
     i = 0
     while i < p.decl_count {
         let decl = parser_decl(p, i)
-        let return_type = sema_type_from_span(decl.ret_type_ptr, decl.ret_type_len)
+        let return_type = sema_type_from_span(p, decl.ret_type_ptr, decl.ret_type_len)
         sema_declare_typed(s, decl.name_ptr, decl.name_len, SYM_FUNC, return_type, i, false, decl.span.line, decl.span.col)
         i += 1
     }
@@ -945,11 +907,11 @@ func sema_check(s: *Sema, p: *Parser) {
         let field_end = structure.field_start + structure.field_count
         while field_idx < field_end {
             let field = parser_field(p, field_idx)
-            if structure.is_copy && s.error == false && sema_copy_type(p, sema_type_from_span(field.type_ptr, field.type_len), 0) == false {
+            if structure.is_copy && s.error == false && sema_copy_type(p, sema_type_from_span(p, field.type_ptr, field.type_len), 0) == false {
                 sema_mark_error(s, 0, 0)
                 s.error_code = 2006
             }
-            let field_type = sema_type_from_span(field.type_ptr, field.type_len)
+            let field_type = sema_type_from_span(p, field.type_ptr, field.type_len)
             if sema_type_known(p, field_type) == false { sema_mark_error(s, 0, 0) }
             field_idx += 1
         }
@@ -974,12 +936,12 @@ func sema_check(s: *Sema, p: *Parser) {
                         var count: u32 = 0
                         while count < value.call.arg_count {
                             let actual = sema_type_of(s, p, item)
-                            if sema_type_compatible(sema_type_from_span(array_type.element_ptr, array_type.element_len), actual) == false { sema_mark_error(s, constant.span.line, constant.span.col) }
+                            if sema_type_compatible(p, sema_type_from_span(p, array_type.element_ptr, array_type.element_len), actual) == false { sema_mark_error(s, constant.span.line, constant.span.col) }
                             item = parser_expr(p, item).next_arg
                             count += 1
                         }
                     }
-                } else if sema_type_compatible(expected, sema_type_of(s, p, constant.value_idx)) == false {
+                } else if sema_type_compatible(p, expected, sema_type_of(s, p, constant.value_idx)) == false {
                     sema_mark_error(s, constant.span.line, constant.span.col)
                 }
             }

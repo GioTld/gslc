@@ -1,68 +1,76 @@
 import "compiler/token"
 import "compiler/ast"
+import "compiler/parser_walk"
+import "compiler/parser_recovery"
 import "compiler/lexer"
-import "platform/linux_x86_64/native"
+import "compiler/host_storage"
+import "compiler/names"
+import "compiler/source_view"
 import "core/mem"
 import "core/string"
 
-func parser_chunk_grow(a: *ChunkArena, capacity: usize) bool {
-    let header = linux_sbrk(size_of(Chunk))
-    if (header as usize) == 0 { return false }
-    let buffer = linux_sbrk(capacity)
-    if (buffer as usize) == 0 { return false }
-    unsafe {
-        let chunk = header as *Chunk
-        chunk_arena_append(a, chunk, buffer, capacity)
-    }
-    return true
-}
-
 // Initial pool sizes (bytes). These are starting capacities, not hard limits.
-const PARSER_EXPR_POOL:   usize = 2621440
-const PARSER_STMT_POOL:   usize = 655360
-const PARSER_PARAM_POOL:  usize = 131072
+const PARSER_EXPR_POOL:   usize = 65536
+const PARSER_STMT_POOL:   usize = 65536
+const PARSER_PARAM_POOL:  usize = 65536
 const PARSER_DECL_POOL:   usize = 98304
 const PARSER_CONST_POOL:  usize = 65536
 const PARSER_STRUCT_POOL: usize = 32768
 const PARSER_FIELD_POOL:  usize = 98304
 
-const PARSER_MAX_EXPRS:   u32 = 26624
-const PARSER_MAX_STMTS:   u32 = 6656
-const PARSER_MAX_PARAMS:  u32 = 1024
-const PARSER_MAX_DECLS:   u32 = 384
-const PARSER_MAX_CONSTS:  u32 = 384
-const PARSER_MAX_STRUCTS: u32 = 128
-const PARSER_MAX_FIELDS:  u32 = 768
 
+const PARSER_MAX_TYPE_DEPTH: u32 = 8
 const PARSER_MAX_RECURSION: u32 = 64
 const PARSER_MAX_EXPR_DEPTH: u32 = 128
 
 struct Parser {
+    context: *CompilerContext,
+    source_view: CompilerSourceView,
+    source_base: usize,
+    ir_peak_bytes: usize,
+    ir_peak_instructions: u32,
+    flow_blocks: CompilerPool,
+    flow_pending: CompilerPool,
+    flow_block_count: u32,
+    flow_visit: u32,
+    flow_exits: CompilerPool,
+    flow_exit_count: u32,
+    flow_cleanups: CompilerPool,
+    flow_cleanup_count: u32,
+    resolved_types: CompilerNames,
+    canonical_names: CompilerNames,
+    canonical_types: CompilerPool,
+    canonical_count: u32,
+    resolved_type_records: CompilerPool,
     lex:         Lexer,
     cur:         Token,
     peek_tok:    Token,
     has_peek:    bool,
 
-    exprs:       ChunkArena,
+    exprs:       CompilerPool,
     expr_count:  u32,
 
-    stmts:       ChunkArena,
+    stmts:       CompilerPool,
     stmt_count:  u32,
 
-    params:      ChunkArena,
+    params:      CompilerPool,
     param_count: u32,
 
-    decls:       ChunkArena,
+    decls:       CompilerPool,
     decl_count:  u32,
 
-    consts:      ChunkArena,
+    consts:      CompilerPool,
     const_count: u32,
 
-    structs:     ChunkArena,
+    structs:     CompilerPool,
     struct_count: u32,
-    fields:      ChunkArena,
+    fields:      CompilerPool,
     field_count: u32,
 
+    diagnostics: CompilerPool,
+    diagnostic_count: u32,
+    depth_frames: CompilerPool,
+    brace_depth: u32,
     type_depth: u32,
     recursion_depth: u32,
     block_result_start: u32,
@@ -74,65 +82,80 @@ struct Parser {
 }
 
 func parser_advance(p: *Parser) Token {
+    if p.cur.kind == TOKEN_LBRACE { p.brace_depth += 1 }
+    if p.cur.kind == TOKEN_RBRACE && p.brace_depth != 0 { p.brace_depth -= 1 }
     if p.has_peek {
         p.cur = p.peek_tok
         p.has_peek = false
     } else {
-        p.cur = lexer_next(&p.lex)
+        p.cur = parser_next_token(p)
     }
     return p.cur
 }
 
 func parser_peek(p: *Parser) Token {
     if p.has_peek == false {
-        p.peek_tok = lexer_next(&p.lex)
+        p.peek_tok = parser_next_token(p)
         p.has_peek = true
     }
     return p.peek_tok
 }
 
+func parser_next_token(p: *Parser) Token {
+    var token = lexer_next(&p.lex)
+    token.offset += p.source_base
+    return token
+}
+
+func parser_source_ptr(p: *Parser, offset: usize) *u8 {
+    if (p.source_view.segments as usize) != 0 as usize { return source_view_ptr(&p.source_view, offset) }
+    unsafe { return ((p.lex.src as usize) + offset) as *u8 }
+}
+
+func parser_source_byte(p: *Parser, offset: usize) u8 {
+    unsafe { return volatile_read(parser_source_ptr(p, offset)) }
+}
+
 func parser_token_ptr(p: *Parser, tok: Token) *u8 {
-    unsafe {
-        return (((p.lex.src as usize) + tok.offset) as *u8)
-    }
+    return parser_source_ptr(p, tok.offset)
 }
 
 func parser_expr(p: *Parser, idx: u32) *Expr {
     unsafe {
-        return chunk_arena_item_ptr(&p.exprs, idx, size_of(Expr)) as *Expr
+        return compiler_pool_item_ptr(&p.exprs, idx, size_of(Expr)) as *Expr
     }
 }
 
 func parser_stmt(p: *Parser, idx: u32) *Stmt {
     unsafe {
-        return chunk_arena_item_ptr(&p.stmts, idx, size_of(Stmt)) as *Stmt
+        return compiler_pool_item_ptr(&p.stmts, idx, size_of(Stmt)) as *Stmt
     }
 }
 
 func parser_param(p: *Parser, idx: u32) *Param {
     unsafe {
-        return chunk_arena_item_ptr(&p.params, idx, size_of(Param)) as *Param
+        return compiler_pool_item_ptr(&p.params, idx, size_of(Param)) as *Param
     }
 }
 
 func parser_decl(p: *Parser, idx: u32) *FuncDecl {
     unsafe {
-        return chunk_arena_item_ptr(&p.decls, idx, size_of(FuncDecl)) as *FuncDecl
+        return compiler_pool_item_ptr(&p.decls, idx, size_of(FuncDecl)) as *FuncDecl
     }
 }
 
 func parser_const(p: *Parser, idx: u32) *CompilerConst {
     unsafe {
-        return chunk_arena_item_ptr(&p.consts, idx, size_of(CompilerConst)) as *CompilerConst
+        return compiler_pool_item_ptr(&p.consts, idx, size_of(CompilerConst)) as *CompilerConst
     }
 }
 
 func parser_struct(p: *Parser, idx: u32) *CompilerStruct {
-    unsafe { return chunk_arena_item_ptr(&p.structs, idx, size_of(CompilerStruct)) as *CompilerStruct }
+    unsafe { return compiler_pool_item_ptr(&p.structs, idx, size_of(CompilerStruct)) as *CompilerStruct }
 }
 
 func parser_field(p: *Parser, idx: u32) *CompilerField {
-    unsafe { return chunk_arena_item_ptr(&p.fields, idx, size_of(CompilerField)) as *CompilerField }
+    unsafe { return compiler_pool_item_ptr(&p.fields, idx, size_of(CompilerField)) as *CompilerField }
 }
 
 func parser_expect(p: *Parser, kind: u32) bool {
@@ -195,7 +218,7 @@ func parser_find_type(p: *Parser, ptr: *u8, length: usize) u32 {
 func parser_type_span(p: *Parser) Token {
     let start = p.cur
     if p.error { return start }
-    if p.type_depth >= 8 { p.error = true; return start }
+    if p.type_depth >= PARSER_MAX_TYPE_DEPTH { p.error = true; return start }
     p.type_depth += 1
     while p.cur.kind == TOKEN_STAR { parser_advance(p) }
     let base = p.cur
@@ -207,7 +230,7 @@ func parser_type_span(p: *Parser) Token {
         var offset: usize = 0 as usize
         while offset < number.len && p.error == false {
             var ch: u8 = 0 as u8
-            unsafe { ch = volatile_read(((p.lex.src as usize) + number.offset + offset) as *u8) }
+            ch = parser_source_byte(p, number.offset + offset)
             if ch < 48 as u8 || ch > 57 as u8 || (offset == 0 as usize && ch == 48 as u8) || count > 6553 { p.error = true } else { count = count * 10 + ((ch - 48 as u8) as u32) }
             if count > 65535 { p.error = true }
             offset += 1 as usize
@@ -217,7 +240,7 @@ func parser_type_span(p: *Parser) Token {
         var array_type = base
         array_type.len = element.offset + element.len - base.offset
         if p.error == false && parser_find_type(p, parser_token_ptr(p, array_type), array_type.len) == INVALID_INDEX {
-            parser_pool_ensure(&p.structs, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
+            parser_pool_ensure(&p.structs, p.struct_count, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
             if p.error { p.type_depth -= 1; return start }
             let structure = parser_struct(p, p.struct_count)
             unsafe { structure.name_ptr = parser_token_ptr(p, array_type) }
@@ -263,32 +286,44 @@ func parse_index_suffix(p: *Parser, base: u32) u32 {
     return result
 }
 
-// Ensures the arena has room for one more item of item_size bytes, growing via sbrk if needed.
-func parser_pool_ensure(a: *ChunkArena, item_size: usize, pool_capacity: usize, p: *Parser) {
-    let r = chunk_arena_alloc(a, item_size, item_size)
-    if r.error == ALLOC_OK { return }
-    if parser_chunk_grow(a, pool_capacity) == false { parser_fail(p); return }
-    let r2 = chunk_arena_alloc(a, item_size, item_size)
-    if r2.error != ALLOC_OK { parser_fail(p) }
+func parser_pool_ensure(a: *CompilerPool, index: u32, item_size: usize, pool_capacity: usize, p: *Parser) {
+    if compiler_pool_ensure(a, index, item_size, pool_capacity) == false { parser_fail(p) }
 }
 
 func alloc_expr(p: *Parser) u32 {
     if p.error { return INVALID_INDEX }
-    parser_pool_ensure(&p.exprs, size_of(Expr), PARSER_EXPR_POOL, p)
+    parser_pool_ensure(&p.exprs, p.expr_count, size_of(Expr), PARSER_EXPR_POOL, p)
     if p.error { return INVALID_INDEX }
     let idx = p.expr_count
     p.expr_count += 1
+    let resolution = &parser_expr(p, idx).resolved
+    resolution.semantic_slot = INVALID_INDEX
+    resolution.binding_kind = BINDING_UNRESOLVED
+    resolution.binding_index = INVALID_INDEX
+    resolution.local_index = INVALID_INDEX
+    resolution.declaration = INVALID_INDEX
+    resolution.field = INVALID_INDEX
+    resolution.natural_type = INVALID_INDEX
+    resolution.signedness = 0
     parser_expr(p, idx).value_reg = 0
+    parser_expr(p, idx).syntax_depth = 0
     parser_expr(p, idx).next_arg = INVALID_INDEX
     return idx
 }
 
 func alloc_stmt(p: *Parser) u32 {
     if p.error { return INVALID_INDEX }
-    parser_pool_ensure(&p.stmts, size_of(Stmt), PARSER_STMT_POOL, p)
+    parser_pool_ensure(&p.stmts, p.stmt_count, size_of(Stmt), PARSER_STMT_POOL, p)
     if p.error { return INVALID_INDEX }
     let idx = p.stmt_count
     p.stmt_count += 1
+    parser_stmt(p, idx).flow_termination = 0
+    parser_stmt(p, idx).flow_exit = INVALID_INDEX
+    parser_stmt(p, idx).flow_block_exit = INVALID_INDEX
+    parser_stmt(p, idx).flow_label = 0
+    parser_stmt(p, idx).resolved_local = INVALID_INDEX
+    parser_stmt(p, idx).resolved_type = INVALID_INDEX
+    parser_stmt(p, idx).resolved_signed = false
     parser_stmt(p, idx).next_idx = INVALID_INDEX
     return idx
 }
@@ -815,7 +850,7 @@ func parse_struct_decl(p: *Parser) {
             parser_expect(p, TOKEN_COLON)
             let field_type = parser_type_span(p)
             if p.error { return }
-            parser_pool_ensure(&p.fields, size_of(CompilerField), PARSER_FIELD_POOL, p)
+            parser_pool_ensure(&p.fields, p.field_count, size_of(CompilerField), PARSER_FIELD_POOL, p)
             if p.error {
                 p.error_line = field_name.line
                 p.error_col = field_name.col
@@ -834,7 +869,7 @@ func parse_struct_decl(p: *Parser) {
     }
     parser_expect(p, TOKEN_RBRACE)
     if p.error { return }
-    parser_pool_ensure(&p.structs, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
+    parser_pool_ensure(&p.structs, p.struct_count, size_of(CompilerStruct), PARSER_STRUCT_POOL, p)
     if p.error {
         p.error_line = name.line
         p.error_col = name.col
@@ -897,7 +932,7 @@ func parse_const_decl(p: *Parser) {
     if is_global && type_len == 0 as usize { p.error = true }
     parser_expect(p, TOKEN_SEMICOLON)
     if p.error { return }
-    parser_pool_ensure(&p.consts, size_of(CompilerConst), PARSER_CONST_POOL, p)
+    parser_pool_ensure(&p.consts, p.const_count, size_of(CompilerConst), PARSER_CONST_POOL, p)
     if p.error {
         p.error_line = span_line
         p.error_col = span_col
@@ -939,7 +974,7 @@ func parse_func_decl(p: *Parser) u32 {
         let ptype = parser_type_span(p)
         if p.error { return INVALID_INDEX }
 
-        parser_pool_ensure(&p.params, size_of(Param), PARSER_PARAM_POOL, p)
+        parser_pool_ensure(&p.params, p.param_count, size_of(Param), PARSER_PARAM_POOL, p)
         if p.error { return 0 }
         let param = parser_param(p, p.param_count)
         unsafe { param.name_ptr = parser_token_ptr(p, pname) }
@@ -986,7 +1021,7 @@ func parse_func_decl(p: *Parser) u32 {
     }
     parser_expect(p, TOKEN_RBRACE)
 
-    parser_pool_ensure(&p.decls, size_of(FuncDecl), PARSER_DECL_POOL, p)
+    parser_pool_ensure(&p.decls, p.decl_count, size_of(FuncDecl), PARSER_DECL_POOL, p)
     if p.error { return INVALID_INDEX }
     let idx = p.decl_count
     let decl = parser_decl(p, idx)
@@ -1007,20 +1042,33 @@ func parse_func_decl(p: *Parser) u32 {
 }
 
 
-func parser_pool_init(a: *ChunkArena, capacity: usize, p: *Parser) {
-    chunk_arena_init_empty(a)
-    if parser_chunk_grow(a, capacity) == false { p.error = true }
-}
-
-func parser_init(p: *Parser, src: string) {
+func parser_init(p: *Parser, src: string, context: *CompilerContext) {
+    unsafe { p.context = context }
+    source_view_init(&p.source_view)
+    p.source_base = 0 as usize
+    p.ir_peak_bytes = 0 as usize
+    p.ir_peak_instructions = 0
     p.error = false
-    parser_pool_init(&p.exprs,   PARSER_EXPR_POOL,   p)
-    parser_pool_init(&p.stmts,   PARSER_STMT_POOL,   p)
-    parser_pool_init(&p.params,  PARSER_PARAM_POOL,  p)
-    parser_pool_init(&p.decls,   PARSER_DECL_POOL,   p)
-    parser_pool_init(&p.consts,  PARSER_CONST_POOL,  p)
-    parser_pool_init(&p.structs, PARSER_STRUCT_POOL, p)
-    parser_pool_init(&p.fields,  PARSER_FIELD_POOL,  p)
+    compiler_pool_init(&p.flow_exits, context)
+    compiler_pool_init(&p.flow_cleanups, context)
+    compiler_pool_init(&p.flow_blocks, context)
+    compiler_pool_init(&p.flow_pending, context)
+    p.flow_block_count = 0
+    p.flow_visit = 0
+    p.flow_exit_count = 0
+    p.flow_cleanup_count = 0
+    compiler_names_init(&p.resolved_types, context)
+    compiler_names_init(&p.canonical_names, context)
+    compiler_pool_init(&p.canonical_types, context)
+    p.canonical_count = 0
+    compiler_pool_init(&p.resolved_type_records, context)
+    compiler_pool_init(&p.exprs, context)
+    compiler_pool_init(&p.stmts, context)
+    compiler_pool_init(&p.params, context)
+    compiler_pool_init(&p.decls, context)
+    compiler_pool_init(&p.consts, context)
+    compiler_pool_init(&p.structs, context)
+    compiler_pool_init(&p.fields, context)
     lexer_init(&p.lex, src)
     p.expr_count = 0
     p.stmt_count = 0
@@ -1033,6 +1081,11 @@ func parser_init(p: *Parser, src: string) {
     p.block_result_count = 0
     p.has_peek = false
     p.type_depth = 0
+    p.brace_depth = 0
+    p.cur.kind = TOKEN_EOF
+    compiler_pool_init(&p.diagnostics, context)
+    compiler_pool_init(&p.depth_frames, context)
+    p.diagnostic_count = 0
     p.recursion_depth = 0
     p.error_line = 0
     p.error_col = 0
@@ -1040,46 +1093,76 @@ func parser_init(p: *Parser, src: string) {
     if p.error == false { parser_advance(p) }
 }
 
-func parser_parse(p: *Parser) {
-    while p.cur.kind != TOKEN_EOF && p.error == false {
-        if p.cur.kind == TOKEN_SEMICOLON {
-            parser_advance(p)
-        } else if p.cur.kind == TOKEN_FUNC {
-            parse_func_decl(p)
-        } else if p.cur.kind == TOKEN_CONST || p.cur.kind == TOKEN_VAR {
+func parser_parse_declaration(p: *Parser) {
+    if p.cur.kind == TOKEN_SEMICOLON {
+        parser_advance(p)
+    } else if p.cur.kind == TOKEN_FUNC {
+        parse_func_decl(p)
+    } else if p.cur.kind == TOKEN_CONST || p.cur.kind == TOKEN_VAR {
+        parse_const_decl(p)
+    } else if p.cur.kind == TOKEN_IDENT {
+        var section_name: *u8
+        unsafe { section_name = "section" as *u8 }
+        if parser_type_equal(parser_token_ptr(p, p.cur), p.cur.len, section_name, 7 as usize) == false { p.error = true; return }
+        parser_advance(p)
+        parser_expect(p, TOKEN_LPAREN)
+        if p.cur.kind != TOKEN_STRING { p.error = true; return }
+        let section = parse_expr(p, PREC_NONE)
+        parser_expect(p, TOKEN_RPAREN)
+        if p.cur.kind == TOKEN_FUNC {
+            let index = parse_func_decl(p)
+            if p.error { return }
+            parser_decl(p, index).section_idx = section
+        } else if p.cur.kind == TOKEN_VAR {
+            let index = p.const_count
             parse_const_decl(p)
-        } else if p.cur.kind == TOKEN_IDENT {
-            var section_name: *u8
-            unsafe { section_name = "section" as *u8 }
-            if parser_type_equal(parser_token_ptr(p, p.cur), p.cur.len, section_name, 7 as usize) == false { p.error = true; return }
-            parser_advance(p)
-            parser_expect(p, TOKEN_LPAREN)
-            if p.cur.kind != TOKEN_STRING { p.error = true; return }
-            let section = parse_expr(p, PREC_NONE)
-            parser_expect(p, TOKEN_RPAREN)
-            if p.cur.kind == TOKEN_FUNC {
-                let index = parse_func_decl(p)
-                if p.error { return }
-                parser_decl(p, index).section_idx = section
-            } else if p.cur.kind == TOKEN_VAR {
-                let index = p.const_count
-                parse_const_decl(p)
-                if p.error == false { parser_const(p, index).section_idx = section }
-            } else { p.error = true }
+            if p.error == false { parser_const(p, index).section_idx = section }
+        } else { p.error = true }
 
-        } else if p.cur.kind == TOKEN_STRUCT || p.cur.kind == TOKEN_COPY || p.cur.kind == TOKEN_PACKED || p.cur.kind == TOKEN_RESOURCE {
-            parse_struct_decl(p)
-        } else {
-            p.error = true
-            p.error_line = p.cur.line
-            p.error_col = p.cur.col
+    } else if p.cur.kind == TOKEN_STRUCT || p.cur.kind == TOKEN_COPY || p.cur.kind == TOKEN_PACKED || p.cur.kind == TOKEN_RESOURCE {
+        parse_struct_decl(p)
+    } else {
+        p.error = true
+        p.error_line = p.cur.line
+        p.error_col = p.cur.col
+    }
+}
+
+func parser_parse(p: *Parser) {
+    if p.error { return }
+    let first_expression = p.expr_count
+    var failed = false
+    var first_line: u32 = 0
+    var first_column: u32 = 0
+    while p.cur.kind != TOKEN_EOF && p.context.error == false {
+        var saved: ParserCheckpoint
+        parser_checkpoint(p, &saved)
+        let start = p.cur.offset
+        parser_parse_declaration(p)
+        if p.error {
+            if failed == false { first_line = p.error_line; first_column = p.error_col }
+            failed = true
+            parser_note_error(p)
+            parser_rollback(p, &saved)
+            if p.context.error { break }
+            parser_recover(p, start)
+            p.error = false
+            p.error_line = 0
+            p.error_col = 0
         }
     }
-    var index: u32 = 0
+    if failed {
+        p.error = true
+        p.error_line = first_line
+        p.error_col = first_column
+        return
+    }
+    var index = first_expression
     while index < p.expr_count && p.error == false {
         parser_expression_depth(p, index, PARSER_MAX_EXPR_DEPTH)
         index += 1
     }
+    if p.error { parser_note_error(p) }
 }
 func parse_expr(p: *Parser, min_prec: u32) u32 {
     if p.error { return INVALID_INDEX }
@@ -1114,41 +1197,6 @@ func parser_fail(p: *Parser) {
     p.error_col = p.cur.col
 }
 
-func parser_expression_depth(p: *Parser, index: u32, remaining: u32) u32 {
-    if p.error { return 0 }
-    if index >= p.expr_count || remaining == 0 { parser_fail(p); return 0; }
-    let node = parser_expr(p, index)
-    if node.value_reg != 0 { return node.value_reg }
-    var left: u32 = 0
-    var right: u32 = 0
-    if node.kind == EXPR_BINARY || node.kind == EXPR_INDEX {
-        left = parser_expression_depth(p, node.binary.left_idx, remaining - 1)
-        right = parser_expression_depth(p, node.binary.right_idx, remaining - 1)
-    } else if node.kind == EXPR_UNARY {
-        left = parser_expression_depth(p, node.unary.operand_idx, remaining - 1)
-    } else if node.kind == EXPR_CAST {
-        left = parser_expression_depth(p, node.cast.source_idx, remaining - 1)
-    } else if node.kind == EXPR_MEMBER {
-        left = parser_expression_depth(p, node.member.base_idx, remaining - 1)
-    } else if node.kind == EXPR_CALL || node.kind == EXPR_DATA {
-        if node.kind == EXPR_CALL && node.call.callee_expr_idx != INVALID_INDEX {
-            left = parser_expression_depth(p, node.call.callee_expr_idx, remaining - 1)
-        }
-        var arg = node.call.arg_start
-        var count: u32 = 0
-        while count < node.call.arg_count && p.error == false {
-            right = parser_expression_depth(p, arg, remaining - 1)
-            if p.error { return 0 }
-            if right > left { left = right }
-            arg = parser_expr(p, arg).next_arg
-            count += 1
-        }
-    }
-    if right > left { left = right }
-    node.value_reg = left + 1
-    if node.value_reg > PARSER_MAX_EXPR_DEPTH { parser_fail(p) }
-    return node.value_reg
-}
 
 func parse_block_stmt(p: *Parser, kind: u32) u32 {
     if p.error { return INVALID_INDEX }

@@ -1,0 +1,67 @@
+import "compiler/ownership"
+import "compiler/flow_graph"
+
+// Each lexical depth owns a reusable snapshot; nested checks cannot overwrite their parent's state.
+func sema_snapshot_storage(s: *Sema, bytes: usize) *u8 {
+    while s.snapshot_count <= s.scope_lvl {
+        if compiler_pool_ensure(&s.snapshots, s.snapshot_count, size_of(SemaSnapshot), 4096 as usize) == false {
+            unsafe { return 0 as *u8 }
+        }
+        unsafe {
+            let frame = compiler_pool_item_ptr(&s.snapshots, s.snapshot_count, size_of(SemaSnapshot)) as *SemaSnapshot
+            frame.buffer = 0 as *u8
+            frame.capacity = 0 as usize
+        }
+        s.snapshot_count += 1
+    }
+    unsafe {
+        let frame = compiler_pool_item_ptr(&s.snapshots, s.scope_lvl, size_of(SemaSnapshot)) as *SemaSnapshot
+        if bytes > frame.capacity || (frame.buffer as usize) == 0 as usize {
+            let buffer = compiler_storage_allocate(s.context, bytes)
+            if (buffer as usize) == 0 as usize { return buffer }
+            frame.buffer = buffer
+            frame.capacity = bytes
+        }
+        return frame.buffer
+    }
+}
+
+func sema_check_control_block(s: *Sema, p: *Parser, index: u32) {
+    let node = parser_stmt(p, index)
+    let kind = node.kind
+    let old_loop_scope = s.loop_scope
+    if kind == STMT_WHILE { s.loop_depth += 1; s.loop_scope = s.scope_lvl + 1; }
+    if kind == STMT_UNSAFE {
+        s.unsafe_depth += 1
+    } else {
+        let condition_type = sema_type_of(s, p, node.block.condition_idx)
+        if sema_name_is(condition_type.name_ptr, condition_type.name_len, "bool") == false || condition_type.pointer_depth != 0 { sema_mark_error(s, 0, 0) }
+    }
+    let count = s.sym_count
+    let snapshot_bytes = (count as usize) * size_of(u16)
+    let snapshots = sema_snapshot_storage(s, snapshot_bytes * 2 as usize)
+    if (snapshots as usize) == 0 as usize { sema_mark_error(s, 0, 0); return }
+    var before: *u16
+    var after: *u16
+    unsafe {
+        before = snapshots as *u16
+        after = ((snapshots as usize) + snapshot_bytes) as *u16
+    }
+    if kind != STMT_UNSAFE { sema_move_state(s, before, count, MOVE_SAVE) }
+    sema_enter_scope(s)
+    sema_check_stmt_list(s, p, node.block.body_start, node.block.body_count)
+    sema_exit_scope(s)
+    if kind == STMT_IF {
+        sema_move_state(s, after, count, MOVE_SAVE)
+        sema_move_state(s, before, count, MOVE_RESTORE)
+        sema_enter_scope(s)
+        sema_check_stmt_list(s, p, node.block.else_start, node.block.else_count)
+        sema_exit_scope(s)
+        let branch = flow_block(p, index)
+        let then_ends = flow_region_reaches(p, branch.first, branch.join, branch.depth + 1) == false
+        let else_ends = flow_region_reaches(p, branch.second, branch.join, branch.depth + 1) == false
+        if then_ends && else_ends { sema_move_state(s, before, count, MOVE_RESTORE) } else if else_ends { sema_move_state(s, after, count, MOVE_RESTORE) } else if then_ends == false { sema_move_state(s, after, count, MOVE_MERGE) }
+    }
+    if kind == STMT_WHILE { sema_move_state(s, before, count, MOVE_MERGE); s.loop_depth -= 1; s.loop_scope = old_loop_scope; }
+    if kind == STMT_UNSAFE { s.unsafe_depth -= 1 }
+}

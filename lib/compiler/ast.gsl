@@ -1,4 +1,5 @@
 import "compiler/token"
+import "compiler/resolution"
 
 const INVALID_INDEX: u32 = 4294967295
 
@@ -80,11 +81,13 @@ struct UnaryNode {
     operand_idx: u32,
 }
 
-// Flat tagged slots keep AST storage bounded without heap allocation.
+// Stable tagged records grow in compiler-owned storage.
 struct Expr {
+    resolved: ExprResolution,
     kind: u32,
     next_arg: u32,
     value_reg: u32,
+    syntax_depth: u32,
     span: NodeSpan,
     ident: IdentNode,
     int_lit: IntLitNode,
@@ -133,6 +136,13 @@ struct ArenaStmt {
 }
 
 struct Stmt {
+    flow_termination: u32,
+    flow_exit: u32,
+    flow_block_exit: u32,
+    flow_label: u32,
+    resolved_local: u32,
+    resolved_type: u32,
+    resolved_signed: bool,
     kind: u32,
     value_reg: u32,
     next_idx: u32,
@@ -161,6 +171,7 @@ struct Param {
 }
 
 struct FuncDecl {
+    flow_returns: bool,
     section_idx: u32,
     name_ptr: *u8,
     name_len: usize,

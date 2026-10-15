@@ -1,7 +1,6 @@
-import "compiler/codegen_types"
+import "compiler/codegen_operations"
 
 const ASM_LITERAL_ARGUMENTS: u32 = 2
-const ASCII_DOLLAR: u32 = 36
 
 func codegen_emit_syscall(p: *Parser, expr_idx: u32, output: *CompilerOutput, ctx: *Codegen) u32 {
     let node = parser_expr(p, expr_idx)
@@ -11,39 +10,39 @@ func codegen_emit_syscall(p: *Parser, expr_idx: u32, output: *CompilerOutput, ct
         let arg_type = codegen_expr_type(p, arg_idx, ctx, 64)
         let is_signed = codegen_expr_signed(p, arg_idx, ctx, false)
         let value = codegen_emit_expr(p, arg_idx, output, ctx, 64, is_signed)
-        if arg_type != 64 {
-            let converted = codegen_begin_result(output, ctx)
-            if codegen_is_pointer(arg_type) { compiler_output_string(output, " = ptrtoint ") } else if is_signed { compiler_output_string(output, " = sext ") } else { compiler_output_string(output, " = zext ") }
-            codegen_write_type(p, output, arg_type)
-            compiler_output_string(output, " ")
-            codegen_write_reg(output, value)
-            compiler_output_string(output, " to i64\n")
+        if arg_type != 64 && ctx.replay_call != expr_idx {
+            ctx.next_reg += 1
+            let converted = ctx.next_reg
+            var cast: IrCast
+            cast.source_type = arg_type
+            cast.target_type = 64
+            cast.result = converted
+            cast.operand = value
+            cast.opcode = IR_ZEXT
+            if type_is_pointer(p, arg_type) { cast.opcode = IR_PTR_TO_INT } else if is_signed { cast.opcode = IR_SEXT }
+            ir_append_cast(ctx.function, &cast)
             parser_expr(p, arg_idx).value_reg = converted
         }
         arg_idx = parser_expr(p, arg_idx).next_arg
         count += 1
     }
-    let reg = codegen_begin_result(output, ctx)
-    compiler_output_string(output, " = call i64 asm sideeffect \"syscall\", \"={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}\"(")
-    if codegen_builtin(p, expr_idx) == BUILTIN_SYSCALL_WRITE { compiler_output_string(output, "i64 1, ") }
-    arg_idx = node.call.arg_start
-    count = 0
-    while count < node.call.arg_count {
-        if count > 0 { compiler_output_string(output, ", ") }
-        compiler_output_string(output, "i64 ")
-        codegen_write_reg(output, parser_expr(p, arg_idx).value_reg)
-        arg_idx = parser_expr(p, arg_idx).next_arg
-        count += 1
-    }
-    compiler_output_string(output, ")\n")
-    return reg
+    if ctx.capture_call == expr_idx { return 0 }
+    ctx.next_reg += 1
+    var operation: IrSyscall
+    operation.result = ctx.next_reg
+    operation.argument_count = node.call.arg_count
+    operation.write_number = codegen_builtin(p, expr_idx) == BUILTIN_SYSCALL_WRITE
+    codegen_capture_arguments(p, ctx, node.call.arg_start, node.call.arg_count)
+    if ctx.error { return 0 }
+    ir_append_syscall(ctx.function, ctx.arguments, &operation)
+    return operation.result
 }
 
 func codegen_write_symbol(p: *Parser, output: *CompilerOutput, arg: u32) {
     let value = parser_expr(p, arg)
     var name: *u8
     // Preflight validates the literal; its bytes live in the parser source buffer.
-    unsafe { name = ((p.lex.src as usize) + value.span.start + 1 as usize) as *u8 }
+    unsafe { name = parser_source_ptr(p, value.span.start + 1 as usize) }
     codegen_write_token(p, output, name, value.span.end - value.span.start - 2 as usize)
 }
 
@@ -54,7 +53,7 @@ func codegen_emit_symbols(p: *Parser, output: *CompilerOutput, kernel: bool) {
         if node.kind == EXPR_CALL && codegen_builtin(p, index) == BUILTIN_SYMBOL_ADDRESS {
             let arg = parser_expr(p, node.call.arg_start)
             var name: *u8
-            unsafe { name = ((p.lex.src as usize) + arg.span.start + 1 as usize) as *u8 }
+            unsafe { name = parser_source_ptr(p, arg.span.start + 1 as usize) }
             let length = arg.span.end - arg.span.start - 2 as usize
             var duplicate = codegen_find_decl(p, name, length) != INVALID_INDEX || codegen_find_global(p, name, length) != INVALID_INDEX
             if kernel && (compiler_name_is(name, length, "memcpy") || compiler_name_is(name, length, "memset") || compiler_name_is(name, length, "memmove") || compiler_name_is(name, length, "memcmp")) { duplicate = true }
@@ -64,7 +63,7 @@ func codegen_emit_symbols(p: *Parser, output: *CompilerOutput, kernel: bool) {
                 if other.kind == EXPR_CALL && codegen_builtin(p, previous) == BUILTIN_SYMBOL_ADDRESS {
                     let literal = parser_expr(p, other.call.arg_start)
                     var previous_name: *u8
-                    unsafe { previous_name = ((p.lex.src as usize) + literal.span.start + 1 as usize) as *u8 }
+                    unsafe { previous_name = parser_source_ptr(p, literal.span.start + 1 as usize) }
                     if parser_type_equal(name, length, previous_name, literal.span.end - literal.span.start - 2 as usize) { duplicate = true }
                 }
                 previous += 1
@@ -90,66 +89,67 @@ func codegen_emit_assembly(p: *Parser, index: u32, output: *CompilerOutput, ctx:
         arg = parser_expr(p, arg).next_arg
         position += 1
     }
-    var reg: u32 = 0
-    if result {
-        reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = call i64")
-    } else { compiler_output_string(output, "  call void") }
-    compiler_output_string(output, " asm sideeffect \"")
-    codegen_write_assembly_literal(p, output, instruction)
-    compiler_output_string(output, "\", \"")
-    codegen_write_assembly_literal(p, output, constraints)
+    if ctx.capture_call == index { return 0 }
+    var operation: IrAssembly
+    operation.result = 0
+    operation.returns_value = result
+    if result { ctx.next_reg += 1; operation.result = ctx.next_reg }
+    let text = parser_expr(p, instruction)
     let constraint = parser_expr(p, constraints)
-    if constraint.span.end - constraint.span.start > 2 as usize { compiler_output_string(output, ",") }
-    compiler_output_string(output, "~{dirflag},~{fpsr},~{flags},~{memory}\"(")
-    arg = parser_expr(p, constraints).next_arg
-    position = ASM_LITERAL_ARGUMENTS
-    while position < node.call.arg_count {
-        if position > ASM_LITERAL_ARGUMENTS { compiler_output_string(output, ", ") }
-        compiler_output_string(output, "i64 ")
-        codegen_write_reg(output, parser_expr(p, arg).value_reg)
-        arg = parser_expr(p, arg).next_arg
-        position += 1
-    }
-    compiler_output_string(output, ")\n")
-    return reg
+    operation.instruction_start = text.span.start + 1 as usize
+    operation.instruction_end = text.span.end - 1 as usize
+    operation.constraint_start = constraint.span.start + 1 as usize
+    operation.constraint_end = constraint.span.end - 1 as usize
+    operation.argument_count = node.call.arg_count - ASM_LITERAL_ARGUMENTS
+    operation.literal_only = false
+    codegen_capture_arguments(p, ctx, parser_expr(p, constraints).next_arg, operation.argument_count)
+    if ctx.error { return 0 }
+    ir_append_assembly(ctx.function, ctx.arguments, &operation)
+    return operation.result
 }
 
 func codegen_emit_hardware(p: *Parser, index: u32, output: *CompilerOutput, ctx: *Codegen, hardware: u32) u32 {
     let node = parser_expr(p, index)
     if hardware == BUILTIN_ASM_U64 || hardware == BUILTIN_ASM_VOID { return codegen_emit_assembly(p, index, output, ctx, hardware == BUILTIN_ASM_U64) }
-    if hardware == BUILTIN_READ_CR2 || hardware == BUILTIN_READ_CR3 {
-        let reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = call i64 asm sideeffect \"mov %cr")
-        if hardware == BUILTIN_READ_CR2 { compiler_output_string(output, "2") } else { compiler_output_string(output, "3") }
-        compiler_output_string(output, ", $0\", \"=r,~{memory}\"()\n")
-        return reg
-    }
     if hardware == BUILTIN_SYMBOL_ADDRESS {
-        let reg = codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = ptrtoint ptr @")
-        codegen_write_symbol(p, output, node.call.arg_start)
-        compiler_output_string(output, " to i64\n")
-        return reg
+        if ctx.capture_call == index { return 0 }
+        let arg = parser_expr(p, node.call.arg_start)
+        var symbol: IrSymbolAddress
+        unsafe { symbol.name = parser_source_ptr(p, arg.span.start + 1 as usize) }
+        symbol.length = arg.span.end - arg.span.start - 2 as usize
+        ctx.next_reg += 1
+        symbol.result = ctx.next_reg
+        symbol.string_index = 0
+        symbol.is_string = false
+        symbol.as_integer = true
+        ir_append_symbol_address(ctx.function, &symbol)
+        return symbol.result
     }
-    if hardware == BUILTIN_CLI || hardware == BUILTIN_HLT || hardware == BUILTIN_ASM || hardware == BUILTIN_STI {
-        compiler_output_string(output, "  call void asm sideeffect \"")
-        if hardware == BUILTIN_CLI { compiler_output_string(output, "cli") }
-        if hardware == BUILTIN_HLT { compiler_output_string(output, "hlt") }
-        if hardware == BUILTIN_STI { compiler_output_string(output, "sti") }
-        if hardware == BUILTIN_ASM {
-            let arg = parser_expr(p, node.call.arg_start)
-            var offset = arg.span.start + 1 as usize
-            let end = arg.span.end - 1 as usize
-            while offset < end {
-                let value = codegen_decode_char(p, offset, end)
-                codegen_write_char(output, value)
-                if value.value == ASCII_DOLLAR { codegen_write_char(output, value) }
-                offset = value.next
-            }
-        }
-        compiler_output_string(output, "\", \"~{dirflag},~{fpsr},~{flags},~{memory}\"()\n")
+    if hardware == BUILTIN_ASM {
+        if ctx.capture_call == index { return 0 }
+        let arg = parser_expr(p, node.call.arg_start)
+        var assembly: IrAssembly
+        assembly.result = 0
+        assembly.returns_value = false
+        assembly.instruction_start = arg.span.start + 1 as usize
+        assembly.instruction_end = arg.span.end - 1 as usize
+        assembly.constraint_start = 0 as usize
+        assembly.constraint_end = 0 as usize
+        assembly.argument_count = 0
+        assembly.literal_only = true
+        ir_append_assembly(ctx.function, ctx.arguments, &assembly)
         return 0
+    }
+    var operation: IrHardware
+    operation.builtin = hardware
+    operation.result = 0
+    operation.first = 0
+    operation.second = 0
+    if hardware == BUILTIN_CLI || hardware == BUILTIN_HLT || hardware == BUILTIN_STI || hardware == BUILTIN_READ_CR2 || hardware == BUILTIN_READ_CR3 {
+        if ctx.capture_call == index { return 0 }
+        if hardware == BUILTIN_READ_CR2 || hardware == BUILTIN_READ_CR3 { ctx.next_reg += 1; operation.result = ctx.next_reg }
+        ir_append_hardware(ctx.function, &operation)
+        return operation.result
     }
     var width: u32 = 64
     if hardware == BUILTIN_INB || hardware == BUILTIN_OUTB || hardware == BUILTIN_INW || hardware == BUILTIN_OUTW { width = 16 }
@@ -157,26 +157,25 @@ func codegen_emit_hardware(p: *Parser, index: u32, output: *CompilerOutput, ctx:
     var second: u32 = 0
     if hardware == BUILTIN_OUTB { second = codegen_emit_expr(p, parser_expr(p, node.call.arg_start).next_arg, output, ctx, 8, false) }
     if hardware == BUILTIN_OUTW { second = codegen_emit_expr(p, parser_expr(p, node.call.arg_start).next_arg, output, ctx, 16, false) }
-    if hardware == BUILTIN_INB {
-        codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = call i8 asm sideeffect \"inb %dx, %al\", \"={al},{dx},~{memory}\"(i16 ")
-    } else if hardware == BUILTIN_INW {
-        codegen_begin_result(output, ctx)
-        compiler_output_string(output, " = call i16 asm sideeffect \"inw %dx, %ax\", \"={ax},{dx},~{memory}\"(i16 ")
-    } else if hardware == BUILTIN_OUTW {
-        compiler_output_string(output, "  call void asm sideeffect \"outw %ax, %dx\", \"{dx},{ax},~{memory}\"(i16 ")
-    } else if hardware == BUILTIN_OUTB {
-        compiler_output_string(output, "  call void asm sideeffect \"outb %al, %dx\", \"{dx},{al},~{memory}\"(i16 ")
-    } else {
-        compiler_output_string(output, "  call void asm sideeffect \"")
-        if hardware == BUILTIN_WRITE_CR3 { compiler_output_string(output, "mov $0, %cr3") } else if hardware == BUILTIN_INVLPG { compiler_output_string(output, "invlpg ($0)") } else if hardware == BUILTIN_LGDT { compiler_output_string(output, "lgdt ($0)") } else { compiler_output_string(output, "lidt ($0)") }
-        compiler_output_string(output, "\", \"r,~{memory}\"(i64 ")
-    }
-    codegen_write_reg(output, first)
-    if hardware == BUILTIN_OUTB { compiler_output_string(output, ", i8 "); codegen_write_reg(output, second); }
-    if hardware == BUILTIN_OUTW { compiler_output_string(output, ", i16 "); codegen_write_reg(output, second); }
-    compiler_output_string(output, ")\n")
-    if hardware == BUILTIN_INB || hardware == BUILTIN_INW { return ctx.next_reg }
-    return 0
+    if ctx.capture_call == index { return 0 }
+    operation.first = first
+    operation.second = second
+    if hardware == BUILTIN_INB || hardware == BUILTIN_INW { ctx.next_reg += 1; operation.result = ctx.next_reg }
+    ir_append_hardware(ctx.function, &operation)
+    return operation.result
 }
 
+
+// Snapshot only after recursive argument evaluation has finished.
+func codegen_capture_arguments(p: *Parser, ctx: *Codegen, start: u32, count: u32) {
+    var expression = start
+    var index: u32 = 0
+    while index < count {
+        if compiler_pool_ensure(ctx.arguments, index, size_of(IrArgument), IR_ARGUMENT_BLOCK_BYTES) == false { ctx.error = true; return }
+        let argument = codegen_ir_argument(ctx.arguments, index)
+        argument.type_id = 64
+        argument.value = parser_expr(p, expression).value_reg
+        expression = parser_expr(p, expression).next_arg
+        index += 1
+    }
+}

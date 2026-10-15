@@ -1,0 +1,41 @@
+import "compiler/codegen_operations"
+import "compiler/ir_storage"
+
+func codegen_emit_function_ir(p: *Parser, output: *CompilerOutput, function: *IrFunction) {
+    var index: u32 = 0
+    while index < function.count && output.error == false {
+        unsafe {
+            let instruction = compiler_pool_item_ptr(&function.instructions, index, size_of(IrInstruction)) as *IrInstruction
+            if instruction.kind == IR_INSTRUCTION_BINARY { codegen_emit_binary_operation(p, output, instruction.payload as *IrBinary) }
+            if instruction.kind == IR_INSTRUCTION_CAST { codegen_emit_cast_operation(p, output, instruction.payload as *IrCast) }
+            if instruction.kind == IR_INSTRUCTION_MEMORY { codegen_emit_memory_operation(p, output, instruction.payload as *IrMemory) }
+            if instruction.kind == IR_INSTRUCTION_CALL { codegen_emit_call_operation(p, output, &function.arguments, instruction.payload as *IrCall) }
+            if instruction.kind == IR_INSTRUCTION_UNARY { codegen_emit_unary_operation(p, output, instruction.payload as *IrUnary) }
+            if instruction.kind == IR_INSTRUCTION_ARRAY_ADDRESS { codegen_emit_array_address(p, output, instruction.payload as *IrArrayAddress) }
+            if instruction.kind == IR_INSTRUCTION_FIELD_ADDRESS { codegen_emit_field_address(p, output, instruction.payload as *IrFieldAddress) }
+            if instruction.kind == IR_INSTRUCTION_BRANCH { codegen_emit_branch(output, instruction.payload as *IrBranch) }
+            if instruction.kind == IR_INSTRUCTION_RETURN { codegen_emit_return_operation(p, output, instruction.payload as *IrReturn) }
+            if instruction.kind == IR_INSTRUCTION_LOGICAL_PHI { codegen_emit_logical_phi(output, instruction.payload as *IrLogicalPhi) }
+            if instruction.kind == IR_INSTRUCTION_SYMBOL_ADDRESS { codegen_emit_symbol_address(output, instruction.payload as *IrSymbolAddress) }
+            if instruction.kind == IR_INSTRUCTION_EXTRACT { codegen_emit_extract(p, output, instruction.payload as *IrExtract) }
+            if instruction.kind == IR_INSTRUCTION_CONSTANT { codegen_emit_constant(p, output, instruction.payload as *IrConstant) }
+            if instruction.kind == IR_INSTRUCTION_HARDWARE { codegen_emit_hardware_operation(output, instruction.payload as *IrHardware) }
+            if instruction.kind == IR_INSTRUCTION_SYSCALL { codegen_emit_syscall_operation(output, &function.arguments, instruction.payload as *IrSyscall) }
+            if instruction.kind == IR_INSTRUCTION_ASSEMBLY { codegen_emit_assembly_operation(p, output, &function.arguments, instruction.payload as *IrAssembly) }
+            if instruction.kind == IR_INSTRUCTION_SLOT { codegen_emit_slot(p, output, instruction.payload as *IrSlot) }
+            if instruction.kind == IR_INSTRUCTION_ARENA_SLOT { codegen_emit_arena_slot(output, instruction.payload as *IrArenaSlot) }
+            if instruction.kind == IR_INSTRUCTION_ARENA_INIT { codegen_emit_arena_init(output, instruction.payload as *IrArenaInit) }
+            if instruction.kind == IR_INSTRUCTION_ARENA_ALLOCATE { codegen_emit_arena_allocate(output, instruction.payload as *IrArenaAllocate) }
+            if instruction.kind == IR_INSTRUCTION_ZERO { codegen_emit_zero(output, instruction.payload as *IrZero) }
+            if instruction.kind == IR_INSTRUCTION_BLOCK {
+                let block = instruction.payload as *IrBlock
+                codegen_emit_block(output, block.kind, block.label)
+            }
+            if instruction.kind == IR_INSTRUCTION_JUMP {
+                let block = instruction.payload as *IrBlock
+                codegen_emit_jump(output, block.kind, block.label)
+            }
+        }
+        index += 1
+    }
+}

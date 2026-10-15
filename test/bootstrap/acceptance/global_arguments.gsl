@@ -1,0 +1,15 @@
+var value: u32 = 41
+var captured: u32 = 0
+
+func add(argument: u32) u32 { return argument + 1 }
+func capture(argument: u32) { unsafe { captured = argument } }
+func delayed() { unsafe { defer capture(value); value = 7 } }
+
+func main() u32 {
+    unsafe {
+        if add(value) != 42 { return 1 }
+        delayed()
+        if captured != 41 || value != 7 { return 2 }
+    }
+    return 0
+}

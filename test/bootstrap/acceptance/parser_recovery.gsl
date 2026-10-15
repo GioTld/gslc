@@ -1,0 +1,40 @@
+import "compiler/parser"
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "func broken() { let = 1 }\nfunc also_bad() { var = 2 }\nfunc valid() u32 { return 42 }\n", &context)
+    parser_parse(&parser)
+    if parser.error == false || parser.diagnostic_count != 2 { return 1 }
+    if parser.error_line != 1 || parser.error_col != 21 { return 2 }
+    if parser.decl_count != 1 || parser.stmt_count != 1 { return 3 }
+    let declaration = parser_decl(&parser, 0)
+    unsafe { if parser_type_equal(declaration.name_ptr, declaration.name_len, "valid" as *u8, 5 as usize) == false { return 4 } }
+    unsafe {
+        let second = compiler_pool_item_ptr(&parser.diagnostics, 1, size_of(NodeSpan)) as *NodeSpan
+        if second.line != 2 || second.col != 23 { return 5 }
+    }
+    parser_init(&parser, "func main() u32 { return outer(inner(1), 2) }", &context)
+    parser_parse(&parser)
+    if parser.error || parser.diagnostic_count != 0 { return 6 }
+    let returned = parser_stmt(&parser, parser_decl(&parser, 0).body_start).ret_s.expr_idx
+    if parser_expr(&parser, returned).syntax_depth != 3 || parser_expr(&parser, returned).value_reg != 0 { return 7 }
+    parser_expr(&parser, returned).value_reg = 999
+    if parser_expression_depth(&parser, returned, PARSER_MAX_EXPR_DEPTH) != 3 { return 8 }
+    parser_init(&parser, "", &context)
+    let cyclic = alloc_expr(&parser)
+    let node = parser_expr(&parser, cyclic)
+    node.kind = EXPR_UNARY
+    node.unary.operand_idx = cyclic
+    if parser_expression_depth(&parser, cyclic, PARSER_MAX_EXPR_DEPTH) != 0 || parser.error == false { return 9 }
+    parser_init(&parser, "func broken() { if true { let = 1 } }\nstruct Good { value: u32 }\nfunc valid() {}\n", &context)
+    parser_parse(&parser)
+    if parser.error == false || parser.diagnostic_count != 1 || parser.struct_count != 1 || parser.decl_count != 1 { return 10 }
+    parser_init(&parser, "func broken() { let = 1\nfunc nested() {}\n", &context)
+    parser_parse(&parser)
+    if parser.error == false || parser.decl_count != 0 || parser.cur.kind != TOKEN_EOF { return 11 }
+    if context.error { return 12 }
+    return 0
+}

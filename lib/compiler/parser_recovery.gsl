@@ -1,0 +1,65 @@
+import "compiler/ast"
+import "compiler/host_storage"
+
+const PARSER_DIAGNOSTIC_BLOCK_BYTES: usize = 4096
+
+struct ParserCheckpoint {
+    expressions: u32,
+    statements: u32,
+    parameters: u32,
+    declarations: u32,
+    constants: u32,
+    structures: u32,
+    fields: u32
+}
+
+func parser_checkpoint(p: *Parser, saved: *ParserCheckpoint) {
+    saved.expressions = p.expr_count
+    saved.statements = p.stmt_count
+    saved.parameters = p.param_count
+    saved.declarations = p.decl_count
+    saved.constants = p.const_count
+    saved.structures = p.struct_count
+    saved.fields = p.field_count
+}
+
+func parser_rollback(p: *Parser, saved: *ParserCheckpoint) {
+    p.expr_count = saved.expressions
+    p.stmt_count = saved.statements
+    p.param_count = saved.parameters
+    p.decl_count = saved.declarations
+    p.const_count = saved.constants
+    p.struct_count = saved.structures
+    p.field_count = saved.fields
+    p.type_depth = 0
+    p.recursion_depth = 0
+    p.block_result_start = INVALID_INDEX
+    p.block_result_count = 0
+}
+
+func parser_note_error(p: *Parser) {
+    if p.context.error { return }
+    if p.diagnostic_count == INVALID_INDEX || compiler_pool_ensure(&p.diagnostics, p.diagnostic_count, size_of(NodeSpan), PARSER_DIAGNOSTIC_BLOCK_BYTES) == false { p.context.error = true; return }
+    unsafe {
+        let span = compiler_pool_item_ptr(&p.diagnostics, p.diagnostic_count, size_of(NodeSpan)) as *NodeSpan
+        span.start = p.cur.offset
+        span.end = p.cur.offset + p.cur.len
+        span.line = p.error_line
+        span.col = p.error_col
+    }
+    p.diagnostic_count += 1
+}
+
+func parser_declaration_start(p: *Parser) bool {
+    let kind = p.cur.kind
+    if kind == TOKEN_IDENT { unsafe { return parser_type_equal(parser_token_ptr(p, p.cur), p.cur.len, "section" as *u8, 7 as usize) } }
+    return kind == TOKEN_FUNC || kind == TOKEN_CONST || kind == TOKEN_VAR || kind == TOKEN_STRUCT || kind == TOKEN_COPY || kind == TOKEN_PACKED || kind == TOKEN_RESOURCE
+}
+
+// Only synchronize at file-level declarations. An unclosed block cannot cross files.
+func parser_recover(p: *Parser, failed_start: usize) {
+    while p.cur.kind != TOKEN_EOF {
+        if p.brace_depth == 0 && p.cur.offset > failed_start && parser_declaration_start(p) { return }
+        parser_advance(p)
+    }
+}

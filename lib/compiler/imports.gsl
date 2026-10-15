@@ -1,25 +1,44 @@
 import "compiler/intrinsics"
+import "compiler/host_storage"
+import "compiler/source_view"
+import "compiler/host_paths"
 import "std/io"
 import "compiler/token"
 import "compiler/lexer"
 import "std/file"
 
-const COMPILER_MAX_SOURCE_BYTES: usize = 327680
-const COMPILER_MAX_MODULES: u32 = 64
+const COMPILER_SOURCE_INITIAL_BYTES: usize = 4096
+const COMPILER_SOURCE_RECORD_BYTES: usize = 4096
 const COMPILER_MAX_IMPORT_DEPTH: u32 = 16
-const COMPILER_PATH_SLOT_BYTES: usize = 256
-const COMPILER_MODULE_PATH_LIMIT: usize = 239
-const COMPILER_SLOT_START_OFFSET: usize = 240
-const COMPILER_SLOT_END_OFFSET: usize = 248
+const COMPILER_PATH_SLOT_BYTES: usize = 4096
+const COMPILER_MODULE_PATH_LIMIT: usize = 4096
 const COMPILER_PLATFORM_LINUX: u32 = 0
 const COMPILER_PLATFORM_NONE: u32 = 1
 const COMPILER_PLATFORM_CUSTOM: u32 = 2
 const COMPILER_PLATFORM_PREFIX_BYTES: usize = 9
 
-struct ImportState {
+struct CompilerSourceBuffer {
+    context: *CompilerContext,
     output: *u8,
     used: usize,
-    paths: *u8,
+    capacity: usize
+}
+
+struct ImportState {
+    context: *CompilerContext,
+    virtual_length: usize,
+    parse_buffer: CompilerSourceBuffer,
+    virtual_line: u32,
+    virtual_column: u32,
+    paths: CompilerPaths,
+    last_module_id: u32,
+    first_parsed_module: u32,
+    last_parsed_module: u32,
+    sources: CompilerPool,
+    segments: CompilerPool,
+    dependencies: CompilerPool,
+    dependency_count: u32,
+    segment_count: u32,
     path_count: u32,
     platform: u32,
     platform_root: string
@@ -45,85 +64,162 @@ func compiler_import_put(buffer: *u8, offset: usize, value: u8) {
     unsafe { volatile_write(compiler_import_at(buffer, offset), value) }
 }
 
-func compiler_import_append(state: *ImportState, source: *u8, start: usize, end: usize) bool {
-    if end < start || end - start > COMPILER_MAX_SOURCE_BYTES - state.used {
-        return false
-    }
-    var offset = start
-    while offset < end {
-        compiler_import_put(state.output, state.used, compiler_import_byte(source, offset))
-        state.used += 1 as usize
-        offset += 1 as usize
-    }
-    return true
+struct CompilerSource {
+    path: *u8,
+    original_path: *u8,
+    text: *u8,
+    length: usize,
+    parse_text: *u8,
+    parse_line: u32,
+    parse_column: u32,
+    parse_start: usize,
+    parse_end: usize,
+    next_parsed_module: u32
 }
 
-func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
-    return compiler_import_at(state.paths, (index as usize) * COMPILER_PATH_SLOT_BYTES)
+// One edge per import occurrence, including repeated imports and cycles.
+struct CompilerDependency {
+    importer: u32,
+    imported: u32,
+    offset: usize,
+    length: usize
 }
 
-func compiler_slot_get_u64(slot: *u8, offset: usize) usize {
-    var val: usize = 0 as usize
-    var i: usize = 0 as usize
-    while i < 8 as usize {
-        let b = compiler_import_byte(slot, offset + i) as usize
-        val = val | (b << (i * 8 as usize))
-        i += 1 as usize
-    }
-    return val
+func compiler_import_init(state: *ImportState, platform: u32, root: string, context: *CompilerContext) {
+    unsafe { state.context = context; state.paths.context = context }
+    state.virtual_length = 0 as usize
+    compiler_source_buffer_init(&state.parse_buffer, context)
+    state.virtual_line = 1
+    state.virtual_column = 1
+    unsafe { state.platform_root = root }
+    state.paths.initialized = false
+    state.last_module_id = INVALID_INDEX
+    state.first_parsed_module = INVALID_INDEX
+    state.last_parsed_module = INVALID_INDEX
+    state.path_count = 0
+    state.segment_count = 0
+    state.dependency_count = 0
+    state.platform = platform
+    compiler_pool_init(&state.sources, context)
+    compiler_pool_init(&state.segments, context)
+    compiler_pool_init(&state.dependencies, context)
 }
 
-func compiler_slot_set_u64(slot: *u8, offset: usize, value: usize) {
-    var temp = value
-    var i: usize = 0 as usize
-    while i < 8 as usize {
-        compiler_import_put(slot, offset + i, (temp & 255 as usize) as u8)
-        temp = temp >> 8
-        i += 1 as usize
-    }
+func compiler_source(state: *ImportState, index: u32) *CompilerSource {
+    unsafe { return compiler_pool_item_ptr(&state.sources, index, size_of(CompilerSource)) as *CompilerSource }
 }
 
-func compiler_module_at_offset(state: *ImportState, offset: usize) u32 {
-    var i: u32 = 0
-    while i < state.path_count {
-        let slot = compiler_import_path_slot(state, i)
-        let start = compiler_slot_get_u64(slot, COMPILER_SLOT_START_OFFSET)
-        let end = compiler_slot_get_u64(slot, COMPILER_SLOT_END_OFFSET)
-        if offset >= start && offset < end {
-            return i
-        }
-        i += 1
+func compiler_source_segment(state: *ImportState, index: u32) *CompilerSourceSegment {
+    return source_segment(&state.segments, index)
+}
+
+func compiler_dependency(state: *ImportState, index: u32) *CompilerDependency {
+    unsafe { return compiler_pool_item_ptr(&state.dependencies, index, size_of(CompilerDependency)) as *CompilerDependency }
+}
+
+// IDs are local to this collection; path spelling remains the identity contract.
+func compiler_source_find(state: *ImportState, path: string) u32 {
+    var index: u32 = 0
+    while index < state.path_count {
+        if streq(compiler_import_as_string(compiler_source(state, index).path), path) { return index }
+        index += 1
     }
     return INVALID_INDEX
 }
 
-func compiler_import_seen(state: *ImportState, path: string) u32 {
-    let length = strlen(path) as usize
-    if length == 0 as usize || length >= COMPILER_MODULE_PATH_LIMIT {
-        return 2
+func compiler_dependency_add(state: *ImportState, importer: u32, imported: u32, offset: usize, length: usize) bool {
+    if compiler_pool_ensure(&state.dependencies, state.dependency_count, size_of(CompilerDependency), COMPILER_SOURCE_RECORD_BYTES) == false { return false }
+    let edge = compiler_dependency(state, state.dependency_count)
+    edge.importer = importer
+    edge.imported = imported
+    edge.offset = offset
+    edge.length = length
+    state.dependency_count += 1
+    return true
+}
+
+func compiler_source_buffer_init(buffer: *CompilerSourceBuffer, context: *CompilerContext) {
+    unsafe { buffer.context = context }
+    unsafe { buffer.output = 0 as *u8 }
+    buffer.used = 0 as usize
+    buffer.capacity = 0 as usize
+}
+
+// A buffer may move only before parsing; interned names borrow its final address.
+func compiler_source_reserve(buffer: *CompilerSourceBuffer, required: usize) bool {
+    if required <= buffer.capacity { return true }
+    var capacity = buffer.capacity
+    if capacity == 0 as usize { capacity = COMPILER_SOURCE_INITIAL_BYTES }
+    while capacity < required {
+        if capacity > MEM_MAX_SIZE / 2 as usize { unsafe { buffer.context.error = true }; return false }
+        capacity = capacity * 2 as usize
     }
-    var index: u32 = 0
-    while index < state.path_count {
-        let slot = compiler_import_path_slot(state, index)
-        var offset: usize = 0 as usize
-        while offset < length && compiler_import_byte(slot, offset) == compiler_import_byte(compiler_import_string_ptr(path), offset) {
+    let memory = compiler_storage_allocate(buffer.context, capacity)
+    if (memory as usize) == 0 as usize { return false }
+    if buffer.used != 0 as usize { memcpy(memory, buffer.output, buffer.used) }
+    unsafe { buffer.output = memory }
+    buffer.capacity = capacity
+    return true
+}
+
+func compiler_import_append(state: *ImportState, source: *u8, start: usize, end: usize, module_id: u32) bool {
+    if end < start || end - start >= MEM_MAX_SIZE - state.virtual_length { unsafe { state.context.error = true }; return false }
+    let length = end - start
+    if compiler_source_reserve(&state.parse_buffer, state.parse_buffer.used + length + 1 as usize) == false { return false }
+    if length > 0 as usize {
+        if compiler_pool_ensure(&state.segments, state.segment_count, size_of(CompilerSourceSegment), COMPILER_SOURCE_RECORD_BYTES) == false { return false }
+        let segment = compiler_source_segment(state, state.segment_count)
+        segment.start = state.virtual_length
+        segment.end = state.virtual_length + length
+        segment.original_start = start
+        segment.module_id = module_id
+        unsafe { segment.text = compiler_import_at(source, start) }
+        state.segment_count += 1
+        memcpy(compiler_import_at(state.parse_buffer.output, state.parse_buffer.used), compiler_import_at(source, start), length)
+        state.parse_buffer.used += length
+        state.virtual_length = segment.end
+        var offset = start
+        while offset < end {
+            if compiler_import_byte(source, offset) == 10 as u8 { state.virtual_line += 1; state.virtual_column = 1 } else { state.virtual_column += 1 }
             offset += 1 as usize
         }
-        if offset == length && compiler_import_byte(slot, offset) == 0 as u8 {
-            return 1
-        }
-        index += 1
     }
-    if state.path_count >= COMPILER_MAX_MODULES {
-        return 2
-    }
-    let slot = compiler_import_path_slot(state, state.path_count)
-    var offset: usize = 0 as usize
-    while offset < length {
-        compiler_import_put(slot, offset, compiler_import_byte(compiler_import_string_ptr(path), offset))
-        offset += 1 as usize
-    }
-    compiler_import_put(slot, length, 0 as u8)
+    compiler_import_put(state.parse_buffer.output, state.parse_buffer.used, 0 as u8)
+    return true
+}
+
+func compiler_import_path_slot(state: *ImportState, index: u32) *u8 {
+    unsafe { return compiler_source(state, index).path }
+}
+
+// Segments are appended in output order. Separator bytes have no source owner.
+func compiler_segment_at_offset(state: *ImportState, offset: usize) u32 {
+    return source_segment_find(&state.segments, state.segment_count, offset)
+}
+
+func compiler_module_at_offset(state: *ImportState, offset: usize) u32 {
+    let index = compiler_segment_at_offset(state, offset)
+    if index == INVALID_INDEX { return INVALID_INDEX }
+    return compiler_source_segment(state, index).module_id
+}
+
+func compiler_import_seen(state: *ImportState, path: string) u32 {
+    let length = strlen(path) as usize
+    if length == 0 as usize || length >= COMPILER_MODULE_PATH_LIMIT { return 2 }
+    if compiler_source_find(state, path) != INVALID_INDEX { return 1 }
+    if compiler_pool_ensure(&state.sources, state.path_count, size_of(CompilerSource), COMPILER_SOURCE_RECORD_BYTES) == false { return 2 }
+    let text = compiler_storage_allocate(state.context, length + 1 as usize)
+    if (text as usize) == 0 as usize { return 2 }
+    memcpy(text, compiler_import_string_ptr(path), length + 1 as usize)
+    let record = compiler_source(state, state.path_count)
+    unsafe { record.path = text; record.text = 0 as *u8; record.original_path = text }
+    record.length = 0 as usize
+    unsafe { record.parse_text = 0 as *u8 }
+    record.parse_line = 1
+    record.parse_column = 1
+    record.parse_start = 0 as usize
+    record.parse_end = 0 as usize
+    record.next_parsed_module = INVALID_INDEX
     state.path_count += 1
     return 0
 }
@@ -152,7 +248,6 @@ func compiler_import_candidate(current: string, name: *u8, name_len: usize, fall
             let start = i == 0 as usize || compiler_import_byte(compiler_import_string_ptr(current), i - 1 as usize) == 47 as u8
             if start && compiler_import_byte(compiler_import_string_ptr(current), i) == 108 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 1 as usize) == 105 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 2 as usize) == 98 as u8 && compiler_import_byte(compiler_import_string_ptr(current), i + 3 as usize) == 47 as u8 {
                 prefix = i
-                break
             }
             i += 1 as usize
         }
@@ -266,32 +361,50 @@ func compiler_import_exists(path: string) bool {
     return true
 }
 
-func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
+func compiler_collect_file(original: string, state: *ImportState, depth: u32) u32 {
     if depth >= COMPILER_MAX_IMPORT_DEPTH { return 9 }
-    let seen = compiler_import_seen(state, path)
-    if seen == 1 { return 0 }
-    if seen == 2 { return 9 }
+    if host_path_resolve(&state.paths, original) == false { return 5 }
+    let path = compiler_import_as_string(state.paths.resolved)
+    let existing = compiler_source_find(state, path)
+    if existing != INVALID_INDEX { state.last_module_id = existing; return 0 }
+    return compiler_collect_resolved(path, original, state, depth)
+}
 
-    arena module(328200)
-    let source = module.alloc(327681 as usize)
-    let resolved = module.alloc(512 as usize)
+func compiler_collect_resolved(scratch_path: string, original: string, state: *ImportState, depth: u32) u32 {
+    let module_id = state.path_count
+    let seen = compiler_import_seen(state, scratch_path)
+    if seen != 0 { return 9 }
+    let path = compiler_import_as_string(compiler_source(state, module_id).path)
+
+    let original_length = strlen(original) as usize
+    let original_copy = compiler_storage_allocate(state.context, original_length + 1 as usize)
+    if original_copy as usize == 0 as usize { return 3 }
+    memcpy(original_copy, compiler_import_string_ptr(original), original_length + 1 as usize)
+    unsafe { compiler_source(state, module_id).original_path = original_copy }
+
+    arena module(4096)
+    let resolved = module.alloc(COMPILER_PATH_SLOT_BYTES)
+    var buffer: CompilerSourceBuffer
+    compiler_source_buffer_init(&buffer, state.context)
     var opened = fs_open_read(path)
     if opened.error != IO_OK { return 5 }
-    var length: usize = 0 as usize
-    while length < 327681 as usize {
-        let part = io_read(&opened.file, compiler_import_at(source, length), (327681 as usize) - length)
+    while true {
+        if buffer.used > MEM_MAX_SIZE - COMPILER_SOURCE_INITIAL_BYTES - 1 as usize { unsafe { state.context.error = true }; fs_close(&opened.file); return 3 }
+        if compiler_source_reserve(&buffer, buffer.used + COMPILER_SOURCE_INITIAL_BYTES + 1 as usize) == false { fs_close(&opened.file); return 3 }
+        let part = io_read(&opened.file, compiler_import_at(buffer.output, buffer.used), COMPILER_SOURCE_INITIAL_BYTES)
         if part.error != IO_INTERRUPTED {
-            if part.error != IO_OK {
-                fs_close(&opened.file)
-                return 6
-            }
+            if part.error != IO_OK { fs_close(&opened.file); return 6 }
             if part.eof { break }
-            if part.count == 0 as usize || part.count > (327681 as usize) - length { fs_close(&opened.file); return 6 }
-            length += part.count
+            if part.count == 0 as usize || part.count > COMPILER_SOURCE_INITIAL_BYTES { fs_close(&opened.file); return 6 }
+            buffer.used += part.count
         }
     }
     if fs_close(&opened.file) != IO_OK { return 6 }
-    if length > COMPILER_MAX_SOURCE_BYTES { return 7 }
+    let source = buffer.output
+    let length = buffer.used
+    let record = compiler_source(state, module_id)
+    unsafe { record.text = source }
+    record.length = length
     var offset: usize = 0 as usize
     while offset < length {
         if compiler_import_byte(source, offset) == 0 as u8 { return 8 }
@@ -326,15 +439,20 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
             let target = compiler_import_as_string(resolved)
             let result = compiler_collect_file(target, state, depth + 1)
             if result != 0 { return result }
+            let imported = state.last_module_id
+            if compiler_dependency_add(state, module_id, imported, module_name.offset, module_name.len) == false { return 3 }
         }
     }
 
-    if state.used > 0 as usize {
-        if state.used == COMPILER_MAX_SOURCE_BYTES { return 7 }
-        compiler_import_put(state.output, state.used, 10 as u8)
-        state.used += 1 as usize
+    if state.virtual_length > 0 as usize {
+        state.virtual_length += 1 as usize
+        state.virtual_line += 1
+        state.virtual_column = 1
     }
-    let module_start = state.used
+    compiler_source_buffer_init(&state.parse_buffer, state.context)
+    record.parse_line = state.virtual_line
+    record.parse_column = state.virtual_column
+    record.parse_start = state.virtual_length
     lexer_init(&lex, compiler_import_as_string(source))
     braces = 0
     var segment: usize = 0 as usize
@@ -345,17 +463,17 @@ func compiler_collect_file(path: string, state: *ImportState, depth: u32) u32 {
         if tok.kind == TOKEN_LBRACE { braces += 1 }
         if tok.kind == TOKEN_RBRACE && braces > 0 { braces -= 1 }
         if tok.kind == TOKEN_IMPORT && braces == 0 {
-            if compiler_import_append(state, source, segment, tok.offset) == false { return 7 }
+            if compiler_import_append(state, source, segment, tok.offset, module_id) == false { return 7 }
             let module_name = lexer_next(&lex)
             if module_name.kind != TOKEN_STRING { return 1 }
             segment = module_name.offset + module_name.len
         }
     }
-    if compiler_import_append(state, source, segment, length) == false { return 7 }
-    compiler_import_put(state.output, state.used, 0 as u8)
-    let module_end = state.used
-    let slot = compiler_import_path_slot(state, seen)
-    compiler_slot_set_u64(slot, COMPILER_SLOT_START_OFFSET, module_start)
-    compiler_slot_set_u64(slot, COMPILER_SLOT_END_OFFSET, module_end)
+    if compiler_import_append(state, source, segment, length, module_id) == false { return 7 }
+    unsafe { record.parse_text = state.parse_buffer.output }
+    record.parse_end = state.virtual_length
+    if state.last_parsed_module == INVALID_INDEX { state.first_parsed_module = module_id } else { compiler_source(state, state.last_parsed_module).next_parsed_module = module_id }
+    state.last_parsed_module = module_id
+    state.last_module_id = module_id
     return 0
 }

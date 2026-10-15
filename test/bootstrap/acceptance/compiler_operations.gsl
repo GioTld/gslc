@@ -1,0 +1,119 @@
+import "compiler/codegen_operations"
+import "std/file"
+
+// Only type declarations are parsed; executable instructions come from IR records.
+func main(argc: u32, argv: *usize) u32 {
+    if argc != 2 { return 1 }
+    var path: string
+    unsafe { path = (*(((argv as usize) + size_of(usize)) as *usize)) as string }
+    var opened = fs_create_new(path)
+    if opened.error != IO_OK { return 2 }
+    defer fs_close(&opened.file)
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "struct Cell { value:u32 } struct Buffer { items:[2]u32 }", &context)
+    parser_parse(&parser)
+    if parser.error { return 5 }
+    var output: CompilerOutput
+    output.fd = opened.file.handle
+    output.error = false
+    compiler_output_string(&output, "%struct.Cell = type { i32 }\ndeclare void @llvm.trap()\ndefine i32 @main() {\nentry:\n  %t1 = alloca i32\n  %t2 = add i32 0, 84\n  %t3 = add i32 0, 2\n")
+    var binary: IrBinary
+    binary.opcode = IR_UDIV
+    binary.type_id = 32
+    binary.result = 4
+    binary.left = 2
+    binary.right = 3
+    codegen_emit_binary_operation(&parser, &output, &binary)
+    var memory: IrMemory
+    memory.type_id = 32
+    memory.result = 0
+    memory.address = 1
+    memory.value = 4
+    memory.alignment = 1
+    memory.is_load = false
+    memory.is_volatile = true
+    memory.initialized = true
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    memory.is_load = true
+    memory.result = 5
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    var cast: IrCast
+    cast.opcode = IR_ZEXT
+    cast.source_type = 32
+    cast.target_type = 64
+    cast.result = 6
+    cast.operand = 5
+    codegen_emit_cast_operation(&parser, &output, &cast)
+    cast.opcode = IR_TRUNC
+    cast.source_type = 64
+    cast.target_type = 32
+    cast.result = 7
+    cast.operand = 6
+    codegen_emit_cast_operation(&parser, &output, &cast)
+    var arguments: CompilerPool
+    compiler_pool_init(&arguments, &context)
+    if compiler_pool_ensure(&arguments, 0, size_of(IrArgument), IR_ARGUMENT_BLOCK_BYTES) == false { return 4 }
+    let argument = codegen_ir_argument(&arguments, 0)
+    argument.type_id = 32
+    argument.value = 7
+    var call: IrCall
+    call.argument_start = 0
+    unsafe { call.name = "identity" as *u8 }
+    call.name_length = 8 as usize
+    call.return_type = 32
+    call.result = 8
+    call.argument_count = 1
+    codegen_emit_call_operation(&parser, &output, &arguments, &call)
+    compiler_output_string(&output, "  %t9 = alloca [2 x i32]\n  %t10 = add i64 0, 1\n")
+    var element: IrArrayAddress
+    unsafe { element.type_id = resolved_type(&parser, "[2]u32" as *u8, 6 as usize) }
+    element.base = 9
+    element.index = 10
+    element.count = 2
+    element.valid = 11
+    element.result = 12
+    codegen_emit_array_address(&parser, &output, &element)
+    memory.address = 12
+    memory.value = 8
+    memory.is_load = false
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    memory.is_load = true
+    memory.result = 13
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    compiler_output_string(&output, "  %t14 = alloca %struct.Cell\n")
+    var field: IrFieldAddress
+    unsafe { field.type_id = resolved_type(&parser, "Cell" as *u8, 4 as usize) }
+    field.base = 14
+    field.field = 0
+    field.result = 15
+    codegen_emit_field_address(&parser, &output, &field)
+    memory.address = 15
+    memory.value = 13
+    memory.is_load = false
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    memory.is_load = true
+    memory.result = 16
+    codegen_emit_memory_operation(&parser, &output, &memory)
+    var branch: IrBranch
+    branch.condition = 11
+    branch.true_kind = IR_BLOCK_IF_TRUE
+    branch.true_label = 1
+    branch.false_kind = IR_BLOCK_IF_FALSE
+    branch.false_label = 1
+    codegen_emit_branch(&output, &branch)
+    codegen_emit_block(&output, IR_BLOCK_IF_TRUE, 1)
+    codegen_emit_jump(&output, IR_BLOCK_IF_MERGE, 1)
+    codegen_emit_block(&output, IR_BLOCK_IF_FALSE, 1)
+    codegen_emit_jump(&output, IR_BLOCK_IF_MERGE, 1)
+    codegen_emit_block(&output, IR_BLOCK_IF_MERGE, 1)
+    var returned: IrReturn
+    returned.type_id = 32
+    returned.value = 16
+    codegen_emit_return_operation(&parser, &output, &returned)
+    compiler_output_string(&output, "}\ndefine i32 @identity(i32 %value) { ret i32 %value }\n")
+    if output.error { return 3 }
+    return 0
+}

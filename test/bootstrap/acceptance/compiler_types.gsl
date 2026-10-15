@@ -1,0 +1,33 @@
+import "compiler/sema"
+import "compiler/type_layout"
+
+func named(p: *Parser, text: string, depth: u32) u32 {
+    unsafe { return canonical_type(p, text as *u8, strlen(text) as usize, depth) }
+}
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "struct Node { next:*Node, value:i32 } struct Other { next:*Node, value:i32 }", &context)
+    parser_parse(&parser)
+    if parser.error { return 1 }
+    let unsigned = named(&parser, "u64", 0)
+    if unsigned == named(&parser, "usize", 0) || unsigned == named(&parser, "i64", 0) { return 2 }
+    if unsigned != named(&parser, "u64", 0) { return 3 }
+    let node = named(&parser, "Node", 0)
+    if node == named(&parser, "Other", 0) { return 4 }
+    let pointer = named(&parser, "Node", 1)
+    if pointer != type_pointer(&parser, node) || type_dereference(&parser, pointer) != node { return 5 }
+    if named(&parser, "Node", 2) != type_pointer(&parser, pointer) { return 6 }
+    let signed_pointer = named(&parser, "i32", 1)
+    if type_pointer_signed(&parser, signed_pointer) == false || type_pointer_signed(&parser, named(&parser, "u32", 1)) { return 7 }
+    let count = parser.canonical_count
+    if named(&parser, "i32", 1) != signed_pointer || parser.canonical_count != count { return 8 }
+    var states: [2]u8
+    unsafe { memset(&states as *u8, 0 as u8, 2 as usize) }
+    unsafe { if type_layout_validate(&parser, 0, &states as *u8) == false { return 9 } }
+    if type_layout_size(&parser, node) != 16 || type_layout_align(&parser, node) != 8 { return 10 }
+    return 0
+}

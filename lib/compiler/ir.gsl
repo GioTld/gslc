@@ -1,0 +1,286 @@
+const IR_INVALID: u32 = 0
+const IR_ADD: u32 = 1
+const IR_SUB: u32 = 2
+const IR_MUL: u32 = 3
+const IR_SDIV: u32 = 4
+const IR_UDIV: u32 = 5
+const IR_SREM: u32 = 6
+const IR_UREM: u32 = 7
+const IR_SHL: u32 = 8
+const IR_ASHR: u32 = 9
+const IR_LSHR: u32 = 10
+const IR_AND: u32 = 11
+const IR_OR: u32 = 12
+const IR_XOR: u32 = 13
+const IR_EQ: u32 = 14
+const IR_NE: u32 = 15
+const IR_SLT: u32 = 16
+const IR_ULT: u32 = 17
+const IR_SLE: u32 = 18
+const IR_ULE: u32 = 19
+const IR_SGT: u32 = 20
+const IR_UGT: u32 = 21
+const IR_SGE: u32 = 22
+const IR_UGE: u32 = 23
+const IR_SEXT: u32 = 24
+const IR_ZEXT: u32 = 25
+const IR_TRUNC: u32 = 26
+const IR_PTR_TO_INT: u32 = 27
+const IR_INT_TO_PTR: u32 = 28
+
+// Operands name already evaluated registers. Signed operations have distinct opcodes.
+struct IrBinary {
+    opcode: u32,
+    type_id: u32,
+    result: u32,
+    left: u32,
+    right: u32
+}
+
+struct IrCast {
+    opcode: u32,
+    source_type: u32,
+    target_type: u32,
+    result: u32,
+    operand: u32
+}
+
+struct IrMemory {
+    type_id: u32,
+    result: u32,
+    address: u32,
+    value: u32,
+    alignment: u32,
+    is_load: bool,
+    is_volatile: bool,
+    initialized: bool
+}
+
+struct IrArgument {
+    type_id: u32,
+    value: u32
+}
+
+struct IrCall {
+    argument_start: u32,
+    name: *u8,
+    name_length: usize,
+    return_type: u32,
+    result: u32,
+    argument_count: u32
+}
+
+const IR_NEGATE: u32 = 29
+const IR_NOT: u32 = 30
+const IR_BIT_NOT: u32 = 31
+
+struct IrUnary {
+    opcode: u32,
+    type_id: u32,
+    result: u32,
+    operand: u32
+}
+
+struct IrArrayAddress {
+    type_id: u32,
+    base: u32,
+    index: u32,
+    count: u32,
+    valid: u32,
+    result: u32
+}
+
+struct IrFieldAddress {
+    type_id: u32,
+    base: u32,
+    field: u32,
+    result: u32
+}
+
+const IR_BLOCK_IF_TRUE: u32 = 1
+const IR_BLOCK_IF_FALSE: u32 = 2
+const IR_BLOCK_IF_MERGE: u32 = 3
+const IR_BLOCK_LOOP_CONDITION: u32 = 4
+const IR_BLOCK_LOOP_BODY: u32 = 5
+const IR_BLOCK_LOOP_END: u32 = 6
+
+struct IrBranch {
+    condition: u32,
+    true_kind: u32,
+    true_label: u32,
+    false_kind: u32,
+    false_label: u32
+}
+
+struct IrReturn {
+    type_id: u32,
+    value: u32
+}
+
+const IR_BLOCK_LOGIC_RHS: u32 = 7
+const IR_BLOCK_LOGIC_DONE: u32 = 8
+const IR_BLOCK_LOGIC_SHORT: u32 = 9
+const IR_BLOCK_LOGIC_MERGE: u32 = 10
+
+struct IrLogicalPhi {
+    result: u32,
+    value: u32,
+    label: u32,
+    short_value: bool
+}
+
+struct IrSymbolAddress {
+    name: *u8,
+    length: usize,
+    result: u32,
+    string_index: u32,
+    is_string: bool,
+    as_integer: bool
+}
+
+struct IrExtract {
+    type_id: u32,
+    result: u32,
+    aggregate: u32,
+    field: u32
+}
+
+struct IrConstant {
+    type_id: u32,
+    result: u32,
+    value: u64
+}
+
+struct IrHardware {
+    builtin: u32,
+    result: u32,
+    first: u32,
+    second: u32
+}
+
+struct IrSyscall {
+    argument_start: u32,
+    result: u32,
+    argument_count: u32,
+    write_number: bool
+}
+
+struct IrAssembly {
+    argument_start: u32,
+    result: u32,
+    returns_value: bool,
+    instruction_start: usize,
+    instruction_end: usize,
+    constraint_start: usize,
+    constraint_end: usize,
+    argument_count: u32,
+    literal_only: bool
+}
+
+struct IrSlot {
+    type_id: u32,
+    result: u32,
+    parameter: u32,
+    is_parameter: bool
+}
+
+struct IrArenaSlot {
+    result: u32,
+    buffer: u32,
+    capacity: u32
+}
+
+struct IrArenaInit {
+    address: u32,
+    buffer: u32,
+    capacity: u32
+}
+
+struct IrArenaAllocate {
+    result: u32,
+    address: u32,
+    size: u32
+}
+
+struct IrZero {
+    address: u32,
+    size: u32
+}
+
+struct IrBlock {
+    kind: u32,
+    label: u32
+}
+
+const IR_INSTRUCTION_BINARY: u32 = 1
+
+const IR_INSTRUCTION_CAST: u32 = 2
+
+const IR_INSTRUCTION_MEMORY: u32 = 3
+
+const IR_INSTRUCTION_CALL: u32 = 4
+
+const IR_INSTRUCTION_UNARY: u32 = 5
+
+const IR_INSTRUCTION_ARRAY_ADDRESS: u32 = 6
+
+const IR_INSTRUCTION_FIELD_ADDRESS: u32 = 7
+
+const IR_INSTRUCTION_BRANCH: u32 = 8
+
+const IR_INSTRUCTION_RETURN: u32 = 9
+
+const IR_INSTRUCTION_LOGICAL_PHI: u32 = 10
+
+const IR_INSTRUCTION_SYMBOL_ADDRESS: u32 = 11
+
+const IR_INSTRUCTION_EXTRACT: u32 = 12
+
+const IR_INSTRUCTION_CONSTANT: u32 = 13
+
+const IR_INSTRUCTION_HARDWARE: u32 = 14
+
+const IR_INSTRUCTION_SYSCALL: u32 = 15
+
+const IR_INSTRUCTION_ASSEMBLY: u32 = 16
+
+const IR_INSTRUCTION_SLOT: u32 = 17
+
+const IR_INSTRUCTION_ARENA_SLOT: u32 = 18
+
+const IR_INSTRUCTION_ARENA_INIT: u32 = 19
+
+const IR_INSTRUCTION_ARENA_ALLOCATE: u32 = 20
+
+const IR_INSTRUCTION_ZERO: u32 = 21
+
+const IR_INSTRUCTION_BLOCK: u32 = 22
+
+const IR_INSTRUCTION_JUMP: u32 = 23
+
+struct IrFunctionHeader {
+    name: *u8,
+    name_length: usize,
+    return_type: u32,
+    parameter_count: u32,
+    section_start: usize,
+    section_end: usize
+}
+
+struct IrGlobal {
+    name: *u8,
+    name_length: usize,
+    type_id: u32,
+    alignment: u32,
+    initialized: bool,
+    is_array: bool,
+    value: u64,
+    element_type: u32,
+    element_count: u32,
+    section_start: usize,
+    section_end: usize
+}
+
+struct IrGlobalElement {
+    value: u64
+}

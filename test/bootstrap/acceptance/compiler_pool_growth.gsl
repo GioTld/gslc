@@ -1,0 +1,57 @@
+import "compiler/parser"
+
+const MAX_EXPRESSION_GROWTH_BYTES: usize = 131072
+
+func main() u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    var parser: Parser
+    parser_init(&parser, "", &context)
+    let initial_bytes = context.used_bytes
+    let first = alloc_expr(&parser)
+    if context.used_bytes - initial_bytes > MAX_EXPRESSION_GROWTH_BYTES { return 13 }
+    let pointer = parser_expr(&parser, first)
+    pointer.int_lit.val = 123
+    var i:u32 = 1
+    while i < 40000 {
+        let previous_bytes = context.used_bytes
+        let index = alloc_expr(&parser)
+        if context.used_bytes - previous_bytes > MAX_EXPRESSION_GROWTH_BYTES { return 14 }
+        if parser.error || index != i { return 1 }
+        parser_expr(&parser, index).int_lit.val = i as i64
+        i += 1
+    }
+    if pointer.int_lit.val != 123 { return 2 }
+    if parser_expr(&parser, 39999).int_lit.val != 39999 { return 3 }
+    let first_statement = alloc_stmt(&parser)
+    let saved_statement = parser_stmt(&parser, first_statement)
+    saved_statement.value_reg = 123
+    i = 1
+    while i < 10000 {
+        let previous_bytes = context.used_bytes
+        let index = alloc_stmt(&parser)
+        if parser.error || index != i { return 15 }
+        if context.used_bytes - previous_bytes > MAX_EXPRESSION_GROWTH_BYTES { return 16 }
+        i += 1
+    }
+    if parser_stmt(&parser, first_statement) != saved_statement || saved_statement.value_reg != 123 { return 17 }
+    var pool: CompilerPool
+    compiler_pool_init(&pool, &context)
+    if compiler_pool_ensure(&pool, 0, 8 as usize, 16 as usize) == false { return 4 }
+    let saved = compiler_pool_item_ptr(&pool, 0, 8 as usize)
+    if compiler_pool_ensure(&pool, 2, 8 as usize, 16 as usize) == false { return 5 }
+    if compiler_pool_item_ptr(&pool, 0, 8 as usize) != saved { return 6 }
+    if compiler_pool_ensure(&pool, 0, 8 as usize, 16 as usize) == false { return 7 }
+    i = 4
+    while i < 100 {
+        if compiler_pool_ensure(&pool, i, 8 as usize, 16 as usize) == false { return 10 }
+        i += 2
+    }
+    if pool.directory_capacity <= COMPILER_POOL_DIRECTORY_INITIAL { return 11 }
+    if compiler_pool_item_ptr(&pool, 0, 8 as usize) != saved { return 12 }
+    let checkpoint = linux_sbrk(0 as usize)
+    if (linux_sbrk(MEM_MAX_SIZE) as usize) != 0 as usize { return 8 }
+    if linux_sbrk(0 as usize) != checkpoint { return 9 }
+    return 0
+}

@@ -1,0 +1,106 @@
+import "compiler/control_flow"
+
+struct FlowBlock {
+    first: u32,
+    second: u32,
+    join: u32,
+    depth: u32,
+    visit: u32
+}
+
+func flow_block(p: *Parser, index: u32) *FlowBlock {
+    unsafe { return compiler_pool_item_ptr(&p.flow_blocks, index, size_of(FlowBlock)) as *FlowBlock }
+}
+
+// Statement IDs also identify graph blocks; function exits follow the statement range.
+func flow_graph_region(p: *Parser, start: u32, count: u32, next: u32, stopped: u32, continued: u32, depth: u32) u32 {
+    var index = start
+    var visited: u32 = 0
+    while index != INVALID_INDEX && visited < count {
+        let statement = parser_stmt(p, index)
+        let block = flow_block(p, index)
+        var successor = next
+        if visited + 1 < count { successor = statement.next_idx }
+        block.first = successor
+        block.join = successor
+        block.depth = depth
+        if statement.kind == STMT_RETURN { block.first = INVALID_INDEX }
+        if statement.kind == STMT_BREAK { block.first = stopped }
+        if statement.kind == STMT_CONTINUE { block.first = continued }
+        if statement.kind == STMT_IF {
+            block.first = flow_graph_region(p, statement.block.body_start, statement.block.body_count, successor, stopped, continued, depth + 1)
+            block.second = flow_graph_region(p, statement.block.else_start, statement.block.else_count, successor, stopped, continued, depth + 1)
+        }
+        if statement.kind == STMT_WHILE {
+            block.first = flow_graph_region(p, statement.block.body_start, statement.block.body_count, index, successor, index, depth + 1)
+            block.second = successor
+        }
+        if statement.kind == STMT_UNSAFE {
+            block.first = flow_graph_region(p, statement.block.body_start, statement.block.body_count, successor, stopped, continued, depth + 1)
+        }
+        index = statement.next_idx
+        visited += 1
+    }
+    if count == 0 { return next }
+    return start
+}
+
+func flow_graph_build(p: *Parser) bool {
+    p.flow_block_count = p.stmt_count + p.decl_count
+    var index: u32 = 0
+    while index < p.flow_block_count {
+        if compiler_pool_ensure(&p.flow_blocks, index, size_of(FlowBlock), FLOW_RECORD_BYTES) == false { return false }
+        if compiler_pool_ensure(&p.flow_pending, index, size_of(u32), FLOW_RECORD_BYTES) == false { return false }
+        let block = flow_block(p, index)
+        block.first = INVALID_INDEX
+        block.second = INVALID_INDEX
+        block.join = INVALID_INDEX
+        block.depth = 0
+        block.visit = 0
+        index += 1
+    }
+    p.flow_visit = 0
+    index = 0
+    while index < p.decl_count {
+        let function = parser_decl(p, index)
+        flow_graph_region(p, function.body_start, function.body_count, p.stmt_count + index, INVALID_INDEX, INVALID_INDEX, 1)
+        index += 1
+    }
+    return true
+}
+
+func flow_pending_slot(p: *Parser, index: u32) *u32 {
+    unsafe { return compiler_pool_item_ptr(&p.flow_pending, index, size_of(u32)) as *u32 }
+}
+
+func flow_queue(p: *Parser, index: u32, depth: u32, count: u32) u32 {
+    if index == INVALID_INDEX { return count }
+    let block = flow_block(p, index)
+    if block.depth < depth || block.visit == p.flow_visit { return count }
+    block.visit = p.flow_visit
+    unsafe { *flow_pending_slot(p, count) = index }
+    return count + 1
+}
+
+// A path that leaves the region cannot contribute to its ownership join.
+func flow_region_reaches(p: *Parser, start: u32, target: u32, depth: u32) bool {
+    if start == target { return true }
+    p.flow_visit += 1
+    if p.flow_visit == 0 {
+        var index: u32 = 0
+        while index < p.flow_block_count { flow_block(p, index).visit = 0; index += 1 }
+        p.flow_visit = 1
+    }
+    var head: u32 = 0
+    var count = flow_queue(p, start, depth, 0)
+    while head < count {
+        var index: u32 = 0
+        unsafe { index = *flow_pending_slot(p, head) }
+        head += 1
+        let block = flow_block(p, index)
+        if block.first == target || block.second == target { return true }
+        count = flow_queue(p, block.first, depth, count)
+        count = flow_queue(p, block.second, depth, count)
+    }
+    return false
+}

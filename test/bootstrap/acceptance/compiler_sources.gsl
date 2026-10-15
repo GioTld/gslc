@@ -1,0 +1,90 @@
+import "compiler/imports"
+
+func main(argc: u32, argv: *usize) u32 {
+    var context: CompilerContext
+    compiler_context_init(&context)
+    defer compiler_context_release(&context)
+    if argc != 2 && argc != 3 { return 1 }
+    var path: string
+    unsafe { path = (*(((argv as usize) + size_of(usize)) as *usize)) as string }
+    var sources: ImportState
+    compiler_import_init(&sources, COMPILER_PLATFORM_LINUX, "", &context)
+    if compiler_collect_file(path, &sources, 0) != 0 { return 2 }
+    var view: CompilerSourceView
+    source_view_init(&view)
+    unsafe { view.segments = &sources.segments }
+    view.count = sources.segment_count
+    view.length = sources.virtual_length
+    var index: u32 = 0
+    while index < sources.segment_count {
+        let segment = compiler_source_segment(&sources, index)
+        if segment.module_id >= sources.path_count { return 3 }
+        let file = compiler_source(&sources, segment.module_id)
+        if segment.original_start + segment.end - segment.start > file.length { return 4 }
+        var offset = segment.start
+        while offset < segment.end {
+            if compiler_module_at_offset(&sources, offset) != segment.module_id { return 5 }
+            let original = segment.original_start + offset - segment.start
+            if source_view_ptr(&view, offset) != compiler_import_at(file.text, original) { return 22 }
+            if compiler_import_byte(source_view_ptr(&view, offset), 0 as usize) != compiler_import_byte(file.text, original) { return 6 }
+            offset += 1 as usize
+        }
+        index += 1
+    }
+    if compiler_import_byte(source_view_ptr(&view, sources.virtual_length), 0 as usize) != 0 as u8 { return 23 }
+    index = sources.segment_count
+    while index > 0 {
+        index -= 1
+        let segment = compiler_source_segment(&sources, index)
+        let file = compiler_source(&sources, segment.module_id)
+        if source_view_ptr(&view, segment.start) != compiler_import_at(file.text, segment.original_start) { return 24 }
+        if index > 0 {
+            let previous = compiler_source_segment(&sources, index - 1)
+            if previous.end < segment.start && compiler_import_byte(source_view_ptr(&view, previous.end), 0 as usize) != 10 as u8 { return 25 }
+        }
+    }
+    if sources.segment_count == 0 { return 7 }
+    if compiler_module_at_offset(&sources, sources.virtual_length) != INVALID_INDEX { return 8 }
+    let count = sources.path_count
+    if compiler_import_seen(&sources, compiler_import_as_string(compiler_source(&sources, 0).path)) != 1 || sources.path_count != count { return 9 }
+    if argc == 3 && (sources.path_count != 4 || sources.dependency_count != 6) { return 10 }
+    if argc == 3 {
+        // DFS discovers main=0, left=1, shared=2, right=3.
+        if compiler_dependency(&sources, 0).importer != 1 || compiler_dependency(&sources, 0).imported != 2 { return 16 }
+        if compiler_dependency(&sources, 1).importer != 0 || compiler_dependency(&sources, 1).imported != 1 { return 17 }
+        if compiler_dependency(&sources, 2).importer != 3 || compiler_dependency(&sources, 2).imported != 2 { return 18 }
+        if compiler_dependency(&sources, 3).importer != 3 || compiler_dependency(&sources, 3).imported != 0 { return 19 }
+        if compiler_dependency(&sources, 4).importer != 0 || compiler_dependency(&sources, 4).imported != 3 { return 20 }
+        if compiler_dependency(&sources, 5).importer != 0 || compiler_dependency(&sources, 5).imported != 1 { return 21 }
+    }
+    var edge_count: u32 = 0
+    index = 0
+    while index < sources.path_count {
+        let file = compiler_source(&sources, index)
+        var lex: Lexer
+        lexer_init(&lex, compiler_import_as_string(file.text))
+        var braces: u32 = 0
+        var edge_index: u32 = 0
+        while true {
+            let token = lexer_next(&lex)
+            if token.kind == TOKEN_EOF { break }
+            if token.kind == TOKEN_LBRACE { braces += 1 }
+            if token.kind == TOKEN_RBRACE && braces > 0 { braces -= 1 }
+            if token.kind == TOKEN_IMPORT && braces == 0 {
+                let name = lexer_next(&lex)
+                while edge_index < sources.dependency_count && compiler_dependency(&sources, edge_index).importer != index { edge_index += 1 }
+                if edge_index == sources.dependency_count { return 11 }
+                let edge = compiler_dependency(&sources, edge_index)
+                if edge.offset != name.offset || edge.length != name.len { return 12 }
+                if edge.imported >= sources.path_count { return 13 }
+                let target = compiler_source(&sources, edge.imported)
+                if compiler_source_find(&sources, compiler_import_as_string(target.path)) != edge.imported { return 14 }
+                edge_count += 1
+                edge_index += 1
+            }
+        }
+        index += 1
+    }
+    if edge_count != sources.dependency_count { return 15 }
+    return 0
+}

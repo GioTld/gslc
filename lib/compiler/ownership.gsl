@@ -1,4 +1,5 @@
 import "compiler/ast"
+import "compiler/control_flow"
 
 const MOVE_SAVE: u32 = 0
 const MOVE_RESTORE: u32 = 1
@@ -16,7 +17,7 @@ func sema_copy_type(p: *Parser, value: SemType, depth: u32) bool {
     var field_index = structure.field_start
     while field_index < structure.field_start + structure.field_count {
         let field = parser_field(p, field_index)
-        if sema_copy_type(p, sema_type_from_span(field.type_ptr, field.type_len), depth + 1) == false { return false }
+        if sema_copy_type(p, sema_type_from_span(p, field.type_ptr, field.type_len), depth + 1) == false { return false }
         field_index += 1
     }
     return true
@@ -33,17 +34,17 @@ func sema_consume(s: *Sema, p: *Parser, index: u32, value: SemType) {
     if root == INVALID_INDEX { return }
     let node = parser_expr(p, root)
     if node.kind == EXPR_CALL {
-        let function_index = sema_lookup(s, node.call.callee_ptr, node.call.callee_len)
+        let function_index = sema_resolve_name(s, p, root)
         if function_index != INVALID_INDEX && sema_symbol(s, function_index).kind == SYM_FUNC {
-            let function = parser_decl(p, sema_symbol(s, function_index).func_idx)
-            let returned = sema_type_from_span(function.ret_type_ptr, function.ret_type_len)
+            let function = parser_decl(p, sema_symbol(s, function_index).declaration_index)
+            let returned = sema_type_from_span(p, function.ret_type_ptr, function.ret_type_len)
             if returned.pointer_depth != 0 { indirect = true }
         }
         if indirect && s.unsafe_depth == 0 { sema_mark_diagnostic(s, &node.span, 2008) }
         return
     }
     if node.kind != EXPR_IDENT { return }
-    let symbol_index = sema_lookup(s, node.ident.name_ptr, node.ident.name_len)
+    let symbol_index = sema_resolve_name(s, p, root)
     if symbol_index == INVALID_INDEX { return }
     let symbol = sema_symbol(s, symbol_index)
     if indirect || symbol.pointer_depth != 0 {
@@ -90,31 +91,17 @@ func sema_move_state(s: *Sema, storage: *u16, count: u32, mode: u32) {
     }
 }
 
-func sema_block_terminates(p: *Parser, start: u32, count: u32) bool {
-    var index = start
-    var seen: u32 = 0
-    while index != INVALID_INDEX && seen < count {
-        let stmt = parser_stmt(p, index)
-        if stmt.kind == STMT_RETURN || stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE { return true }
-        if stmt.kind == STMT_UNSAFE && sema_block_terminates(p, stmt.block.body_start, stmt.block.body_count) { return true }
-        if stmt.kind == STMT_IF && sema_block_terminates(p, stmt.block.body_start, stmt.block.body_count) && sema_block_terminates(p, stmt.block.else_start, stmt.block.else_count) { return true }
-        index = stmt.next_idx
-        seen += 1
-    }
-    return false
-}
-
 func sema_reference_type(p: *Parser, value: SemType, depth: u32) bool {
     if value.pointer_depth > 0 || sema_name_is(value.name_ptr, value.name_len, "string") { return true }
     let index = parser_find_type(p, value.name_ptr, value.name_len)
     if index == INVALID_INDEX { return false }
     if depth >= PARSER_MAX_EXPR_DEPTH { return true }
     let structure = parser_struct(p, index)
-    if structure.is_array { return sema_reference_type(p, sema_type_from_span(structure.element_ptr, structure.element_len), depth + 1) }
+    if structure.is_array { return sema_reference_type(p, sema_type_from_span(p, structure.element_ptr, structure.element_len), depth + 1) }
     var field_index = structure.field_start
     while field_index < structure.field_start + structure.field_count {
         let field = parser_field(p, field_index)
-        if sema_reference_type(p, sema_type_from_span(field.type_ptr, field.type_len), depth + 1) { return true }
+        if sema_reference_type(p, sema_type_from_span(p, field.type_ptr, field.type_len), depth + 1) { return true }
         field_index += 1
     }
     return false
@@ -124,7 +111,7 @@ func sema_reference_root(s: *Sema, p: *Parser, index: u32) u32 {
     var current = index
     while current != INVALID_INDEX {
         let node = parser_expr(p, current)
-        if node.kind == EXPR_IDENT { return sema_lookup(s, node.ident.name_ptr, node.ident.name_len) }
+        if node.kind == EXPR_IDENT { return sema_resolve_name(s, p, current) }
         if node.kind == EXPR_MEMBER {
             current = node.member.base_idx
         } else if node.kind == EXPR_INDEX {

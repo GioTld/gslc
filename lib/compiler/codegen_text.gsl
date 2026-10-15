@@ -52,7 +52,7 @@ func codegen_write_token(p: *Parser, output: *CompilerOutput, ptr: *u8, len: usi
 }
 
 func codegen_source_byte(p: *Parser, offset: usize) u8 {
-    unsafe { return volatile_read(((p.lex.src as usize) + offset) as *u8); }
+    return parser_source_byte(p, offset)
 }
 
 func codegen_hex_digit(ch: u8) u32 {

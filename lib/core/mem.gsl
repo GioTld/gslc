@@ -89,7 +89,7 @@ func byte_view(data: *u8, len: usize) ByteView {
 
 func byte_view_slice(v: ByteView, start: usize, len: usize) ByteView {
     unsafe {
-        if start + len > v.len { return byte_view(0 as *u8, 0 as usize) }
+        if start > v.len || len > v.len - start { return byte_view(0 as *u8, 0 as usize) }
         let sub = ((v.data as usize) + start) as *u8
         return byte_view(sub, len)
     }
@@ -98,6 +98,8 @@ func byte_view_slice(v: ByteView, start: usize, len: usize) ByteView {
 const ALLOC_OK: u32 = 0
 const ALLOC_ERR_OOM: u32 = 1
 const ALLOC_ERR_ALIGN: u32 = 2
+const ALLOC_ERR_OVERFLOW: u32 = 3
+const MEM_MAX_SIZE: usize = 18446744073709551615
 
 copy struct AllocResult {
     ptr: *u8,
@@ -135,13 +137,18 @@ func arena_init(buffer: *u8, capacity: usize) Arena {
 }
 
 func arena_alloc(a: *Arena, size: usize, alignment: usize) AllocResult {
-    if alignment == 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
-    let current = (a.buffer as usize) + a.offset
+    if alignment == 0 as usize || (alignment & (alignment - 1 as usize)) != 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
+    let base = a.buffer as usize
+    if a.offset > a.capacity { return alloc_fail(ALLOC_ERR_OOM) }
+    if a.offset > MEM_MAX_SIZE - base { return alloc_fail(ALLOC_ERR_OVERFLOW) }
+    let current = base + a.offset
+    if alignment - 1 as usize > MEM_MAX_SIZE - current { return alloc_fail(ALLOC_ERR_OVERFLOW) }
     let aligned = align_up(current, alignment)
-    let new_offset = aligned - (a.buffer as usize) + size
-    if new_offset > a.capacity {
-        return alloc_fail(ALLOC_ERR_OOM)
-    }
+    let padding = aligned - current
+    let remaining = a.capacity - a.offset
+    if padding > remaining || size > remaining - padding { return alloc_fail(ALLOC_ERR_OOM) }
+    if size > MEM_MAX_SIZE - aligned { return alloc_fail(ALLOC_ERR_OVERFLOW) }
+    let new_offset = a.offset + padding + size
     a.offset = new_offset
     unsafe {
         return alloc_ok(aligned as *u8)
@@ -183,27 +190,21 @@ func chunk_arena_init(a: *ChunkArena, initial: *Chunk, buffer: *u8, capacity: us
 }
 
 func chunk_arena_alloc(a: *ChunkArena, size: usize, alignment: usize) AllocResult {
-    if alignment == 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
-    var cur = a.current
-    if (cur as usize) == 0 { return alloc_fail(ALLOC_ERR_OOM) }
-    let current_addr = (cur.buffer as usize) + cur.offset
-    let aligned = align_up(current_addr, alignment)
-    let new_offset = aligned - (cur.buffer as usize) + size
-    if new_offset <= cur.capacity {
-        unsafe {
-            cur.offset = new_offset
+    if alignment == 0 as usize || (alignment & (alignment - 1 as usize)) != 0 as usize { return alloc_fail(ALLOC_ERR_ALIGN) }
+    if size > MEM_MAX_SIZE - a.total_allocated { return alloc_fail(ALLOC_ERR_OVERFLOW) }
+    var chunk = a.current
+    while (chunk as usize) != 0 as usize {
+        var view = arena_init(chunk.buffer, chunk.capacity)
+        view.offset = chunk.offset
+        let result = arena_alloc(&view, size, alignment)
+        if result.error == ALLOC_OK {
+            chunk.offset = view.offset
+            unsafe { a.current = chunk }
+            a.total_allocated += size
+            unsafe { return result }
         }
-        a.total_allocated += size
-        unsafe {
-            return alloc_ok(aligned as *u8)
-        }
-    }
-    // Si el chunk actual se llena, avanza al siguiente chunk ya enlazado si existe
-    if (cur.next as usize) != 0 {
-        unsafe {
-            a.current = cur.next
-        }
-        return chunk_arena_alloc(a, size, alignment)
+        if result.error != ALLOC_ERR_OOM { return alloc_fail(result.error) }
+        unsafe { chunk = chunk.next }
     }
     return alloc_fail(ALLOC_ERR_OOM)
 }
@@ -241,6 +242,7 @@ func chunk_arena_init_empty(a: *ChunkArena) {
 // Returns a pointer to item at index idx, given that each item is item_size bytes.
 // All chunks in the arena must have the same capacity (items_per_chunk * item_size).
 func chunk_arena_item_ptr(a: *ChunkArena, idx: u32, item_size: usize) *u8 {
+    if item_size == 0 as usize { unsafe { return 0 as *u8 } }
     var chunk = a.first
     var remaining = idx as usize
     while (chunk as usize) != 0 {
